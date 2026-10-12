@@ -1,0 +1,6 @@
+{
+  "name": "Spider Grid Solutions - Operations & CRM",
+  "description": "Complete CRM, Service & Sales Job Card Tracker, WhatsApp Status Automation, Gemini AI Bill Scanner, and Cash Flow Ledger for Spider Grid Solutions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
