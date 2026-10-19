@@ -18,7 +18,9 @@ import {
   Sparkles,
   ChevronDown,
   CheckCircle2,
-  Users
+  Users,
+  Award,
+  Star
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { Customer, LeadSource } from '../types';
@@ -57,6 +59,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
   const [selectedReference, setSelectedReference] = useState<string>('all');
   const [selectedAbout, setSelectedAbout] = useState<string>('all');
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+  const [customerToast, setCustomerToast] = useState<string | null>(null);
 
   // Form State for Add / Edit
   const [formData, setFormData] = useState<{
@@ -285,12 +288,19 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
       updateCustomer(cust.id, { phoneBook: 'Yes', syncedToGoogleContacts: true });
     });
 
-    downloadVCard(`SGS-All-31-Customers-GoogleContacts-${new Date().toISOString().split('T')[0]}`, masterVcf);
-    alert(`Successfully generated master Google Contacts file (.vcf) with all ${customers.length} Golden Customers! Open this file on your mobile or Google Contacts to sync all with 1-click.`);
+    downloadVCard(`SGS-All-Customers-GoogleContacts-${new Date().toISOString().split('T')[0]}`, masterVcf);
+    setCustomerToast(`Successfully exported Google Contacts file (.vcf) with all ${customers.length} Customers!`);
+    setTimeout(() => setCustomerToast(null), 4000);
   };
 
   return (
     <div className="space-y-6">
+      {customerToast && (
+        <div className="fixed top-6 right-6 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in fade-in slide-in-from-top-2">
+          <Sparkles className="w-4 h-4" />
+          <span>{customerToast}</span>
+        </div>
+      )}
       
       {/* Header & Stats Banner */}
       <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b ${
@@ -300,14 +310,14 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
           <div className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-1 ${
             isDark ? 'text-emerald-400' : 'text-blue-700'
           }`}>
-            <span>Golden Customer Directory</span>
+            <span>Customer Directory</span>
             <span>·</span>
             <span>Google Maps Location Pin</span>
             <span>·</span>
             <span>Contacts Sync</span>
           </div>
           <h1 className={`text-xl font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-            Customer Database & Lead Origins ({customers.length})
+            Customer Database & Verified Accounts ({customers.length})
           </h1>
           <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
             31 preloaded verified records detailing customer areas with Google Maps navigation links, lead referrers, and Google Contacts sync.
@@ -440,7 +450,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
 
         {/* Active Filter Summary */}
         <div className={`flex items-center justify-between text-xs pt-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-          <span>Showing <strong className={`font-mono ${isDark ? 'text-white' : 'text-blue-900'}`}>{filteredCustomers.length}</strong> of {customers.length} Golden Customers</span>
+          <span>Showing <strong className={`font-mono ${isDark ? 'text-white' : 'text-blue-900'}`}>{filteredCustomers.length}</strong> of {customers.length} Customers</span>
           {(selectedArea !== 'all' || selectedReference !== 'all' || selectedAbout !== 'all' || searchQuery) && (
             <button
               onClick={() => {
@@ -486,7 +496,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredCustomers.map((customer) => {
+                filteredCustomers.map((customer, idx) => {
                   const cleanPhone = customer.phone ? customer.phone.replace(/[^0-9]/g, '') : '';
                   const waUrl = cleanPhone 
                     ? `https://wa.me/${cleanPhone.length === 10 ? '91' + cleanPhone : cleanPhone}?text=${encodeURIComponent(`Hello ${customer.name}, greetings from Spider Grid Solutions (SGS) Madurai!`)}`
@@ -496,7 +506,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
 
                   return (
                     <tr 
-                      key={customer.id}
+                      key={`${customer.id}-${idx}`}
                       className={`transition-colors group ${
                         isDark ? 'hover:bg-slate-800/40' : 'hover:bg-blue-50/40'
                       }`}
@@ -506,7 +516,15 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
                       </td>
 
                       <td className={`py-3 px-4 font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                        {customer.name}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span 
+                            className="inline-flex items-center justify-center p-1 rounded-md text-amber-500 bg-amber-500/15 border border-amber-500/30 shadow-xs shrink-0" 
+                            title="Customer"
+                          >
+                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+                          </span>
+                          <span className="font-bold">{customer.name}</span>
+                        </div>
                       </td>
 
                       {/* Location with Clickable Google Maps Pin */}
@@ -686,7 +704,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
             }`}>
               <div>
                 <h3 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                  {editingCustomer ? 'Edit Golden Customer' : 'Add New Customer / Lead'}
+                  {editingCustomer ? 'Edit Customer' : 'Add New Customer / Account'}
                 </h3>
                 <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                   Track location with Google Maps, attribution from registered Lead Sources, and Google Contacts sync

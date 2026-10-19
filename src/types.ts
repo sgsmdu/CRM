@@ -37,6 +37,10 @@ export interface JobTimelineEvent {
   quoteAmount?: number; // for quote given
   customStageName?: string; // for 'other'
   performedBy?: string;
+  activityType?: string;
+  previousStatus?: string;
+  newStatus?: string;
+  userId?: string;
 }
 
 export type PaymentMode = 'cash' | 'upi' | 'bank_transfer' | 'card' | 'cheque';
@@ -137,6 +141,54 @@ export interface JobCard {
   holdReason?: string;
   otherStatusText?: string;
   invoiceId?: string; // Linked invoice once billed
+  assignedEmployeeId?: string; // ID of allocated staff member
+  assignedTechnician?: string; // Name of assigned technician
+  assignedDate?: string;
+  assignedBy?: string;
+  expectedStartDate?: string;
+  expectedCompletionDate?: string;
+  estimatedDurationHours?: number;
+  workOrderPriority?: number; // 1 = High/First, 2 = Medium, 3 = Normal
+  workOrderNotes?: string; // Special instruction for technician
+  priority?: 'P1' | 'P2' | 'P3' | 'P4'; // P1: Emergency, P2: High, P3: Normal, P4: Low
+  priorityOrder?: number;
+  priorityChangeReason?: string;
+  priorityChangedBy?: string;
+  priorityChangedAt?: string;
+  reassignReason?: string;
+  completionNotes?: {
+    workPerformed?: string;
+    diagnosis?: string;
+    solutionProvided?: string;
+    sparePartsUsed?: string;
+    remainingIssues?: string;
+    customerConfirmation?: string;
+    followUpRequired?: string;
+    completedBy?: string;
+    completedAt?: string;
+    completionPhotos?: string[];
+  };
+  closureDetails?: {
+    closedAt?: string;
+    closedBy?: string;
+    finalNotes?: string;
+    verifiedBy?: string;
+    verifiedAt?: string;
+    reopenedAt?: string;
+    reopenedReason?: string;
+    reopenedBy?: string;
+  };
+  cctvDetails?: {
+    cameraCount?: number;
+    dvrDetails?: string;
+    siteLocation?: string;
+    nvrDetails?: string;
+  };
+  warrantyAMC?: {
+    amcContract?: boolean;
+    amcExpiry?: string;
+    warrantyMonths?: number;
+  };
 }
 
 export interface VendorBillItem {
@@ -315,4 +367,88 @@ export interface AdminSettings {
   pandiyanRubberStampUrl?: string; // Pandiyan Computers Rubber Stamp Seal
   pandiyanBillingTheme?: PandiyanBillingTheme; // Pandiyan Theme
   pandiyanTerms?: string;
+}
+
+export interface Employee {
+  id: string;
+  name: string;
+  phone: string;
+  role: string; // e.g. "Senior Chip-Level Technician", "CCTV & Network Specialist"
+  department?: string; // e.g. "Technical Service", "CCTV Field Team", "Office Administration"
+  skills?: string[]; // ['CCTV', 'Computer', 'Laptop', 'Networking', 'Software', 'Printer']
+  salaryType?: 'monthly' | 'daily';
+  dailySalary: number; // Daily wage e.g. 750
+  monthlySalary?: number; // e.g. 19500
+  weeklyOff?: string; // e.g. "Sunday"
+  joiningDate: string;
+  status: 'active' | 'inactive';
+  upiId?: string;
+  emergencyContact?: string;
+  notes?: string;
+}
+
+export interface SalaryAdvance {
+  id: string;
+  employeeId: string;
+  date: string;
+  amount: number;
+  reason: string;
+  approvedBy: string;
+  repaidAmount: number;
+  status: 'active' | 'repaid';
+  repayments?: { date: string; amount: number; note?: string }[];
+}
+
+export type AttendanceStatus = 'present' | 'absent' | 'half_day' | 'leave' | 'holiday' | 'weekly_off';
+
+export interface AttendanceRecord {
+  id: string;
+  employeeId: string;
+  date: string; // YYYY-MM-DD
+  status: AttendanceStatus;
+  checkInTime?: string;
+  checkOutTime?: string;
+  overtimeHours?: number;
+  notes?: string;
+}
+
+export interface SalaryInstallment {
+  id: string;
+  amount: number;
+  paymentDate: string;
+  paymentMode: PaymentMode;
+  referenceNumber?: string;
+  notes?: string;
+  paidBy?: string;
+}
+
+export interface SalaryPayment {
+  id: string;
+  employeeId: string;
+  month: string; // YYYY-MM
+  baseSalary: number;
+  daysPresent: number;
+  halfDays: number;
+  absentDays: number;
+  calculatedSalary: number;
+  advanceDeduction: number;
+  bonus: number;
+  netPaid: number;
+  paymentDate: string;
+  paymentMode: PaymentMode;
+  referenceNumber?: string;
+  status: 'paid' | 'partial' | 'pending';
+  notes?: string;
+  payments?: SalaryInstallment[];
+}
+
+export interface WorkAllocation {
+  id: string;
+  employeeId: string;
+  jobCardId: string;
+  allocatedDate: string;
+  priorityOrder: number; // 1, 2, 3
+  notes?: string; // Work order instructions
+  sharedViaWhatsAppAt?: string;
+  status: 'assigned' | 'in_progress' | 'completed';
 }

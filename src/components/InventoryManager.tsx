@@ -574,8 +574,8 @@ export const InventoryManager: React.FC = () => {
             {/* Detail Type 1: Stock Breakdown */}
             {activeCategoryDetail.detailType === 'stock' && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                {inventory.filter(i => i.category === activeCategoryDetail.category).map(inv => (
-                  <div key={inv.id} className={`p-3 rounded-lg border flex items-center justify-between ${
+                {inventory.filter(i => i.category === activeCategoryDetail.category).map((inv, idx) => (
+                  <div key={`${inv.id}-${idx}`} className={`p-3 rounded-lg border flex items-center justify-between ${
                     isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
                   }`}>
                     <div>
@@ -762,14 +762,14 @@ export const InventoryManager: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${isDark ? 'divide-slate-800/70' : 'divide-slate-100'}`}>
-                  {filteredInventory.map(item => {
+                  {filteredInventory.map((item, idx) => {
                     const isLow = item.currentStock <= item.minStockAlert;
                     const originBill = item.vendorInvoiceNumber || (item.vendorBillId ? vendorBills.find(b => b.id === item.vendorBillId)?.invoiceNumber : undefined);
                     const originVendor = item.vendorName || (item.vendorBillId ? vendorBills.find(b => b.id === item.vendorBillId)?.vendorName : undefined);
 
                     return (
                       <tr 
-                        key={item.id} 
+                        key={`${item.id}-${idx}`} 
                         onClick={() => handleOpenEditItemModal(item)}
                         className={`transition-colors cursor-pointer group ${
                           isDark ? 'hover:bg-blue-950/20' : 'hover:bg-blue-50/60'
@@ -976,8 +976,8 @@ export const InventoryManager: React.FC = () => {
                     isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
                   }`}
                 >
-                  {inventory.map(item => (
-                    <option key={item.id} value={item.id}>
+                  {inventory.map((item, idx) => (
+                    <option key={`${item.id}-${idx}`} value={item.id}>
                       {item.name} (Current: {item.currentStock})
                     </option>
                   ))}

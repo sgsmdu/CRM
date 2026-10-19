@@ -7,9 +7,12 @@ import { DashboardOverview } from './components/DashboardOverview';
 import { CustomerDirectory } from './components/CustomerDirectory';
 import { LeadSourceManager } from './components/LeadSourceManager';
 import { JobCardManager } from './components/JobCardManager';
+import { WorkAllocationBoard } from './components/WorkAllocationBoard';
 import { InventoryManager } from './components/InventoryManager';
 import { VendorBillScanner } from './components/VendorBillScanner';
 import { BillingCashFlow } from './components/BillingCashFlow';
+import { ReportsManager } from './components/ReportsManager';
+import { EmployeeManager } from './components/EmployeeManager';
 import { AdminDashboard } from './components/AdminDashboard';
 import { GoogleSheetsModal } from './components/GoogleSheetsModal';
 import { GoogleContactsModal } from './components/GoogleContactsModal';
@@ -33,6 +36,8 @@ function SgsAppContent() {
   const [isGoogleContactsModalOpen, setIsGoogleContactsModalOpen] = useState(false);
   const [preselectedCustomer, setPreselectedCustomer] = useState<Customer | null>(null);
   const [selectedJobForWhatsApp, setSelectedJobForWhatsApp] = useState<JobCard | null>(null);
+  const [selectedJobForDetails, setSelectedJobForDetails] = useState<JobCard | null>(null);
+  const [billingInitialJobId, setBillingInitialJobId] = useState<string | null>(null);
 
   const handleOpenNewJobWithCustomer = (customer: Customer) => {
     setPreselectedCustomer(customer);
@@ -93,6 +98,10 @@ function SgsAppContent() {
               setActiveTab('jobs');
             }}
             onOpenGoogleSheetsModal={() => setIsGoogleSheetsModalOpen(true)}
+            onShowJob={(job) => {
+              setSelectedJobForDetails(job);
+              setActiveTab('jobs');
+            }}
           />
         )}
 
@@ -125,7 +134,22 @@ function SgsAppContent() {
             onClearPreselectedCustomer={() => setPreselectedCustomer(null)}
             selectedJobForWhatsApp={selectedJobForWhatsApp}
             setSelectedJobForWhatsApp={setSelectedJobForWhatsApp}
-            onNavigateToBilling={() => setActiveTab('billing')}
+            onNavigateToBilling={(jobId) => {
+              setBillingInitialJobId(jobId || null);
+              setActiveTab('billing');
+            }}
+            onNavigateToAllocation={() => setActiveTab('allocation')}
+            initialJobForDetails={selectedJobForDetails}
+            onClearInitialJobForDetails={() => setSelectedJobForDetails(null)}
+          />
+        )}
+
+        {activeTab === 'allocation' && (
+          <WorkAllocationBoard
+            onOpenJobDetail={(job) => {
+              setSelectedJobForDetails(job);
+              setActiveTab('jobs');
+            }}
           />
         )}
 
@@ -141,7 +165,18 @@ function SgsAppContent() {
         )}
 
         {activeTab === 'billing' && (
-          <BillingCashFlow />
+          <BillingCashFlow 
+            initialJobId={billingInitialJobId}
+            onClearInitialJobId={() => setBillingInitialJobId(null)}
+          />
+        )}
+
+        {activeTab === 'reports' && (
+          <ReportsManager />
+        )}
+
+        {activeTab === 'employees' && (
+          <EmployeeManager />
         )}
 
         {activeTab === 'admin' && (

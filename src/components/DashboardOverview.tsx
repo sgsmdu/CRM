@@ -16,7 +16,8 @@ import {
   ChevronRight,
   FileSpreadsheet,
   ShieldCheck,
-  Share2
+  Share2,
+  Eye
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { JobCard, JobStatus } from '../types';
@@ -29,6 +30,7 @@ interface DashboardOverviewProps {
   onOpenNewCustomerModal: () => void;
   onSelectJobForWhatsApp: (job: JobCard) => void;
   onOpenGoogleSheetsModal?: () => void;
+  onShowJob?: (job: JobCard) => void;
 }
 
 export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
@@ -38,6 +40,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
   onOpenNewCustomerModal,
   onSelectJobForWhatsApp,
   onOpenGoogleSheetsModal,
+  onShowJob,
 }) => {
   const { customers, jobCards, inventory, vendorBills, cashFlow, updateJobCardStatus, theme } = useSgs();
   const isDark = theme === 'dark';
@@ -115,7 +118,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             Workshop CRM & Service Operations
           </h1>
           <p className={`text-xs mt-1 max-w-2xl ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-            Managing <strong className={isDark ? 'text-slate-200' : 'text-blue-900'}>{customers.length} Golden Customers</strong>, {activeJobs.length} active service & sales jobs, vendor invoices with Gemini OCR, and workshop cash flow.
+            Managing <strong className={isDark ? 'text-slate-200' : 'text-blue-900'}>{customers.length} Verified Customers</strong>, {activeJobs.length} active service & sales jobs, vendor invoices with Gemini OCR, and workshop cash flow.
           </p>
         </div>
 
@@ -315,9 +318,19 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                   >
                     <div className="space-y-1.5 flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap text-xs">
-                        <span className={`font-mono font-semibold ${isDark ? 'text-blue-400' : 'text-blue-700'}`}>{job.jobId}</span>
+                        <button
+                          type="button"
+                          onClick={() => onShowJob ? onShowJob(job) : onNavigate('jobs')}
+                          className={`font-mono font-bold hover:underline cursor-pointer ${isDark ? 'text-blue-400' : 'text-blue-700'}`}
+                          title="Click to view full job card"
+                        >
+                          {job.jobId}
+                        </button>
                         <span className={isDark ? 'text-slate-600' : 'text-slate-300'}>·</span>
-                        <span className={`font-medium ${isDark ? 'text-slate-300' : 'text-slate-800'}`}>{job.customerName}</span>
+                        <span className={`font-semibold inline-flex items-center gap-1 ${isDark ? 'text-slate-200' : 'text-slate-900'}`}>
+                          <span>{job.customerName}</span>
+                          <span className="text-[10px] text-amber-500" title="Verified Customer">⭐</span>
+                        </span>
                         {job.customerArea && (
                           <>
                             <span className={isDark ? 'text-slate-600' : 'text-slate-300'}>·</span>
@@ -332,7 +345,11 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                         </span>
                       </div>
 
-                      <h3 className={`text-sm font-semibold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                      <h3 
+                        onClick={() => onShowJob ? onShowJob(job) : onNavigate('jobs')}
+                        className={`text-sm font-semibold truncate hover:underline cursor-pointer ${isDark ? 'text-white' : 'text-slate-900'}`}
+                        title="Click to view full job card"
+                      >
                         {job.deviceBrand}
                       </h3>
 
@@ -347,8 +364,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                       </div>
                     </div>
 
-                    {/* Status & WhatsApp Trigger Zone */}
-                    <div className="flex items-center gap-2.5 shrink-0">
+                    {/* Status & Actions Zone */}
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
                       {/* Inline Status Dropdown */}
                       <select
                         value={job.status}
@@ -362,6 +379,19 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                         <option value="completed">Ready for Pickup</option>
                         <option value="delivered">Delivered</option>
                       </select>
+
+                      {/* Show Job Button */}
+                      {onShowJob && (
+                        <button
+                          type="button"
+                          onClick={() => onShowJob(job)}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg text-white bg-blue-600 hover:bg-blue-700 shadow-xs cursor-pointer whitespace-nowrap transition-colors"
+                          title="Show full job card details & markings"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Show Job</span>
+                        </button>
+                      )}
 
                       {/* WhatsApp Button */}
                       <button
@@ -442,8 +472,8 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
               <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>All critical spare parts are sufficiently stocked.</p>
             ) : (
               <div className="space-y-2">
-                {lowStockItems.map((item) => (
-                  <div key={item.id} className={`p-2.5 rounded-lg border flex items-center justify-between text-xs ${
+                {lowStockItems.map((item, idx) => (
+                  <div key={`${item.id}-${idx}`} className={`p-2.5 rounded-lg border flex items-center justify-between text-xs ${
                     isDark ? 'bg-amber-950/20 border-amber-900/40' : 'bg-amber-50/60 border-amber-200'
                   }`}>
                     <div>

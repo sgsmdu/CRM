@@ -11,7 +11,13 @@ import {
   PaymentMode,
   AdminSettings,
   LeadSource,
-  Vendor
+  Vendor,
+  Employee,
+  AttendanceRecord,
+  AttendanceStatus,
+  SalaryPayment,
+  WorkAllocation,
+  SalaryAdvance
 } from '../types';
 import { 
   SEED_CUSTOMERS, 
@@ -23,7 +29,12 @@ import {
   SEED_CASH_FLOW,
   DEFAULT_ADMIN_SETTINGS,
   SEED_LEAD_SOURCES,
-  SEED_VENDORS
+  SEED_VENDORS,
+  SEED_EMPLOYEES,
+  SEED_ATTENDANCE,
+  SEED_SALARIES,
+  SEED_WORK_ALLOCATIONS,
+  SEED_SALARY_ADVANCES
 } from '../data/seedData';
 
 interface SgsContextType {
@@ -37,6 +48,10 @@ interface SgsContextType {
   adminSettings: AdminSettings;
   leadSources: LeadSource[];
   vendors: Vendor[];
+  employees: Employee[];
+  attendanceRecords: AttendanceRecord[];
+  salaryPayments: SalaryPayment[];
+  workAllocations: WorkAllocation[];
   
   // Customer methods
   addCustomer: (customer: Omit<Customer, 'id' | 'createdAt' | 'slNo'>) => Customer;
@@ -122,6 +137,7 @@ interface SgsContextType {
   setTheme: (theme: 'light' | 'dark') => void;
 
   // System Tools
+  clearAllInputData: () => void;
   resetToDefaultData: () => void;
   exportDataJson: () => string;
   importDataJson: (jsonData: string) => boolean;
@@ -135,9 +151,73 @@ interface SgsContextType {
     reviewMessage: string;
     reviewUrl: string;
   };
+
+  // Employee & Staff Allocation methods
+  addEmployee: (emp: Omit<Employee, 'id'>) => Employee;
+  updateEmployee: (id: string, updates: Partial<Employee>) => void;
+  deleteEmployee: (id: string) => void;
+  markAttendance: (employeeId: string, date: string, status: AttendanceStatus, notes?: string, checkInTime?: string) => void;
+  updateAttendanceRecord: (employeeId: string, date: string, status: AttendanceStatus, notes?: string, checkInTime?: string, checkOutTime?: string, overtimeHours?: number) => void;
+  recordSalaryPayment: (sal: Omit<SalaryPayment, 'id'>) => SalaryPayment;
+  recordSalaryInstallment: (employeeId: string, month: string, installment: { amount: number; paymentDate: string; paymentMode: PaymentMode; referenceNumber?: string; notes?: string; paidBy?: string }, totalPayableContext?: number) => void;
+  allocateWorkToEmployee: (allocation: Omit<WorkAllocation, 'id'>) => WorkAllocation;
+  removeWorkAllocation: (id: string) => void;
+  shareJobToEmployeeWhatsApp: (employeeId: string, jobCardId: string, workNotes?: string, priorityOrder?: number) => string;
+  convertQuotationToInvoice: (quotationId: string) => Invoice;
+
+  // Module 1 & 2 Job Lifecycle & Priority Enhancements
+  updateJobPriority: (jobId: string, priority: 'P1' | 'P2' | 'P3' | 'P4', priorityOrder: number, reason?: string, changedBy?: string) => void;
+  assignJobToEmployee: (jobId: string, employeeId: string, employeeName: string, instructions?: string, dueDate?: string, expectedDurationHours?: number, assignedBy?: string, reason?: string) => void;
+  bulkAssignJobs: (jobIds: string[], employeeId: string, employeeName: string, instructions?: string) => void;
+  submitWorkCompletion: (jobId: string, completionNotes: NonNullable<JobCard['completionNotes']>) => void;
+  closeJobCard: (jobId: string, closedBy: string, finalNotes?: string) => { success: boolean; error?: string };
+  reopenJobCard: (jobId: string, reason: string, reopenedBy: string) => void;
+
+  // Module 3 Salary Advance Management
+  salaryAdvances: SalaryAdvance[];
+  addSalaryAdvance: (adv: Omit<SalaryAdvance, 'id' | 'repaidAmount' | 'status' | 'repayments'>) => SalaryAdvance;
+  recordAdvanceRepayment: (advanceId: string, amount: number, note?: string) => void;
 }
 
 const STORAGE_KEY = 'spider_grid_solutions_db_v1';
+const FRESH_CLEARED_KEY = `${STORAGE_KEY}_fresh_cleared_v1`;
+
+// One-time automatic fresh wipe for clean start as requested by user ("clear all input data ill chack fresh")
+try {
+  if (typeof window !== 'undefined' && localStorage.getItem(FRESH_CLEARED_KEY) !== 'true' && localStorage.getItem(FRESH_CLEARED_KEY) !== 'demo_loaded') {
+    localStorage.setItem(`${STORAGE_KEY}_customers`, JSON.stringify([]));
+    localStorage.setItem(`${STORAGE_KEY}_jobs`, JSON.stringify([]));
+    localStorage.setItem(`${STORAGE_KEY}_inventory`, JSON.stringify([]));
+    localStorage.setItem(`${STORAGE_KEY}_vendor_bills`, JSON.stringify([]));
+    localStorage.setItem(`${STORAGE_KEY}_stock_tx`, JSON.stringify([]));
+    localStorage.setItem(`${STORAGE_KEY}_invoices`, JSON.stringify([]));
+    localStorage.setItem(`${STORAGE_KEY}_cashflow`, JSON.stringify([]));
+    localStorage.setItem(`${STORAGE_KEY}_lead_sources`, JSON.stringify([]));
+    localStorage.setItem(`${STORAGE_KEY}_vendors`, JSON.stringify([]));
+    localStorage.setItem(`${STORAGE_KEY}_employees`, JSON.stringify([]));
+    localStorage.setItem(`${STORAGE_KEY}_attendance`, JSON.stringify([]));
+    localStorage.setItem(`${STORAGE_KEY}_salaries`, JSON.stringify([]));
+    localStorage.setItem(`${STORAGE_KEY}_work_allocations`, JSON.stringify([]));
+    localStorage.setItem(`${STORAGE_KEY}_salary_advances`, JSON.stringify([]));
+    localStorage.removeItem('sgs_billing_draft');
+    localStorage.setItem(FRESH_CLEARED_KEY, 'true');
+  }
+} catch (e) {
+  console.warn('Failed to initialize fresh clear', e);
+}
+
+function deduplicateById<T extends { id: string }>(items: T[], prefix: string): T[] {
+  const seenIds = new Set<string>();
+  return items.map((item, idx) => {
+    if (!item.id || seenIds.has(item.id)) {
+      const uniqueId = `${item.id || prefix}-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 7)}`;
+      seenIds.add(uniqueId);
+      return { ...item, id: uniqueId };
+    }
+    seenIds.add(item.id);
+    return item;
+  });
+}
 
 const SgsContext = createContext<SgsContextType | undefined>(undefined);
 
@@ -145,63 +225,70 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [customers, setCustomers] = useState<Customer[]>(() => {
     try {
       const stored = localStorage.getItem(`${STORAGE_KEY}_customers`);
-      return stored ? JSON.parse(stored) : SEED_CUSTOMERS;
+      const raw: Customer[] = stored ? JSON.parse(stored) : [];
+      return deduplicateById(raw, 'cust');
     } catch {
-      return SEED_CUSTOMERS;
+      return [];
     }
   });
 
   const [jobCards, setJobCards] = useState<JobCard[]>(() => {
     try {
       const stored = localStorage.getItem(`${STORAGE_KEY}_jobs`);
-      return stored ? JSON.parse(stored) : SEED_JOB_CARDS;
+      const raw: JobCard[] = stored ? JSON.parse(stored) : [];
+      return deduplicateById(raw, 'job');
     } catch {
-      return SEED_JOB_CARDS;
+      return [];
     }
   });
 
   const [vendorBills, setVendorBills] = useState<VendorBill[]>(() => {
     try {
       const stored = localStorage.getItem(`${STORAGE_KEY}_vendor_bills`);
-      return stored ? JSON.parse(stored) : SEED_VENDOR_BILLS;
+      const raw: VendorBill[] = stored ? JSON.parse(stored) : [];
+      return deduplicateById(raw, 'vbill');
     } catch {
-      return SEED_VENDOR_BILLS;
+      return [];
     }
   });
 
   const [inventory, setInventory] = useState<InventoryItem[]>(() => {
     try {
       const stored = localStorage.getItem(`${STORAGE_KEY}_inventory`);
-      return stored ? JSON.parse(stored) : SEED_INVENTORY;
+      const raw: InventoryItem[] = stored ? JSON.parse(stored) : [];
+      return deduplicateById(raw, 'inv');
     } catch {
-      return SEED_INVENTORY;
+      return [];
     }
   });
 
   const [stockTransactions, setStockTransactions] = useState<StockTransaction[]>(() => {
     try {
       const stored = localStorage.getItem(`${STORAGE_KEY}_stock_tx`);
-      return stored ? JSON.parse(stored) : SEED_STOCK_TRANSACTIONS;
+      const raw: StockTransaction[] = stored ? JSON.parse(stored) : [];
+      return deduplicateById(raw, 'stx');
     } catch {
-      return SEED_STOCK_TRANSACTIONS;
+      return [];
     }
   });
 
   const [invoices, setInvoices] = useState<Invoice[]>(() => {
     try {
       const stored = localStorage.getItem(`${STORAGE_KEY}_invoices`);
-      return stored ? JSON.parse(stored) : SEED_INVOICES;
+      const rawInvoices: Invoice[] = stored ? JSON.parse(stored) : [];
+      return deduplicateById(rawInvoices, 'inv-doc');
     } catch {
-      return SEED_INVOICES;
+      return [];
     }
   });
 
   const [cashFlow, setCashFlow] = useState<CashFlowEntry[]>(() => {
     try {
       const stored = localStorage.getItem(`${STORAGE_KEY}_cashflow`);
-      return stored ? JSON.parse(stored) : SEED_CASH_FLOW;
+      const raw: CashFlowEntry[] = stored ? JSON.parse(stored) : [];
+      return deduplicateById(raw, 'cf');
     } catch {
-      return SEED_CASH_FLOW;
+      return [];
     }
   });
 
@@ -229,18 +316,70 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [leadSources, setLeadSources] = useState<LeadSource[]>(() => {
     try {
       const stored = localStorage.getItem(`${STORAGE_KEY}_lead_sources`);
-      return stored ? JSON.parse(stored) : SEED_LEAD_SOURCES;
+      const raw: LeadSource[] = stored ? JSON.parse(stored) : [];
+      return deduplicateById(raw, 'lead');
     } catch {
-      return SEED_LEAD_SOURCES;
+      return [];
     }
   });
 
   const [vendors, setVendors] = useState<Vendor[]>(() => {
     try {
       const stored = localStorage.getItem(`${STORAGE_KEY}_vendors`);
-      return stored ? JSON.parse(stored) : SEED_VENDORS;
+      const raw: Vendor[] = stored ? JSON.parse(stored) : [];
+      return deduplicateById(raw, 'vendor');
     } catch {
-      return SEED_VENDORS;
+      return [];
+    }
+  });
+
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_employees`);
+      const raw: Employee[] = stored ? JSON.parse(stored) : [];
+      return deduplicateById(raw, 'emp');
+    } catch {
+      return [];
+    }
+  });
+
+  const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_attendance`);
+      const raw: AttendanceRecord[] = stored ? JSON.parse(stored) : [];
+      return deduplicateById(raw, 'att');
+    } catch {
+      return [];
+    }
+  });
+
+  const [salaryPayments, setSalaryPayments] = useState<SalaryPayment[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_salaries`);
+      const raw: SalaryPayment[] = stored ? JSON.parse(stored) : [];
+      return deduplicateById(raw, 'sal');
+    } catch {
+      return [];
+    }
+  });
+
+  const [workAllocations, setWorkAllocations] = useState<WorkAllocation[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_work_allocations`);
+      const raw: WorkAllocation[] = stored ? JSON.parse(stored) : [];
+      return deduplicateById(raw, 'alloc');
+    } catch {
+      return [];
+    }
+  });
+
+  const [salaryAdvances, setSalaryAdvances] = useState<SalaryAdvance[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_salary_advances`);
+      const raw: SalaryAdvance[] = stored ? JSON.parse(stored) : [];
+      return deduplicateById(raw, 'adv');
+    } catch {
+      return [];
     }
   });
 
@@ -346,6 +485,46 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Failed to save vendors to localStorage', e);
     }
   }, [vendors]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_employees`, JSON.stringify(employees));
+    } catch (e) {
+      console.warn('Failed to save employees to localStorage', e);
+    }
+  }, [employees]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_attendance`, JSON.stringify(attendanceRecords));
+    } catch (e) {
+      console.warn('Failed to save attendance to localStorage', e);
+    }
+  }, [attendanceRecords]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_salaries`, JSON.stringify(salaryPayments));
+    } catch (e) {
+      console.warn('Failed to save salaries to localStorage', e);
+    }
+  }, [salaryPayments]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_work_allocations`, JSON.stringify(workAllocations));
+    } catch (e) {
+      console.warn('Failed to save work allocations to localStorage', e);
+    }
+  }, [workAllocations]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_salary_advances`, JSON.stringify(salaryAdvances));
+    } catch (e) {
+      console.warn('Failed to save salary advances to localStorage', e);
+    }
+  }, [salaryAdvances]);
 
   // Customer handlers
   const addCustomer = (customerData: Omit<Customer, 'id' | 'createdAt' | 'slNo'>): Customer => {
@@ -535,6 +714,10 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return job;
     }));
+
+    if (status === 'work_completed' || status === 'completed' || status === 'delivered') {
+      setWorkAllocations(prev => prev.filter(a => a.jobCardId !== id));
+    }
   };
 
   const updateJobCard = (id: string, updates: Partial<JobCard>) => {
@@ -548,10 +731,15 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return job;
     }));
+
+    if (updates.status === 'work_completed' || updates.status === 'completed' || updates.status === 'delivered') {
+      setWorkAllocations(prev => prev.filter(a => a.jobCardId !== id));
+    }
   };
 
   const deleteJobCard = (id: string) => {
     setJobCards(prev => prev.filter(j => j.id !== id));
+    setWorkAllocations(prev => prev.filter(a => a.jobCardId !== id));
   };
 
   const toggleCallCompleted = (id: string, completed?: boolean) => {
@@ -714,7 +902,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addInventoryItem = (itemData: Omit<InventoryItem, 'id' | 'updatedAt'>): InventoryItem => {
     const newItem: InventoryItem = {
       ...itemData,
-      id: `inv-${Date.now()}`,
+      id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       updatedAt: new Date().toISOString().split('T')[0],
     };
     setInventory(prev => [newItem, ...prev]);
@@ -784,7 +972,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newInvoice: Invoice = {
       ...invoiceData,
       billingFirm: invoiceData.billingFirm || 'sgs',
-      id: `inv-doc-${Date.now()}`,
+      id: `inv-doc-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       purchaseCostTotal,
       manualExtraCost,
       profitAmount,
@@ -908,7 +1096,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const duplicateDoc: Invoice = {
       ...original,
-      id: `inv-doc-${Date.now()}`,
+      id: `inv-doc-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       invoiceNumber: newInvoiceNumber,
       date: new Date().toISOString().split('T')[0],
       paymentStatus: 'unpaid',
@@ -944,19 +1132,715 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCashFlow(prev => [newEntry, ...prev]);
   };
 
-  // System Tools
+  // Convert Quotation directly to Official Tax Invoice
+  const convertQuotationToInvoice = (quotationId: string): Invoice => {
+    const quot = invoices.find(i => i.id === quotationId);
+    if (!quot) throw new Error('Quotation not found');
+
+    const isPandiyan = quot.billingFirm === 'pandiyan';
+    const allNumbers = invoices
+      .filter(i => (isPandiyan ? i.billingFirm === 'pandiyan' : i.billingFirm !== 'pandiyan'))
+      .map(i => {
+        const match = i.invoiceNumber.match(/\d+$/);
+        return match ? parseInt(match[0], 10) : 0;
+      });
+    const quotMatch = quot.invoiceNumber.match(/\d+$/);
+    if (quotMatch) allNumbers.push(parseInt(quotMatch[0], 10));
+    const maxNum = allNumbers.length > 0 ? Math.max(...allNumbers) : (isPandiyan ? 500 : 1042);
+    const nextNum = Math.max(maxNum + 1, 1043);
+    const prefix = isPandiyan ? 'PC-EST-' : (adminSettings.invoicePrefix || 'SGS-INV-');
+    const invNum = `${prefix}${nextNum}`;
+
+    const converted: Invoice = {
+      ...quot,
+      id: quot.id,
+      invoiceNumber: invNum,
+      type: 'invoice',
+      date: new Date().toISOString().split('T')[0],
+      notes: quot.notes || (isPandiyan ? 'Converted from Quotation' : 'Converted from Quotation - Spares carry 1-year warranty.'),
+    };
+
+    setInvoices(prev => prev.map(i => i.id === quotationId ? converted : i));
+
+    if (quot.jobCardId) {
+      updateJobCard(quot.jobCardId, { invoiceId: converted.id, status: 'billed' as any });
+      addJobTimelineEvent(quot.jobCardId, {
+        stage: 'billed',
+        stageLabel: `Quotation Converted to Invoice #${converted.invoiceNumber}`,
+        notes: `Converted to Tax Invoice #${converted.invoiceNumber} for amount ₹${converted.grandTotal.toLocaleString('en-IN')}`,
+        timestamp: new Date().toISOString(),
+        performedBy: 'Admin',
+      });
+    }
+
+    if (converted.paidAmount > 0) {
+      addCashFlowEntry({
+        date: converted.date,
+        type: 'income',
+        category: 'Service Charge',
+        description: `Invoice ${converted.invoiceNumber} - ${converted.customerName}`,
+        amount: converted.paidAmount,
+        paymentMode: converted.paymentMode || 'upi',
+        referenceId: converted.id,
+        referenceNumber: converted.paymentReference || '',
+      });
+    }
+
+    return converted;
+  };
+
+  // Employee Management Handlers
+  const addEmployee = (empData: Omit<Employee, 'id'>): Employee => {
+    const newEmp: Employee = {
+      ...empData,
+      id: `emp-${Date.now()}`,
+    };
+    setEmployees(prev => [newEmp, ...prev]);
+    return newEmp;
+  };
+
+  const updateEmployee = (id: string, updates: Partial<Employee>) => {
+    setEmployees(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
+  };
+
+  const deleteEmployee = (id: string) => {
+    setEmployees(prev => prev.filter(e => e.id !== id));
+  };
+
+  const markAttendance = (
+    employeeId: string, 
+    date: string, 
+    status: AttendanceStatus, 
+    notes?: string, 
+    checkInTime?: string
+  ) => {
+    setAttendanceRecords(prev => {
+      const existing = prev.find(a => a.employeeId === employeeId && a.date === date);
+      if (existing) {
+        return prev.map(a => a.id === existing.id ? {
+          ...a,
+          status,
+          notes: notes !== undefined ? notes : a.notes,
+          checkInTime: checkInTime !== undefined ? checkInTime : a.checkInTime,
+        } : a);
+      }
+      return [
+        {
+          id: `att-${Date.now()}`,
+          employeeId,
+          date,
+          status,
+          notes,
+          checkInTime: checkInTime || '09:00 AM',
+        },
+        ...prev,
+      ];
+    });
+  };
+
+  const updateAttendanceRecord = (
+    employeeId: string,
+    date: string,
+    status: AttendanceStatus,
+    notes?: string,
+    checkInTime?: string,
+    checkOutTime?: string,
+    overtimeHours?: number
+  ) => {
+    setAttendanceRecords(prev => {
+      const existing = prev.find(a => a.employeeId === employeeId && a.date === date);
+      if (existing) {
+        return prev.map(a => a.id === existing.id ? {
+          ...a,
+          status,
+          notes: notes !== undefined ? notes : a.notes,
+          checkInTime: checkInTime !== undefined ? checkInTime : a.checkInTime,
+          checkOutTime: checkOutTime !== undefined ? checkOutTime : a.checkOutTime,
+          overtimeHours: overtimeHours !== undefined ? overtimeHours : a.overtimeHours,
+        } : a);
+      }
+      return [
+        {
+          id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          employeeId,
+          date,
+          status,
+          notes,
+          checkInTime: checkInTime || '09:00 AM',
+          checkOutTime,
+          overtimeHours,
+        },
+        ...prev,
+      ];
+    });
+  };
+
+  const recordSalaryPayment = (salData: Omit<SalaryPayment, 'id'>): SalaryPayment => {
+    const newSal: SalaryPayment = {
+      ...salData,
+      id: `sal-${Date.now()}`,
+    };
+    setSalaryPayments(prev => [newSal, ...prev]);
+    
+    // Add to cashflow if marked paid
+    if (newSal.status === 'paid' && newSal.netPaid > 0) {
+      const emp = employees.find(e => e.id === newSal.employeeId);
+      addCashFlowEntry({
+        date: newSal.paymentDate,
+        type: 'expense',
+        category: 'Salary & Staff Wages',
+        description: `Staff Salary: ${emp?.name || 'Employee'} (${newSal.month})`,
+        amount: newSal.netPaid,
+        paymentMode: newSal.paymentMode || 'upi',
+        referenceId: newSal.id,
+        referenceNumber: newSal.referenceNumber || '',
+      });
+    }
+
+    return newSal;
+  };
+
+  const recordSalaryInstallment = (
+    employeeId: string,
+    month: string,
+    installment: {
+      amount: number;
+      paymentDate: string;
+      paymentMode: PaymentMode;
+      referenceNumber?: string;
+      notes?: string;
+      paidBy?: string;
+    },
+    totalPayableContext?: number
+  ) => {
+    const installmentItem = {
+      id: `pay-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      amount: installment.amount,
+      paymentDate: installment.paymentDate,
+      paymentMode: installment.paymentMode,
+      referenceNumber: installment.referenceNumber,
+      notes: installment.notes,
+      paidBy: installment.paidBy || 'Admin',
+    };
+
+    setSalaryPayments(prev => {
+      const existing = prev.find(s => s.employeeId === employeeId && s.month === month);
+      if (existing) {
+        const updatedPayments = [...(existing.payments || []), installmentItem];
+        const newTotalPaid = updatedPayments.reduce((sum, p) => sum + p.amount, 0);
+        const totalDue = existing.calculatedSalary + (existing.bonus || 0) - (existing.advanceDeduction || 0);
+        const newStatus: 'paid' | 'partial' | 'pending' = newTotalPaid >= totalDue ? 'paid' : (newTotalPaid > 0 ? 'partial' : 'pending');
+
+        return prev.map(s => s.id === existing.id ? {
+          ...s,
+          payments: updatedPayments,
+          netPaid: newTotalPaid,
+          status: newStatus,
+          paymentDate: installment.paymentDate,
+          paymentMode: installment.paymentMode,
+          referenceNumber: installment.referenceNumber || s.referenceNumber,
+        } : s);
+      } else {
+        const emp = employees.find(e => e.id === employeeId);
+        const base = totalPayableContext || emp?.monthlySalary || (emp?.dailySalary ? emp.dailySalary * 26 : 18000);
+        const newStatus: 'paid' | 'partial' | 'pending' = installment.amount >= base ? 'paid' : 'partial';
+        const newRecord: SalaryPayment = {
+          id: `sal-${Date.now()}`,
+          employeeId,
+          month,
+          baseSalary: base,
+          daysPresent: 26,
+          halfDays: 0,
+          absentDays: 0,
+          calculatedSalary: base,
+          advanceDeduction: 0,
+          bonus: 0,
+          netPaid: installment.amount,
+          paymentDate: installment.paymentDate,
+          paymentMode: installment.paymentMode,
+          referenceNumber: installment.referenceNumber,
+          status: newStatus,
+          notes: installment.notes || `Disbursed ₹${installment.amount}`,
+          payments: [installmentItem],
+        };
+        return [newRecord, ...prev];
+      }
+    });
+
+    // Also record cashflow outflow
+    const emp = employees.find(e => e.id === employeeId);
+    addCashFlowEntry({
+      date: installment.paymentDate,
+      type: 'expense',
+      category: 'Salary & Staff Wages',
+      description: `Staff Salary Payout: ${emp?.name || 'Staff'} (${month}) - ₹${installment.amount}`,
+      amount: installment.amount,
+      paymentMode: installment.paymentMode || 'upi',
+      referenceNumber: installment.referenceNumber || '',
+    });
+  };
+
+  const allocateWorkToEmployee = (allocationData: Omit<WorkAllocation, 'id'>): WorkAllocation => {
+    const newAlloc: WorkAllocation = {
+      ...allocationData,
+      id: `alloc-${Date.now()}`,
+    };
+    setWorkAllocations(prev => [newAlloc, ...prev]);
+    return newAlloc;
+  };
+
+  const removeWorkAllocation = (id: string) => {
+    setWorkAllocations(prev => prev.filter(a => a.id !== id));
+  };
+
+  const shareJobToEmployeeWhatsApp = (
+    employeeId: string, 
+    jobCardId: string, 
+    workNotes?: string, 
+    priorityOrder?: number
+  ): string => {
+    const emp = employees.find(e => e.id === employeeId);
+    const job = jobCards.find(j => j.id === jobCardId);
+    if (!emp || !job) return '';
+
+    const priority = priorityOrder || 1;
+    const notes = workNotes || 'Please diagnose and service this device with priority.';
+
+    // Update job card
+    updateJobCard(jobCardId, {
+      assignedEmployeeId: emp.id,
+      assignedTechnician: emp.name,
+      workOrderPriority: priority,
+      workOrderNotes: notes,
+    });
+
+    // Update or add work allocation
+    setWorkAllocations(prev => {
+      const existing = prev.find(a => a.employeeId === emp.id && a.jobCardId === jobCardId);
+      if (existing) {
+        return prev.map(a => a.id === existing.id ? {
+          ...a,
+          priorityOrder: priority,
+          notes,
+          sharedViaWhatsAppAt: new Date().toISOString(),
+          status: 'assigned',
+        } : a);
+      }
+      return [
+        {
+          id: `alloc-${Date.now()}`,
+          employeeId: emp.id,
+          jobCardId,
+          allocatedDate: new Date().toISOString().split('T')[0],
+          priorityOrder: priority,
+          notes,
+          sharedViaWhatsAppAt: new Date().toISOString(),
+          status: 'assigned',
+        },
+        ...prev,
+      ];
+    });
+
+    // Add to Job Card Timeline
+    addJobTimelineEvent(jobCardId, {
+      stage: 'in_process',
+      stageLabel: `Work Allocated to ${emp.name} (Priority #${priority})`,
+      notes: `Technician: ${emp.name} (${emp.phone}) | Priority Order: #${priority} | Instructions: ${notes}`,
+      performedBy: emp.name,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Build WhatsApp message
+    const msg = `*SPIDER GRID SOLUTIONS (SGS) - WORK ALLOCATION ORDER*
+🛠️ *Job Assignment Order: #${priority}*
+
+Hello *${emp.name}*, you have been assigned a workshop/field service call.
+
+📋 *Job Details:*
+• *Job ID:* ${job.jobId}
+• *Device:* ${job.deviceBrand} (${job.category})
+• *Serial No:* ${job.serialNumber || 'N/A'}
+• *Current Status:* ${job.status.toUpperCase()}
+• *Reported Problem:* ${job.issueDescription}
+
+👤 *Customer Info:*
+• *Name:* ${job.customerName}
+• *Phone:* ${job.customerPhone}
+• *Location / Area:* ${job.customerArea || 'Madurai'}
+
+🎯 *Work To Do / Instructions:*
+${notes}
+
+${job.estimatedDelivery ? `⏳ *Target Delivery / Completion:* ${job.estimatedDelivery}` : ''}
+${job.estimatedCost ? `💰 *Est. Quote:* ₹${job.estimatedCost}` : ''}
+
+Please update your diagnostic notes and call status upon inspection.
+— *Spider Grid Solutions Workshop*`;
+
+    let cleanPhone = emp.phone.replace(/[^0-9]/g, '');
+    if (cleanPhone.length === 10) cleanPhone = `91${cleanPhone}`;
+    const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
+    window.open(url, '_blank');
+    return url;
+  };
+
+  // Module 1 & 2: Priority Ordering & Timeline Audit
+  const updateJobPriority = (
+    jobId: string, 
+    priority: 'P1' | 'P2' | 'P3' | 'P4', 
+    priorityOrder: number, 
+    reason?: string, 
+    changedBy: string = 'Office Staff'
+  ) => {
+    setJobCards(prev => prev.map(job => {
+      if (job.id === jobId) {
+        const oldPriority = job.priority || 'P3';
+        const priorityLabels: Record<string, string> = {
+          P1: 'Emergency P1',
+          P2: 'High P2',
+          P3: 'Normal P3',
+          P4: 'Low P4'
+        };
+        const updatedJob: JobCard = {
+          ...job,
+          priority,
+          priorityOrder,
+          priorityChangeReason: reason || job.priorityChangeReason,
+          priorityChangedBy: changedBy,
+          priorityChangedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString().split('T')[0],
+        };
+        const timelineEvent = {
+          id: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          stage: 'in_process' as const,
+          stageLabel: `Priority set to ${priorityLabels[priority]} (Seq #${priorityOrder})`,
+          notes: `Priority changed from ${priorityLabels[oldPriority] || oldPriority} to ${priorityLabels[priority]} (Seq #${priorityOrder})${reason ? ` - Reason: ${reason}` : ''}`,
+          performedBy: changedBy,
+          timestamp: new Date().toISOString(),
+        };
+        updatedJob.timeline = [...(job.timeline || []), timelineEvent];
+        return updatedJob;
+      }
+      return job;
+    }));
+  };
+
+  // Module 1 & 2: Employee Assignment & Reassignment with Audit
+  const assignJobToEmployee = (
+    jobId: string,
+    employeeId: string,
+    employeeName: string,
+    instructions?: string,
+    dueDate?: string,
+    expectedDurationHours?: number,
+    assignedBy: string = 'Office Staff',
+    reason?: string
+  ) => {
+    setJobCards(prev => prev.map(job => {
+      if (job.id === jobId) {
+        const wasReassigned = Boolean(job.assignedEmployeeId && job.assignedEmployeeId !== employeeId);
+        const previousTech = job.assignedTechnician;
+        const updatedJob: JobCard = {
+          ...job,
+          assignedEmployeeId: employeeId,
+          assignedTechnician: employeeName,
+          assignedDate: new Date().toISOString(),
+          assignedBy,
+          workOrderNotes: instructions || job.workOrderNotes,
+          estimatedDelivery: dueDate || job.estimatedDelivery,
+          estimatedDurationHours: expectedDurationHours !== undefined ? expectedDurationHours : job.estimatedDurationHours,
+          status: job.status === 'received' ? 'in_process' : job.status,
+          reassignReason: wasReassigned ? reason : job.reassignReason,
+          updatedAt: new Date().toISOString().split('T')[0],
+        };
+
+        const timelineEvent = {
+          id: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          stage: 'in_process' as const,
+          stageLabel: wasReassigned ? `Reassigned to ${employeeName}` : `Assigned to ${employeeName}`,
+          notes: wasReassigned 
+            ? `Reassigned from ${previousTech || 'unassigned'} to ${employeeName}. Reason: ${reason || 'Workload rebalance'}. Instructions: ${instructions || 'N/A'}`
+            : `Allocated to ${employeeName}. Scheduled target: ${dueDate || 'Standard'}. Instructions: ${instructions || 'Diagnose and repair'}. Estimated duration: ${expectedDurationHours || 2}h`,
+          performedBy: assignedBy,
+          timestamp: new Date().toISOString(),
+        };
+        updatedJob.timeline = [...(job.timeline || []), timelineEvent];
+        return updatedJob;
+      }
+      return job;
+    }));
+
+    setWorkAllocations(prev => {
+      const existing = prev.find(a => a.jobCardId === jobId);
+      if (existing) {
+        return prev.map(a => a.id === existing.id ? {
+          ...a,
+          employeeId,
+          notes: instructions || a.notes,
+          status: 'assigned',
+        } : a);
+      }
+      return [
+        {
+          id: `alloc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          employeeId,
+          jobCardId: jobId,
+          allocatedDate: new Date().toISOString().split('T')[0],
+          priorityOrder: 1,
+          notes: instructions,
+          status: 'assigned',
+        },
+        ...prev
+      ];
+    });
+  };
+
+  const bulkAssignJobs = (
+    jobIds: string[],
+    employeeId: string,
+    employeeName: string,
+    instructions?: string
+  ) => {
+    jobIds.forEach(id => {
+      assignJobToEmployee(id, employeeId, employeeName, instructions);
+    });
+  };
+
+  // Module 2: Work Completion Notes
+  const submitWorkCompletion = (
+    jobId: string,
+    completionNotes: NonNullable<JobCard['completionNotes']>
+  ) => {
+    setJobCards(prev => prev.map(job => {
+      if (job.id === jobId) {
+        const updatedJob: JobCard = {
+          ...job,
+          status: 'work_completed',
+          completionNotes: {
+            ...completionNotes,
+            completedAt: new Date().toISOString(),
+          },
+          updatedAt: new Date().toISOString().split('T')[0],
+        };
+        const timelineEvent = {
+          id: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          stage: 'work_completed' as const,
+          stageLabel: 'Work Completed by Technician',
+          notes: `Work Done: ${completionNotes.workPerformed || 'Finished'}\nRoot Cause: ${completionNotes.diagnosis || 'Standard'}\nSolution: ${completionNotes.solutionProvided || 'N/A'}\nSpare Parts: ${completionNotes.sparePartsUsed || 'None'}\nCompleted by: ${completionNotes.completedBy || 'Technician'}`,
+          performedBy: completionNotes.completedBy || 'Technician',
+          timestamp: new Date().toISOString(),
+        };
+        updatedJob.timeline = [...(job.timeline || []), timelineEvent];
+        return updatedJob;
+      }
+      return job;
+    }));
+  };
+
+  // Module 2: Job Closure with Verification
+  const closeJobCard = (jobId: string, closedBy: string, finalNotes?: string) => {
+    const job = jobCards.find(j => j.id === jobId);
+    if (!job) return { success: false, error: 'Job card not found' };
+
+    setJobCards(prev => prev.map(j => {
+      if (j.id === jobId) {
+        const updated: JobCard = {
+          ...j,
+          status: 'delivered',
+          closureDetails: {
+            closedAt: new Date().toISOString(),
+            closedBy,
+            finalNotes: finalNotes || 'Job verified and closed administratively.',
+            verifiedBy: closedBy,
+            verifiedAt: new Date().toISOString(),
+          },
+          updatedAt: new Date().toISOString().split('T')[0],
+        };
+        const timelineEvent = {
+          id: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          stage: 'call_close' as const,
+          stageLabel: 'Job Verified & Closed',
+          notes: `Closed by: ${closedBy}. Verification remarks: ${finalNotes || 'Service completed, client confirmed.'}`,
+          performedBy: closedBy,
+          timestamp: new Date().toISOString(),
+        };
+        updated.timeline = [...(j.timeline || []), timelineEvent];
+        return updated;
+      }
+      return j;
+    }));
+
+    return { success: true };
+  };
+
+  // Module 2: Reopen Closed Job
+  const reopenJobCard = (jobId: string, reason: string, reopenedBy: string) => {
+    setJobCards(prev => prev.map(job => {
+      if (job.id === jobId) {
+        const updated: JobCard = {
+          ...job,
+          status: 'in_process',
+          closureDetails: {
+            ...job.closureDetails,
+            reopenedAt: new Date().toISOString(),
+            reopenedReason: reason,
+            reopenedBy,
+          },
+          updatedAt: new Date().toISOString().split('T')[0],
+        };
+        const timelineEvent = {
+          id: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+          stage: 'in_process' as const,
+          stageLabel: 'Job Reopened for Warranty / Repeat Complaint',
+          notes: `Reopened by: ${reopenedBy}. Reason: ${reason}`,
+          performedBy: reopenedBy,
+          timestamp: new Date().toISOString(),
+        };
+        updated.timeline = [...(job.timeline || []), timelineEvent];
+        return updated;
+      }
+      return job;
+    }));
+  };
+
+  // Module 3: Salary Advances
+  const addSalaryAdvance = (adv: Omit<SalaryAdvance, 'id' | 'repaidAmount' | 'status' | 'repayments'>): SalaryAdvance => {
+    const newAdv: SalaryAdvance = {
+      ...adv,
+      id: `adv-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      repaidAmount: 0,
+      status: 'active',
+      repayments: [],
+    };
+    setSalaryAdvances(prev => [newAdv, ...prev]);
+    return newAdv;
+  };
+
+  const recordAdvanceRepayment = (advanceId: string, amount: number, note?: string) => {
+    setSalaryAdvances(prev => prev.map(adv => {
+      if (adv.id === advanceId) {
+        const nextRepaid = (adv.repaidAmount || 0) + amount;
+        const isFullyRepaid = nextRepaid >= adv.amount;
+        const newRepayment = {
+          date: new Date().toISOString().split('T')[0],
+          amount,
+          note: note || 'Salary deduction / settlement',
+        };
+        return {
+          ...adv,
+          repaidAmount: nextRepaid,
+          status: isFullyRepaid ? ('repaid' as const) : ('active' as const),
+          repayments: [...(adv.repayments || []), newRepayment],
+        };
+      }
+      return adv;
+    }));
+  };
+
+  // System Tools - Clear All Input Data (Start 100% Fresh with 0 records)
+  const clearAllInputData = () => {
+    setCustomers([]);
+    setJobCards([]);
+    setInventory([]);
+    setVendorBills([]);
+    setStockTransactions([]);
+    setInvoices([]);
+    setCashFlow([]);
+    setLeadSources([]);
+    setVendors([]);
+    setEmployees([]);
+    setAttendanceRecords([]);
+    setSalaryPayments([]);
+    setWorkAllocations([]);
+    setSalaryAdvances([]);
+
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_customers`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_jobs`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_inventory`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_vendor_bills`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_stock_tx`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_invoices`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_cashflow`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_lead_sources`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_vendors`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_employees`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_attendance`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_salaries`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_work_allocations`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_salary_advances`, JSON.stringify([]));
+      localStorage.setItem(FRESH_CLEARED_KEY, 'true');
+
+      try {
+        localStorage.removeItem('sgs_billing_draft');
+      } catch {}
+    } catch (e) {
+      console.warn('Failed to clear localStorage keys', e);
+    }
+  };
+
+  // System Tools - Factory Defaults Demo Reset
   const resetToDefaultData = () => {
-    setCustomers(SEED_CUSTOMERS);
-    setJobCards(SEED_JOB_CARDS);
-    setInventory(SEED_INVENTORY);
-    setVendorBills(SEED_VENDOR_BILLS);
-    setStockTransactions(SEED_STOCK_TRANSACTIONS);
-    setInvoices(SEED_INVOICES);
-    setCashFlow(SEED_CASH_FLOW);
-    setAdminSettings(DEFAULT_ADMIN_SETTINGS);
-    setLeadSources(SEED_LEAD_SOURCES);
-    setVendors(SEED_VENDORS);
-    localStorage.clear();
+    // Deep clone seeds to ensure no in-memory mutation contaminates the fresh reset
+    const freshCustomers = JSON.parse(JSON.stringify(SEED_CUSTOMERS));
+    const freshJobs = JSON.parse(JSON.stringify(SEED_JOB_CARDS));
+    const freshInventory = JSON.parse(JSON.stringify(SEED_INVENTORY));
+    const freshVendorBills = JSON.parse(JSON.stringify(SEED_VENDOR_BILLS));
+    const freshStockTx = JSON.parse(JSON.stringify(SEED_STOCK_TRANSACTIONS));
+    const freshInvoices = JSON.parse(JSON.stringify(SEED_INVOICES));
+    const freshCashFlow = JSON.parse(JSON.stringify(SEED_CASH_FLOW));
+    const freshAdminSettings = JSON.parse(JSON.stringify(DEFAULT_ADMIN_SETTINGS));
+    const freshLeadSources = JSON.parse(JSON.stringify(SEED_LEAD_SOURCES));
+    const freshVendors = JSON.parse(JSON.stringify(SEED_VENDORS));
+    const freshEmployees = JSON.parse(JSON.stringify(SEED_EMPLOYEES));
+    const freshAttendance = JSON.parse(JSON.stringify(SEED_ATTENDANCE));
+    const freshSalaries = JSON.parse(JSON.stringify(SEED_SALARIES));
+    const freshWorkAllocations = JSON.parse(JSON.stringify(SEED_WORK_ALLOCATIONS));
+    const freshSalaryAdvances = JSON.parse(JSON.stringify(SEED_SALARY_ADVANCES));
+
+    setCustomers(freshCustomers);
+    setJobCards(freshJobs);
+    setInventory(freshInventory);
+    setVendorBills(freshVendorBills);
+    setStockTransactions(freshStockTx);
+    setInvoices(freshInvoices);
+    setCashFlow(freshCashFlow);
+    setAdminSettings(freshAdminSettings);
+    setLeadSources(freshLeadSources);
+    setVendors(freshVendors);
+    setEmployees(freshEmployees);
+    setAttendanceRecords(freshAttendance);
+    setSalaryPayments(freshSalaries);
+    setWorkAllocations(freshWorkAllocations);
+    setSalaryAdvances(freshSalaryAdvances);
+
+    try {
+      localStorage.clear();
+
+      localStorage.setItem(`${STORAGE_KEY}_customers`, JSON.stringify(freshCustomers));
+      localStorage.setItem(`${STORAGE_KEY}_jobs`, JSON.stringify(freshJobs));
+      localStorage.setItem(`${STORAGE_KEY}_inventory`, JSON.stringify(freshInventory));
+      localStorage.setItem(`${STORAGE_KEY}_vendor_bills`, JSON.stringify(freshVendorBills));
+      localStorage.setItem(`${STORAGE_KEY}_stock_tx`, JSON.stringify(freshStockTx));
+      localStorage.setItem(`${STORAGE_KEY}_invoices`, JSON.stringify(freshInvoices));
+      localStorage.setItem(`${STORAGE_KEY}_cashflow`, JSON.stringify(freshCashFlow));
+      localStorage.setItem(`${STORAGE_KEY}_admin_settings`, JSON.stringify(freshAdminSettings));
+      localStorage.setItem(`${STORAGE_KEY}_lead_sources`, JSON.stringify(freshLeadSources));
+      localStorage.setItem(`${STORAGE_KEY}_vendors`, JSON.stringify(freshVendors));
+      localStorage.setItem(`${STORAGE_KEY}_employees`, JSON.stringify(freshEmployees));
+      localStorage.setItem(`${STORAGE_KEY}_attendance`, JSON.stringify(freshAttendance));
+      localStorage.setItem(`${STORAGE_KEY}_salaries`, JSON.stringify(freshSalaries));
+      localStorage.setItem(`${STORAGE_KEY}_work_allocations`, JSON.stringify(freshWorkAllocations));
+      localStorage.setItem(`${STORAGE_KEY}_salary_advances`, JSON.stringify(freshSalaryAdvances));
+      localStorage.setItem(FRESH_CLEARED_KEY, 'demo_loaded');
+
+      // Clear any pending billing drafts or temporary caches
+      try {
+        localStorage.removeItem('sgs_billing_draft');
+      } catch {}
+    } catch (e) {
+      console.warn('Failed to reset localStorage keys', e);
+    }
   };
 
   const exportDataJson = () => {
@@ -973,6 +1857,10 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cashFlow,
       leadSources,
       vendors,
+      employees,
+      attendanceRecords,
+      salaryPayments,
+      workAllocations,
     };
     return JSON.stringify(fullBackup, null, 2);
   };
@@ -990,6 +1878,10 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (parsed.cashFlow && Array.isArray(parsed.cashFlow)) setCashFlow(parsed.cashFlow);
       if (parsed.leadSources && Array.isArray(parsed.leadSources)) setLeadSources(parsed.leadSources);
       if (parsed.vendors && Array.isArray(parsed.vendors)) setVendors(parsed.vendors);
+      if (parsed.employees && Array.isArray(parsed.employees)) setEmployees(parsed.employees);
+      if (parsed.attendanceRecords && Array.isArray(parsed.attendanceRecords)) setAttendanceRecords(parsed.attendanceRecords);
+      if (parsed.salaryPayments && Array.isArray(parsed.salaryPayments)) setSalaryPayments(parsed.salaryPayments);
+      if (parsed.workAllocations && Array.isArray(parsed.workAllocations)) setWorkAllocations(parsed.workAllocations);
       return true;
     } catch (e) {
       console.error('Invalid JSON file format for import:', e);
@@ -1067,6 +1959,11 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         adminSettings,
         leadSources,
         vendors,
+        employees,
+        attendanceRecords,
+        salaryPayments,
+        workAllocations,
+        salaryAdvances,
         addCustomer,
         updateCustomer,
         deleteCustomer,
@@ -1102,9 +1999,29 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         cancelInvoice,
         duplicateInvoice,
         deleteInvoice,
+        convertQuotationToInvoice,
         addCashFlowEntry,
+        addEmployee,
+        updateEmployee,
+        deleteEmployee,
+        markAttendance,
+        updateAttendanceRecord,
+        recordSalaryPayment,
+        recordSalaryInstallment,
+        allocateWorkToEmployee,
+        removeWorkAllocation,
+        shareJobToEmployeeWhatsApp,
+        updateJobPriority,
+        assignJobToEmployee,
+        bulkAssignJobs,
+        submitWorkCompletion,
+        closeJobCard,
+        reopenJobCard,
+        addSalaryAdvance,
+        recordAdvanceRepayment,
         updateAdminSettings,
         resetAdminSettings,
+        clearAllInputData,
         resetToDefaultData,
         exportDataJson,
         importDataJson,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   CreditCard, 
   IndianRupee, 
@@ -30,7 +30,9 @@ import {
   ShieldCheck,
   Check,
   Layers,
-  ChevronDown
+  ChevronDown,
+  ArrowLeft,
+  Save
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { Invoice, InvoiceItem, CashFlowEntry, PaymentMode, BillingFirm, BillingTheme, PandiyanBillingTheme, InventoryItem, Customer } from '../types';
@@ -44,7 +46,12 @@ import {
 } from '../utils/brandAssets';
 import { calculateFromInclusiveRate, calculateFromBaseRate, GST_PRESET_RATES } from '../utils/gstUtils';
 
-export const BillingCashFlow: React.FC = () => {
+interface BillingCashFlowProps {
+  initialJobId?: string | null;
+  onClearInitialJobId?: () => void;
+}
+
+export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, onClearInitialJobId }) => {
   const { 
     customers, 
     jobCards, 
@@ -56,6 +63,7 @@ export const BillingCashFlow: React.FC = () => {
     cancelInvoice, 
     duplicateInvoice, 
     deleteInvoice, 
+    convertQuotationToInvoice,
     addCashFlowEntry, 
     adminSettings, 
     inventory,
@@ -66,6 +74,7 @@ export const BillingCashFlow: React.FC = () => {
 
   // Tabs
   const [activeTab, setActiveTab] = useState<'invoices' | 'cashflow'>('invoices');
+  const [docTypeFilter, setDocTypeFilter] = useState<'all' | 'invoice' | 'quotation'>('all');
 
   // Modals
   const [isCreateInvoiceOpen, setIsCreateInvoiceOpen] = useState(false);
@@ -74,6 +83,8 @@ export const BillingCashFlow: React.FC = () => {
   const [isAddExpenseOpen, setIsAddExpenseOpen] = useState(false);
   const [printableInvoice, setPrintableInvoice] = useState<Invoice | null>(null);
   const [zoomedBillPhoto, setZoomedBillPhoto] = useState<string | null>(null);
+  const [confirmConvertModal, setConfirmConvertModal] = useState<Invoice | null>(null);
+  const [convertToast, setConvertToast] = useState<string | null>(null);
 
   // Form State: Create / Edit Invoice / Quotation
   const [invoiceType, setInvoiceType] = useState<'invoice' | 'quotation'>('invoice');
@@ -101,6 +112,8 @@ export const BillingCashFlow: React.FC = () => {
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('upi');
   const [paymentReference, setPaymentReference] = useState('');
   const [paidAmount, setPaidAmount] = useState<number>(850);
+  const [discount, setDiscount] = useState<number>(0);
+  const [roundOff, setRoundOff] = useState<number>(0);
   const [manualExtraCost, setManualExtraCost] = useState<number>(0);
   const [invoiceNotes, setInvoiceNotes] = useState('Thank you for trusting Spider Grid Solutions! Spares carry 1-year warranty.');
   const [attachedBillImage, setAttachedBillImage] = useState<string | null>(null);
@@ -136,16 +149,174 @@ export const BillingCashFlow: React.FC = () => {
 
   const netBalance = totalIncome - totalExpense;
 
-  // Profit & Tax calculations for form
-  const subtotalCalc = docItems.reduce((acc, it) => acc + (it.amount || 0), 0);
+  // Profit & Tax calculations for form - Amount as per exact value (no integer rounding)
+  const subtotalCalc = Number(docItems.reduce((acc, it) => acc + (it.amount || 0), 0).toFixed(2));
   const totalItemTaxCalc = docItems.reduce((acc, it) => {
     if (billingFirm === 'pandiyan') return 0;
     if (it.gstAmount !== undefined && it.gstAmount >= 0) return acc + it.gstAmount;
     const itPct = it.gstPercent ?? gstPercent ?? 0;
-    return acc + Math.round(((it.amount || 0) * itPct) / 100);
+    return acc + (((it.amount || 0) * itPct) / 100);
   }, 0);
-  const taxCalc = billingFirm === 'pandiyan' ? 0 : Math.round(totalItemTaxCalc);
-  const grandTotalCalc = Math.round(subtotalCalc + taxCalc);
+  const taxCalc = billingFirm === 'pandiyan' ? 0 : Number(totalItemTaxCalc.toFixed(2));
+  const grandTotalCalc = Number(Math.max(0, subtotalCalc + taxCalc - (discount || 0) + (roundOff || 0)).toFixed(2));
+
+  // Auto-fill and keep paidAmount in sync when paymentStatus is 'paid'
+  useEffect(() => {
+    if (paymentStatus === 'paid') {
+      setPaidAmount(grandTotalCalc);
+    }
+  }, [grandTotalCalc, paymentStatus]);
+
+  // Draft Auto-Save States & Handlers
+  const [draftSavedTime, setDraftSavedTime] = useState<string | null>(null);
+  const [hasPendingDraft, setHasPendingDraft] = useState<boolean>(() => {
+    try {
+      return !!localStorage.getItem('sgs_billing_draft');
+    } catch {
+      return false;
+    }
+  });
+
+  // Continuous Auto-Save when form is open
+  useEffect(() => {
+    if (!isCreateInvoiceOpen) return;
+    const timer = setTimeout(() => {
+      if (custName.trim() || docItems.some(it => it.description.trim())) {
+        const draftData = {
+          editingInvoiceId,
+          invoiceType,
+          billingFirm,
+          docTheme,
+          pandiyanDocTheme,
+          selectedCustomerId,
+          customerSearchInput,
+          custName,
+          custPhone,
+          custArea,
+          selectedJobId,
+          docDate,
+          docItems,
+          gstPercent,
+          paymentStatus,
+          paymentMode,
+          paymentReference,
+          paidAmount,
+          discount,
+          roundOff,
+          manualExtraCost,
+          invoiceNotes,
+          savedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        };
+        try {
+          localStorage.setItem('sgs_billing_draft', JSON.stringify(draftData));
+          setDraftSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+          setHasPendingDraft(true);
+        } catch (e) {
+          console.warn('Failed to auto-save billing draft', e);
+        }
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [
+    isCreateInvoiceOpen,
+    editingInvoiceId,
+    invoiceType,
+    billingFirm,
+    docTheme,
+    pandiyanDocTheme,
+    selectedCustomerId,
+    customerSearchInput,
+    custName,
+    custPhone,
+    custArea,
+    selectedJobId,
+    docDate,
+    docItems,
+    gstPercent,
+    paymentStatus,
+    paymentMode,
+    paymentReference,
+    paidAmount,
+    discount,
+    roundOff,
+    manualExtraCost,
+    invoiceNotes,
+  ]);
+
+  const handleCloseWithAutoSave = () => {
+    if (custName.trim() || docItems.length > 0) {
+      const draftData = {
+        editingInvoiceId,
+        invoiceType,
+        billingFirm,
+        docTheme,
+        pandiyanDocTheme,
+        selectedCustomerId,
+        customerSearchInput,
+        custName,
+        custPhone,
+        custArea,
+        selectedJobId,
+        docDate,
+        docItems,
+        gstPercent,
+        paymentStatus,
+        paymentMode,
+        paymentReference,
+        paidAmount,
+        discount,
+        roundOff,
+        manualExtraCost,
+        invoiceNotes,
+        savedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
+      try {
+        localStorage.setItem('sgs_billing_draft', JSON.stringify(draftData));
+        setHasPendingDraft(true);
+      } catch (e) {
+        console.warn('Failed to save draft on close', e);
+      }
+    }
+    setIsCreateInvoiceOpen(false);
+  };
+
+  const handleRestoreDraft = () => {
+    try {
+      const saved = localStorage.getItem('sgs_billing_draft');
+      if (!saved) return;
+      const d = JSON.parse(saved);
+      setEditingInvoiceId(d.editingInvoiceId || null);
+      setInvoiceType(d.invoiceType || 'invoice');
+      setBillingFirm(d.billingFirm || 'sgs');
+      setDocTheme(d.docTheme || adminSettings.billingTheme || 'modern_navy');
+      setPandiyanDocTheme(d.pandiyanDocTheme || adminSettings.pandiyanBillingTheme || 'warm_amber');
+      setSelectedCustomerId(d.selectedCustomerId || '');
+      setCustomerSearchInput(d.customerSearchInput || '');
+      setCustName(d.custName || '');
+      setCustPhone(d.custPhone || '');
+      setCustArea(d.custArea || '');
+      setSelectedJobId(d.selectedJobId || '');
+      setDocDate(d.docDate || new Date().toISOString().split('T')[0]);
+      if (Array.isArray(d.docItems) && d.docItems.length > 0) setDocItems(d.docItems);
+      setGstPercent(d.gstPercent !== undefined ? d.gstPercent : (d.billingFirm === 'pandiyan' ? 0 : 18));
+      setPaymentStatus(d.paymentStatus || 'paid');
+      setPaymentMode(d.paymentMode || 'upi');
+      setPaymentReference(d.paymentReference || '');
+      setPaidAmount(d.paidAmount || 0);
+      setDiscount(d.discount || 0);
+      setRoundOff(d.roundOff || 0);
+      setManualExtraCost(d.manualExtraCost || 0);
+      setInvoiceNotes(d.invoiceNotes || '');
+      setIsCreateInvoiceOpen(true);
+    } catch (e) {
+      console.warn('Failed to restore draft', e);
+    }
+  };
+
+  const handleDiscardDraft = () => {
+    localStorage.removeItem('sgs_billing_draft');
+    setHasPendingDraft(false);
+  };
 
   const totalPurchaseCostCalc = docItems.reduce((acc, it) => acc + ((it.purchaseCost || 0) * (it.quantity || 1)), 0);
   const netProfitCalc = subtotalCalc - totalPurchaseCostCalc - Number(manualExtraCost || 0);
@@ -266,6 +437,38 @@ export const BillingCashFlow: React.FC = () => {
     const itPct = current.gstPercent !== undefined ? current.gstPercent : defaultPct;
     const qty = field === 'quantity' ? Math.max(1, Number(value) || 1) : Math.max(1, current.quantity || 1);
 
+    // Pandiyan Computers: Completely Non-GST firm - direct rate * qty, 0 tax
+    if (billingFirm === 'pandiyan') {
+      const unitP = field === 'grossRate' || field === 'rate'
+        ? Math.max(0, Number(value) || 0)
+        : (current.grossRate !== undefined ? current.grossRate : (current.rate || 0));
+      const totalAmt = Number((unitP * qty).toFixed(2));
+      if (field === 'grossRate' || field === 'rate') {
+        updated[index] = {
+          ...current,
+          rate: unitP,
+          grossRate: unitP,
+          gstPercent: 0,
+          quantity: qty,
+          amount: totalAmt,
+          gstAmount: 0,
+          totalWithGst: totalAmt,
+        };
+      } else if (field === 'quantity') {
+        updated[index] = {
+          ...current,
+          quantity: qty,
+          amount: totalAmt,
+          gstAmount: 0,
+          totalWithGst: totalAmt,
+        };
+      } else {
+        updated[index] = { ...current, [field]: value };
+      }
+      setDocItems(updated);
+      return;
+    }
+
     if (field === 'grossRate') {
       // User inputs amount with GST (Rate with GST)
       const gross = Math.max(0, Number(value) || 0);
@@ -374,15 +577,17 @@ export const BillingCashFlow: React.FC = () => {
         quantity: 1, 
         grossRate: 850,
         gstPercent: defPct,
-        rate: initCalc.baseRate, 
-        amount: initCalc.baseAmount, 
-        gstAmount: initCalc.totalGst,
+        rate: firm === 'pandiyan' ? 850 : initCalc.baseRate, 
+        amount: firm === 'pandiyan' ? 850 : initCalc.baseAmount, 
+        gstAmount: firm === 'pandiyan' ? 0 : initCalc.totalGst,
         totalWithGst: 850,
         purchaseCost: 0, 
         isService: true 
       }
     ]);
     setGstPercent(defPct);
+    setDiscount(0);
+    setRoundOff(0);
     setPaymentStatus('paid');
     setPaymentMode('upi');
     setPaymentReference('');
@@ -392,6 +597,77 @@ export const BillingCashFlow: React.FC = () => {
     setInvoiceNotes(firm === 'pandiyan' ? 'Thank you for choosing Pandiyan Computers! Valid for 7 days.' : 'Thank you for trusting Spider Grid Solutions! Spares carry 1-year warranty.');
     setIsCreateInvoiceOpen(true);
   };
+
+  // Open Create Modal Pre-filled for a specific Job Card
+  const handleOpenCreateModalForJob = (job: any) => {
+    setEditingInvoiceId(null);
+    setInvoiceType('invoice');
+    setBillingFirm('sgs');
+    setDocTheme(adminSettings.billingTheme || 'modern_navy');
+    setSelectedCustomerId(job.customerId);
+    setCustomerSearchInput(job.customerName);
+    setCustName(job.customerName);
+    setCustPhone(job.customerPhone);
+    setCustArea(job.customerArea || '');
+    setSelectedJobId(job.id);
+    const defPct = adminSettings.defaultGstPercent || 18;
+    const gross = job.estimatedCost || 850;
+    const initCalc = calculateFromInclusiveRate(gross, defPct, 1);
+    setDocItems([
+      {
+        description: `${job.deviceType} (${job.brandModel}) - Repair & Service [${job.reportedIssue}]`,
+        hsnCode: adminSettings.defaultHsnCode || '998713',
+        quantity: 1,
+        grossRate: gross,
+        gstPercent: defPct,
+        rate: initCalc.baseRate,
+        amount: initCalc.baseAmount,
+        gstAmount: initCalc.totalGst,
+        totalWithGst: gross,
+        purchaseCost: 0,
+        isService: true,
+      }
+    ]);
+    setGstPercent(defPct);
+    setDiscount(0);
+    setRoundOff(0);
+    const advance = job.advancePaid || 0;
+    setPaymentStatus(advance >= gross ? 'paid' : (advance > 0 ? 'partial' : 'unpaid'));
+    setPaymentMode('upi');
+    setPaymentReference('');
+    setPaidAmount(advance > 0 ? advance : gross);
+    setManualExtraCost(0);
+    setAttachedBillImage(null);
+    setInvoiceNotes(`Repair & service completed for Job Card #${job.jobCardNumber}. Spares carry 1-year warranty.`);
+    setIsCreateInvoiceOpen(true);
+  };
+
+  // Effect to handle navigation from Job Card "Bill Now"
+  useEffect(() => {
+    if (!initialJobId) return;
+
+    // Check if quotation or invoice already exists for this job
+    const existingQuot = invoices.find(i => i.jobCardId === initialJobId && i.type === 'quotation' && i.status !== 'cancelled');
+    if (existingQuot) {
+      setViewingInvoice(existingQuot);
+      setConfirmConvertModal(existingQuot);
+      onClearInitialJobId?.();
+      return;
+    }
+
+    const existingInv = invoices.find(i => i.jobCardId === initialJobId && i.type === 'invoice' && i.status !== 'cancelled');
+    if (existingInv) {
+      setViewingInvoice(existingInv);
+      onClearInitialJobId?.();
+      return;
+    }
+
+    const job = jobCards.find(j => j.id === initialJobId);
+    if (job) {
+      handleOpenCreateModalForJob(job);
+    }
+    onClearInitialJobId?.();
+  }, [initialJobId, invoices, jobCards]);
 
   // Open Edit Modal for Existing Bill
   const handleOpenEditModal = (inv: Invoice) => {
@@ -407,19 +683,21 @@ export const BillingCashFlow: React.FC = () => {
     setCustArea(inv.customerArea || '');
     setSelectedJobId(inv.jobCardId || '');
     setDocDate(inv.date);
+    setDiscount(inv.discount || 0);
+    setRoundOff(inv.roundOff || 0);
     setDocItems(inv.items.map(it => {
       const itGst = it.gstPercent !== undefined ? it.gstPercent : (inv.billingFirm === 'pandiyan' ? 0 : (inv.gstPercent || 0));
       const gross = it.grossRate !== undefined ? it.grossRate : (it.rate * (1 + itGst / 100));
       const calc = calculateFromInclusiveRate(gross, itGst, it.quantity);
       return {
         description: it.description,
-        hsnCode: it.hsnCode || '998713',
+        hsnCode: inv.billingFirm === 'pandiyan' ? undefined : (it.hsnCode || '998713'),
         quantity: it.quantity,
         grossRate: gross,
-        gstPercent: itGst,
-        rate: it.rate || calc.baseRate,
-        amount: it.amount || calc.baseAmount,
-        gstAmount: it.gstAmount !== undefined ? it.gstAmount : calc.totalGst,
+        gstPercent: inv.billingFirm === 'pandiyan' ? 0 : itGst,
+        rate: inv.billingFirm === 'pandiyan' ? gross : (it.rate || calc.baseRate),
+        amount: inv.billingFirm === 'pandiyan' ? Number((gross * it.quantity).toFixed(2)) : (it.amount || calc.baseAmount),
+        gstAmount: inv.billingFirm === 'pandiyan' ? 0 : (it.gstAmount !== undefined ? it.gstAmount : calc.totalGst),
         totalWithGst: it.totalWithGst !== undefined ? it.totalWithGst : calc.totalWithGst,
         purchaseCost: it.purchaseCost || 0,
         isService: it.isService,
@@ -468,7 +746,9 @@ export const BillingCashFlow: React.FC = () => {
     const invoiceNumber = `${prefix}${nextNo}`;
     const effectiveGstPercent = billingFirm === 'pandiyan' ? 0 : gstPercent;
     const effectiveTaxAmount = billingFirm === 'pandiyan' ? 0 : taxCalc;
-    const effectiveGrandTotal = subtotalCalc + effectiveTaxAmount;
+    const effectiveDiscount = Number(discount) || 0;
+    const effectiveRoundOff = Number(roundOff) || 0;
+    const effectiveGrandTotal = Number(Math.max(0, subtotalCalc + effectiveTaxAmount - effectiveDiscount + effectiveRoundOff).toFixed(2));
 
     if (editingInvoiceId) {
       // Update existing
@@ -487,6 +767,8 @@ export const BillingCashFlow: React.FC = () => {
         subtotal: subtotalCalc,
         gstPercent: effectiveGstPercent,
         taxAmount: effectiveTaxAmount,
+        discount: effectiveDiscount,
+        roundOff: effectiveRoundOff,
         grandTotal: effectiveGrandTotal,
         paymentStatus,
         paymentMode,
@@ -516,6 +798,8 @@ export const BillingCashFlow: React.FC = () => {
         subtotal: subtotalCalc,
         gstPercent: effectiveGstPercent,
         taxAmount: effectiveTaxAmount,
+        discount: effectiveDiscount,
+        roundOff: effectiveRoundOff,
         grandTotal: effectiveGrandTotal,
         paymentStatus,
         paymentMode,
@@ -595,6 +879,7 @@ export const BillingCashFlow: React.FC = () => {
 
   // Filtered invoices
   const filteredInvoices = invoices.filter(inv => {
+    if (docTypeFilter !== 'all' && inv.type !== docTypeFilter) return false;
     const q = searchInvoices.toLowerCase().trim();
     if (!q) return true;
     return (
@@ -645,6 +930,42 @@ export const BillingCashFlow: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Auto-Saved Draft Alert Banner */}
+      {hasPendingDraft && !isCreateInvoiceOpen && (
+        <div className={`p-4 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in duration-150 ${
+          isDark ? 'bg-amber-950/30 border-amber-800/80 text-amber-200' : 'bg-amber-50 border-amber-200 text-amber-900 shadow-xs'
+        }`}>
+          <div className="flex items-center gap-3">
+            <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0"></div>
+            <div>
+              <p className="text-xs font-bold">Unfinished Billing / Quotation Draft Auto-Saved</p>
+              <p className="text-[11px] opacity-80">
+                You have an auto-saved draft in local storage. Accidentally closed or refreshed? Click resume to continue!
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={handleRestoreDraft}
+              className="flex-1 sm:flex-none px-3.5 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg cursor-pointer shadow-xs transition-all"
+            >
+              Resume Draft
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                localStorage.removeItem('sgs_billing_draft');
+                setHasPendingDraft(false);
+              }}
+              className="px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:text-rose-600 cursor-pointer"
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* KPI Cards: Incomes, Spares Cost, Expenses & Profit Balance */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -730,6 +1051,39 @@ export const BillingCashFlow: React.FC = () => {
         </div>
       </div>
 
+      {/* Auto-Saved Draft Banner */}
+      {hasPendingDraft && !isCreateInvoiceOpen && (
+        <div className="p-3.5 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-amber-200/80 dark:bg-amber-900/60 flex items-center justify-center shrink-0">
+              <FileText className="w-4 h-4 text-amber-700 dark:text-amber-300" />
+            </div>
+            <div>
+              <p className="text-xs font-bold">Unsaved Billing / Quotation Draft Auto-Preserved</p>
+              <p className="text-[11px] opacity-80">
+                You have a draft automatically saved so you never lose progress.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleRestoreDraft}
+              className="px-3 py-1.5 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-lg shadow-2xs transition-colors cursor-pointer"
+            >
+              Resume Draft
+            </button>
+            <button
+              type="button"
+              onClick={handleDiscardDraft}
+              className="px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-300 hover:underline cursor-pointer"
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Tabs: Invoices vs Cash Flow */}
       <div className={`p-4 rounded-xl border space-y-4 ${
         isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200/90 shadow-xs'
@@ -761,19 +1115,64 @@ export const BillingCashFlow: React.FC = () => {
           </div>
 
           {activeTab === 'invoices' && (
-            <div className="relative w-full sm:w-72">
-              <Search className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-slate-400' : 'text-slate-400'}`} />
-              <input
-                type="text"
-                value={searchInvoices}
-                onChange={(e) => setSearchInvoices(e.target.value)}
-                placeholder="Search doc #, customer, HSN, UPI ref..."
-                className={`w-full rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none ${
-                  isDark 
-                    ? 'bg-slate-950 border border-slate-800 text-slate-200 focus:border-blue-500' 
-                    : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
-                }`}
-              />
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className={`flex items-center p-0.5 border rounded-lg text-xs ${
+                isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+              }`}>
+                <button
+                  type="button"
+                  onClick={() => setDocTypeFilter('all')}
+                  className={`px-2.5 py-1 rounded-md font-semibold transition-colors cursor-pointer ${
+                    docTypeFilter === 'all'
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : (isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900')
+                  }`}
+                >
+                  All ({invoices.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDocTypeFilter('invoice')}
+                  className={`px-2.5 py-1 rounded-md font-semibold transition-colors cursor-pointer ${
+                    docTypeFilter === 'invoice'
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : (isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900')
+                  }`}
+                >
+                  Tax Invoices ({invoices.filter(i => i.type === 'invoice').length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDocTypeFilter('quotation')}
+                  className={`px-2.5 py-1 rounded-md font-semibold transition-colors cursor-pointer flex items-center gap-1 ${
+                    docTypeFilter === 'quotation'
+                      ? 'bg-amber-600 text-white shadow-2xs'
+                      : (isDark ? 'text-amber-400 hover:text-amber-300' : 'text-amber-700 hover:text-amber-800')
+                  }`}
+                >
+                  <span>Quotations</span>
+                  <span className={`font-mono text-[10px] px-1 rounded font-bold ${
+                    docTypeFilter === 'quotation' ? 'bg-black/30 text-white' : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                  }`}>
+                    {invoices.filter(i => i.type === 'quotation').length}
+                  </span>
+                </button>
+              </div>
+
+              <div className="relative w-full sm:w-64">
+                <Search className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-slate-400' : 'text-slate-400'}`} />
+                <input
+                  type="text"
+                  value={searchInvoices}
+                  onChange={(e) => setSearchInvoices(e.target.value)}
+                  placeholder="Search doc #, customer, HSN, UPI ref..."
+                  className={`w-full rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none ${
+                    isDark 
+                      ? 'bg-slate-950 border border-slate-800 text-slate-200 focus:border-blue-500' 
+                      : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
+                  }`}
+                />
+              </div>
             </div>
           )}
         </div>
@@ -809,7 +1208,7 @@ export const BillingCashFlow: React.FC = () => {
                       </td>
                     </tr>
                   ) : (
-                    filteredInvoices.map((inv) => {
+                    filteredInvoices.map((inv, idx) => {
                       const isInvoice = inv.type === 'invoice';
                       const isCancelled = inv.status === 'cancelled';
                       const statusColor = 
@@ -819,7 +1218,7 @@ export const BillingCashFlow: React.FC = () => {
                         (isDark ? 'text-slate-400 bg-slate-900 border-slate-800' : 'text-slate-700 bg-slate-100 border-slate-200');
 
                       return (
-                        <tr key={inv.id} className={`transition-colors ${isDark ? 'hover:bg-slate-900/60' : 'hover:bg-slate-50'} ${isCancelled ? 'opacity-60 bg-rose-500/5' : ''}`}>
+                        <tr key={`${inv.id}-${idx}`} className={`transition-colors ${isDark ? 'hover:bg-slate-900/60' : 'hover:bg-slate-50'} ${isCancelled ? 'opacity-60 bg-rose-500/5' : ''}`}>
                           
                           {/* Clickable Bill Number */}
                           <td className="py-3 px-4">
@@ -918,6 +1317,18 @@ export const BillingCashFlow: React.FC = () => {
                               >
                                 <Printer className="w-4 h-4" />
                               </button>
+
+                              {inv.type === 'quotation' && !isCancelled && (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmConvertModal(inv)}
+                                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors cursor-pointer"
+                                  title="Convert Quotation to Official Tax Invoice"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                  <span>Convert to Bill</span>
+                                </button>
+                              )}
 
                               <button
                                 onClick={() => handleOpenEditModal(inv)}
@@ -1096,11 +1507,17 @@ export const BillingCashFlow: React.FC = () => {
                     }`}>
                       <tr>
                         <th className="py-2.5 px-3">Description</th>
-                        <th className="py-2.5 px-2">HSN/SAC</th>
+                        {viewingInvoice.billingFirm !== 'pandiyan' && (
+                          <th className="py-2.5 px-2">HSN/SAC</th>
+                        )}
                         <th className="py-2.5 px-2 text-center">Qty</th>
-                        <th className="py-2.5 px-2 text-right">Base Rate</th>
-                        <th className="py-2.5 px-2 text-center">GST %</th>
-                        <th className="py-2.5 px-2 text-right">GST (₹)</th>
+                        <th className="py-2.5 px-2 text-right">Rate (₹)</th>
+                        {viewingInvoice.billingFirm !== 'pandiyan' && (
+                          <>
+                            <th className="py-2.5 px-2 text-center">GST %</th>
+                            <th className="py-2.5 px-2 text-right">GST (₹)</th>
+                          </>
+                        )}
                         <th className="py-2.5 px-3 text-right">Total</th>
                       </tr>
                     </thead>
@@ -1111,18 +1528,24 @@ export const BillingCashFlow: React.FC = () => {
                         const itTotal = it.totalWithGst ?? (it.amount + itTax);
                         return (
                           <tr key={idx}>
-                            <td className="py-2 px-3 font-semibold">{it.description}</td>
-                            <td className="py-2 px-2 font-mono text-[11px] text-blue-600">
-                              {it.hsnCode || '998713'}
-                            </td>
+                            <td className="py-2 px-3 font-semibold whitespace-pre-line">{it.description}</td>
+                            {viewingInvoice.billingFirm !== 'pandiyan' && (
+                              <td className="py-2 px-2 font-mono text-[11px] text-blue-600">
+                                {it.hsnCode || '998713'}
+                              </td>
+                            )}
                             <td className="py-2 px-2 text-center font-mono">{it.quantity}</td>
                             <td className="py-2 px-2 text-right font-mono">₹{it.rate.toLocaleString('en-IN')}</td>
-                            <td className="py-2 px-2 text-center font-mono font-bold text-blue-600">
-                              {itGst}%
-                            </td>
-                            <td className="py-2 px-2 text-right font-mono text-amber-600">
-                              ₹{itTax.toLocaleString('en-IN')}
-                            </td>
+                            {viewingInvoice.billingFirm !== 'pandiyan' && (
+                              <>
+                                <td className="py-2 px-2 text-center font-mono font-bold text-blue-600">
+                                  {itGst}%
+                                </td>
+                                <td className="py-2 px-2 text-right font-mono text-amber-600">
+                                  ₹{itTax.toLocaleString('en-IN')}
+                                </td>
+                              </>
+                            )}
                             <td className="py-2 px-3 text-right font-mono font-bold">
                               ₹{itTotal.toLocaleString('en-IN')}
                             </td>
@@ -1173,25 +1596,59 @@ export const BillingCashFlow: React.FC = () => {
                 </div>
               </div>
 
-              {/* Payment Details & UPI Reference */}
-              <div className={`p-4 rounded-xl border grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs ${
+              {/* Financial Totals & Payment Summary */}
+              <div className={`p-4 rounded-xl border space-y-3 ${
                 isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
               }`}>
-                <div>
-                  <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Grand Total</span>
-                  <p className="font-mono font-bold text-sm mt-0.5">₹{viewingInvoice.grandTotal.toLocaleString('en-IN')}</p>
-                </div>
-                <div>
-                  <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Amount Paid</span>
-                  <p className="font-mono font-bold text-sm text-emerald-600 mt-0.5">₹{viewingInvoice.paidAmount.toLocaleString('en-IN')}</p>
-                </div>
-                <div>
-                  <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Payment Mode</span>
-                  <p className="font-bold uppercase mt-0.5">{viewingInvoice.paymentMode}</p>
-                </div>
-                <div>
-                  <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>UPI / UTR Transaction ID</span>
-                  <p className="font-mono text-blue-600 mt-0.5">{viewingInvoice.paymentReference || 'None on record'}</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div>
+                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Subtotal</span>
+                    <p className="font-mono font-bold text-sm mt-0.5">₹{viewingInvoice.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  </div>
+                  {viewingInvoice.billingFirm !== 'pandiyan' && (viewingInvoice.taxAmount || 0) > 0 && (() => {
+                    const gstRate = viewingInvoice.gstPercent || 18;
+                    const halfRate = (gstRate / 2).toFixed(gstRate % 2 === 0 ? 0 : 1);
+                    return (
+                      <>
+                        <div>
+                          <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>CGST ({halfRate}%)</span>
+                          <p className="font-mono font-bold text-sm text-blue-600 mt-0.5">+₹{((viewingInvoice.taxAmount || 0) / 2).toFixed(2)}</p>
+                        </div>
+                        <div>
+                          <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>SGST ({halfRate}%)</span>
+                          <p className="font-mono font-bold text-sm text-blue-600 mt-0.5">+₹{((viewingInvoice.taxAmount || 0) / 2).toFixed(2)}</p>
+                        </div>
+                      </>
+                    );
+                  })()}
+                  {viewingInvoice.discount !== undefined && viewingInvoice.discount > 0 && (
+                    <div>
+                      <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Discount</span>
+                      <p className="font-mono font-bold text-sm text-rose-600 mt-0.5">-₹{viewingInvoice.discount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    </div>
+                  )}
+                  {viewingInvoice.roundOff !== undefined && viewingInvoice.roundOff !== 0 && (
+                    <div>
+                      <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Round Off</span>
+                      <p className="font-mono font-bold text-sm text-slate-500 mt-0.5">{viewingInvoice.roundOff > 0 ? '+' : ''}₹{viewingInvoice.roundOff.toFixed(2)}</p>
+                    </div>
+                  )}
+                  <div>
+                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Grand Total</span>
+                    <p className="font-mono font-bold text-sm text-emerald-600 mt-0.5">₹{viewingInvoice.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  </div>
+                  <div>
+                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Amount Paid</span>
+                    <p className="font-mono font-bold text-sm text-emerald-600 mt-0.5">₹{viewingInvoice.paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  </div>
+                  <div>
+                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Payment Mode</span>
+                    <p className="font-bold uppercase mt-0.5">{viewingInvoice.paymentMode}</p>
+                  </div>
+                  <div>
+                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>UPI / Reference</span>
+                    <p className="font-mono text-blue-600 mt-0.5">{viewingInvoice.paymentReference || 'None on record'}</p>
+                  </div>
                 </div>
               </div>
 
@@ -1247,6 +1704,17 @@ export const BillingCashFlow: React.FC = () => {
                   <Printer className="w-3.5 h-3.5" /> Print Voucher Slip
                 </button>
 
+                {viewingInvoice.type === 'quotation' && viewingInvoice.status !== 'cancelled' && (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmConvertModal(viewingInvoice)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg cursor-pointer shadow-xs"
+                    title="Convert Quotation into Official Tax Invoice"
+                  >
+                    <FileText className="w-3.5 h-3.5" /> Convert to Bill
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => handleOpenEditModal(viewingInvoice)}
@@ -1254,7 +1722,7 @@ export const BillingCashFlow: React.FC = () => {
                     isDark ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-slate-100 border-slate-300 text-slate-700'
                   }`}
                 >
-                  <Edit3 className="w-3.5 h-3.5" /> Edit Bill
+                  <Edit3 className="w-3.5 h-3.5" /> {viewingInvoice.type === 'quotation' ? 'Edit Quotation' : 'Edit Bill'}
                 </button>
 
                 <button
@@ -1264,7 +1732,7 @@ export const BillingCashFlow: React.FC = () => {
                     isDark ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-slate-100 border-slate-300 text-slate-700'
                   }`}
                 >
-                  <Copy className="w-3.5 h-3.5" /> Duplicate
+                  <Copy className="w-3.5 h-3.5" /> {viewingInvoice.type === 'quotation' ? 'Copy Quotation' : 'Duplicate'}
                 </button>
 
                 {viewingInvoice.status !== 'cancelled' && (
@@ -1311,32 +1779,78 @@ export const BillingCashFlow: React.FC = () => {
         </div>
       )}
 
-      {/* Create / Edit Invoice Modal */}
+      {/* Create / Edit Invoice Dedicated Full-Page View */}
       {isCreateInvoiceOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-3xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
-            isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+        <div className={`fixed inset-0 z-50 overflow-y-auto flex flex-col animate-in fade-in duration-150 ${
+          isDark ? 'bg-[#080d1a] text-white' : 'bg-slate-50 text-slate-900'
+        }`}>
+          {/* Top Sticky Header */}
+          <div className={`sticky top-0 z-30 px-4 lg:px-8 py-3.5 border-b backdrop-blur-md flex items-center justify-between gap-4 ${
+            isDark ? 'bg-slate-900/95 border-slate-800' : 'bg-white/95 border-slate-200 shadow-xs'
           }`}>
-            <div className={`px-6 py-4 border-b flex items-center justify-between shrink-0 ${
-              isDark ? 'border-slate-800' : 'border-slate-200'
-            }`}>
-              <div>
-                <h3 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                  {editingInvoiceId ? 'Edit Invoice / Quotation' : 'Create Customer Invoice / Quotation'}
-                </h3>
-                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Includes itemized HSN codes, purchase costs, manual expense adjustment, and UPI references
-                </p>
-              </div>
+            <div className="flex items-center gap-3">
               <button
-                onClick={() => setIsCreateInvoiceOpen(false)}
-                className={`p-1 rounded-lg cursor-pointer ${isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                type="button"
+                onClick={handleCloseWithAutoSave}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold cursor-pointer transition-all ${
+                  isDark ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
+                }`}
+                title="Go back (Draft is auto-saved)"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>← Back to Invoices</span>
+              </button>
+
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm sm:text-base font-bold">
+                    {editingInvoiceId 
+                      ? (invoiceType === 'quotation' ? 'Edit Quotation' : 'Edit Tax Invoice') 
+                      : (invoiceType === 'quotation' ? 'New Customer Quotation' : 'New Customer Tax Invoice')}
+                  </h3>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                    billingFirm === 'pandiyan' 
+                      ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' 
+                      : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                  }`}>
+                    {billingFirm === 'pandiyan' ? 'Pandiyan (Non-GST)' : 'SGS (GST 18%)'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>Draft Auto-Saved {draftSavedTime ? `at ${draftSavedTime}` : 'Active'}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.removeItem('sgs_billing_draft');
+                  setHasPendingDraft(false);
+                  setIsCreateInvoiceOpen(false);
+                }}
+                className={`px-3 py-1.5 text-xs rounded-xl font-medium cursor-pointer ${
+                  isDark ? 'text-slate-400 hover:text-rose-400' : 'text-slate-500 hover:text-rose-600'
+                }`}
+              >
+                Discard Draft
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCloseWithAutoSave}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 cursor-pointer"
+                title="Close & Auto-Save Draft"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
+          </div>
 
-            <form onSubmit={handleSaveInvoice} className="p-6 space-y-4 overflow-y-auto flex-1">
+          <div className="max-w-5xl w-full mx-auto px-4 sm:px-6 py-6 flex-1">
+            <form onSubmit={handleSaveInvoice} className="space-y-4">
               
               {/* Billing Firm Selector (SGS vs Pandiyan Computers) & Document Type */}
               <div className="p-3.5 rounded-xl border space-y-3 bg-gradient-to-r from-blue-50/50 via-slate-50 to-amber-50/40 dark:from-slate-900 dark:via-slate-900/80 dark:to-amber-950/20 border-slate-200 dark:border-slate-800">
@@ -1350,7 +1864,22 @@ export const BillingCashFlow: React.FC = () => {
                         type="button"
                         onClick={() => {
                           setBillingFirm('sgs');
-                          setGstPercent(adminSettings.defaultGstPercent || 18);
+                          const defPct = adminSettings.defaultGstPercent || 18;
+                          setGstPercent(defPct);
+                          setDocItems(prev => prev.map(it => {
+                            const gross = it.grossRate !== undefined && it.grossRate > 0 ? it.grossRate : (it.rate || 0);
+                            const calc = calculateFromInclusiveRate(gross, defPct, it.quantity || 1);
+                            return {
+                              ...it,
+                              hsnCode: it.hsnCode || adminSettings.defaultHsnCode || '998713',
+                              gstPercent: defPct,
+                              grossRate: gross,
+                              rate: calc.baseRate,
+                              amount: calc.baseAmount,
+                              gstAmount: calc.totalGst,
+                              totalWithGst: calc.totalWithGst,
+                            };
+                          }));
                         }}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                           billingFirm === 'sgs'
@@ -1368,6 +1897,19 @@ export const BillingCashFlow: React.FC = () => {
                         onClick={() => {
                           setBillingFirm('pandiyan');
                           setGstPercent(0);
+                          setDocItems(prev => prev.map(it => {
+                            const val = it.grossRate !== undefined && it.grossRate > 0 ? it.grossRate : it.rate;
+                            return {
+                              ...it,
+                              hsnCode: undefined,
+                              gstPercent: 0,
+                              gstAmount: 0,
+                              grossRate: val,
+                              rate: val,
+                              amount: Number((val * (it.quantity || 1)).toFixed(2)),
+                              totalWithGst: Number((val * (it.quantity || 1)).toFixed(2)),
+                            };
+                          }));
                         }}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                           billingFirm === 'pandiyan'
@@ -1458,7 +2000,7 @@ export const BillingCashFlow: React.FC = () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="relative">
                   <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                    Search & Select Golden Customer (31 Roster)
+                    Search & Select Customer (Verified Client Directory)
                   </label>
                   <div className="relative">
                     <Search className={`w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
@@ -1620,16 +2162,18 @@ export const BillingCashFlow: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setIsStockPickerOpen(!isStockPickerOpen)}
-                      className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 cursor-pointer bg-emerald-50 dark:bg-emerald-950/40 px-2 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800"
+                      className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 cursor-pointer bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800 transition-colors"
                     >
-                      <Boxes className="w-3.5 h-3.5" /> Search Stock Inventory
+                      <Boxes className="w-3.5 h-3.5" />
+                      <span>Search Stock Inventory</span>
                     </button>
                     <button
                       type="button"
                       onClick={handleAddDocItem}
-                      className="text-xs text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
+                      className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1.5 cursor-pointer bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 rounded-lg border border-blue-200 dark:border-blue-800 transition-colors"
                     >
-                      <Plus className="w-3.5 h-3.5" /> Add Blank Item
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Blank Item</span>
                     </button>
                   </div>
                 </div>
@@ -1678,9 +2222,9 @@ export const BillingCashFlow: React.FC = () => {
                           );
                         })
                         .slice(0, 15)
-                        .map(inv => (
+                        .map((inv, idx) => (
                           <div
-                            key={inv.id}
+                            key={`${inv.id}-${idx}`}
                             className={`p-2 rounded-lg border flex items-center justify-between gap-2 transition-colors ${
                               isDark ? 'bg-slate-900/60 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-200 hover:border-blue-300'
                             }`}
@@ -1740,12 +2284,12 @@ export const BillingCashFlow: React.FC = () => {
                           <label className={`block text-[10px] font-bold uppercase mb-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                             Item / Service Description
                           </label>
-                          <input
-                            type="text"
+                          <textarea
+                            rows={2}
                             value={item.description}
                             onChange={(e) => handleDocItemChange(idx, 'description', e.target.value)}
-                            placeholder="e.g. Chip-Level Motherboard Diagnostic / RAM Upgrade"
-                            className={`w-full rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${
+                            placeholder="Item Name & Description&#10;Press Enter for 2nd line, 3rd line specs / warranty notes..."
+                            className={`w-full rounded-lg px-2.5 py-1.5 text-xs focus:outline-none resize-y ${
                               isDark ? 'bg-slate-950 border border-slate-700 text-slate-200' : 'bg-slate-50 border border-slate-300 text-slate-900'
                             }`}
                           />
@@ -1798,159 +2342,232 @@ export const BillingCashFlow: React.FC = () => {
                         )}
                       </div>
 
-                      {/* Bottom Row: GST Breakdown & Calculation Grid */}
-                      <div className={`p-2.5 rounded-lg border grid grid-cols-2 sm:grid-cols-6 gap-2.5 items-end text-xs ${
-                        isDark ? 'bg-slate-950/60 border-slate-800/80' : 'bg-slate-50 border-slate-200'
-                      }`}>
-                        {/* 1. Rate with GST (Gross / Inclusive) */}
-                        <div>
-                          <div className="flex items-center justify-between mb-0.5">
-                            <label className={`text-[10px] font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
-                              Rate with GST (₹)
-                            </label>
-                            <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-950/80 px-1 rounded">Gross</span>
-                          </div>
-                          <div className="relative">
-                            <input
-                              type="number"
-                              min="0"
-                              value={item.grossRate !== undefined ? item.grossRate : Math.round((item.rate * (1 + (item.gstPercent || 0)/100)) * 100) / 100}
-                              onChange={(e) => handleDocItemChange(idx, 'grossRate', e.target.value)}
-                              placeholder="Rate with GST"
-                              className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono font-bold focus:outline-none ${
-                                isDark ? 'bg-slate-900 border border-emerald-800 text-emerald-300' : 'bg-white border border-emerald-300 text-emerald-800'
-                              }`}
-                            />
-                            <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-emerald-500 font-bold">₹</span>
-                          </div>
-                        </div>
-
-                        {/* 2. Individual GST % Input Box */}
-                        <div>
-                          <div className="flex items-center justify-between mb-0.5">
-                            <label className={`text-[10px] font-bold ${isDark ? 'text-blue-400' : 'text-blue-700'}`}>
-                              GST % Box
-                            </label>
-                            <span className="text-[9px] text-blue-500 font-mono">Tax %</span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <div className="relative flex-1">
+                      {/* Bottom Row: GST Breakdown & Calculation Grid (Base Rate column removed) */}
+                      {billingFirm === 'pandiyan' ? (
+                        <div className={`p-2.5 rounded-lg border grid grid-cols-2 sm:grid-cols-4 gap-2.5 items-end text-xs ${
+                          isDark ? 'bg-slate-950/60 border-slate-800/80' : 'bg-slate-50 border-slate-200'
+                        }`}>
+                          {/* 1. Unit Rate (₹) */}
+                          <div>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <label className={`text-[10px] font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+                                Unit Rate (₹)
+                              </label>
+                              <span className="text-[9px] font-bold text-amber-600 bg-amber-100 dark:bg-amber-950/80 px-1 rounded">No GST</span>
+                            </div>
+                            <div className="relative">
                               <input
                                 type="number"
                                 min="0"
-                                max="100"
-                                step="0.5"
-                                value={item.gstPercent !== undefined ? item.gstPercent : (billingFirm === 'pandiyan' ? 0 : 18)}
-                                onChange={(e) => handleDocItemChange(idx, 'gstPercent', e.target.value)}
-                                placeholder="GST %"
-                                className={`w-full rounded-md pl-2 pr-4 py-1 text-xs font-mono font-bold text-center focus:outline-none ${
-                                  isDark ? 'bg-slate-900 border border-blue-700 text-blue-300' : 'bg-white border border-blue-400 text-blue-800'
+                                value={item.grossRate !== undefined && item.grossRate > 0 ? item.grossRate : (item.rate || 0)}
+                                onChange={(e) => handleDocItemChange(idx, 'grossRate', e.target.value)}
+                                placeholder="Rate"
+                                className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono font-bold focus:outline-none ${
+                                  isDark ? 'bg-slate-900 border border-amber-800 text-amber-300' : 'bg-white border border-amber-300 text-amber-800'
                                 }`}
                               />
-                              <span className="text-[10px] absolute right-1.5 top-1/2 -translate-y-1/2 text-blue-500 font-bold">%</span>
+                              <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-amber-500 font-bold">₹</span>
                             </div>
                           </div>
-                          {/* Quick GST % Presets */}
-                          <div className="flex items-center gap-1 mt-1">
-                            {[0, 5, 12, 18, 28].map(ratePct => (
-                              <button
-                                key={ratePct}
-                                type="button"
-                                onClick={() => handleDocItemChange(idx, 'gstPercent', ratePct)}
-                                className={`text-[9px] font-bold px-1 py-0.5 rounded transition-colors cursor-pointer ${
-                                  (item.gstPercent ?? (billingFirm === 'pandiyan' ? 0 : 18)) === ratePct
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-blue-100'
+
+                          {/* 2. Spare Cost (for Profit & Loss) */}
+                          <div>
+                            <label className={`block text-[10px] font-bold mb-0.5 truncate ${isDark ? 'text-rose-400' : 'text-rose-700'}`}>
+                              Spare Cost (₹)
+                            </label>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.purchaseCost || 0}
+                                onChange={(e) => handleDocItemChange(idx, 'purchaseCost', Number(e.target.value))}
+                                placeholder="Spare Cost"
+                                className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono focus:outline-none ${
+                                  isDark ? 'bg-slate-900 border border-slate-700 text-rose-300' : 'bg-white border border-slate-300 text-rose-700'
                                 }`}
-                              >
-                                {ratePct}%
-                              </button>
-                            ))}
+                              />
+                              <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-rose-400">₹</span>
+                            </div>
+                            <span className="text-[9px] text-slate-500 block truncate mt-0.5">Workshop cost</span>
                           </div>
-                        </div>
 
-                        {/* 3. Base Rate without GST (Reduced Rate) */}
-                        <div>
-                          <div className="flex items-center justify-between mb-0.5">
-                            <label className={`text-[10px] font-bold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                              Base Rate (Excl GST)
+                          {/* 3. Quantity Display */}
+                          <div>
+                            <label className={`block text-[10px] font-bold mb-0.5 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                              Quantity
                             </label>
-                            <span className="text-[9px] text-slate-400 font-mono">Reduced</span>
+                            <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold border ${
+                              isDark ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800'
+                            }`}>
+                              {item.quantity} unit{item.quantity > 1 ? 's' : ''}
+                            </div>
+                            <span className="text-[9px] text-slate-400 block truncate mt-0.5 font-mono">
+                              ₹{(item.grossRate || item.rate || 0)} × {item.quantity}
+                            </span>
                           </div>
-                          <div className="relative">
-                            <input
-                              type="number"
-                              min="0"
-                              value={item.rate || 0}
-                              onChange={(e) => handleDocItemChange(idx, 'rate', e.target.value)}
-                              placeholder="Base Rate"
-                              className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono focus:outline-none ${
-                                isDark ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-300 text-slate-900'
-                              }`}
-                            />
-                            <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
-                          </div>
-                          <span className="text-[9px] text-slate-500 block truncate mt-0.5">
-                            {item.gstPercent && item.gstPercent > 0 ? `-${item.gstPercent}% reduced` : 'Zero Tax'}
-                          </span>
-                        </div>
 
-                        {/* 4. GST Tax Amount */}
-                        <div>
-                          <div className="flex items-center justify-between mb-0.5">
-                            <label className={`text-[10px] font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
-                              GST Tax (₹)
+                          {/* 4. Total Amount */}
+                          <div className="text-right">
+                            <label className={`block text-[10px] font-bold mb-0.5 ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                              Item Total (₹)
                             </label>
-                            <span className="text-[9px] text-amber-500 font-mono">Tax Amount</span>
+                            <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold text-right border ${
+                              isDark ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                            }`}>
+                              ₹{(item.amount ?? ((item.rate || 0) * (item.quantity || 1))).toLocaleString('en-IN')}
+                            </div>
+                            <span className="text-[9px] text-amber-500 block truncate mt-0.5 font-sans">
+                              Exempt / Nil Tax
+                            </span>
                           </div>
-                          <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold border ${
-                            isDark ? 'bg-slate-900 border-amber-900/60 text-amber-300' : 'bg-white border-amber-200 text-amber-800'
-                          }`}>
-                            +₹{(item.gstAmount ?? Math.round(((item.amount || 0) * (item.gstPercent || 0)) / 100)).toLocaleString('en-IN')}
-                          </div>
-                          <span className="text-[9px] text-slate-400 block truncate mt-0.5 font-mono">
-                            CGST: ₹{Math.round(((item.gstAmount || 0) / 2) * 10) / 10} | SGST: ₹{Math.round(((item.gstAmount || 0) / 2) * 10) / 10}
-                          </span>
                         </div>
+                      ) : (
+                        <div className={`p-2.5 rounded-lg border grid grid-cols-2 sm:grid-cols-5 gap-2.5 items-end text-xs ${
+                          isDark ? 'bg-slate-950/60 border-slate-800/80' : 'bg-slate-50 border-slate-200'
+                        }`}>
+                          {/* 1. Rate with GST (Gross / Inclusive) */}
+                          <div>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <label className={`text-[10px] font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                                Rate with GST (₹)
+                              </label>
+                              <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-950/80 px-1 rounded">Gross</span>
+                            </div>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.grossRate !== undefined ? item.grossRate : Number(((item.rate * (1 + (item.gstPercent || 0)/100))).toFixed(2))}
+                                onChange={(e) => handleDocItemChange(idx, 'grossRate', e.target.value)}
+                                placeholder="Rate with GST"
+                                className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono font-bold focus:outline-none ${
+                                  isDark ? 'bg-slate-900 border border-emerald-800 text-emerald-300' : 'bg-white border border-emerald-300 text-emerald-800'
+                                }`}
+                              />
+                              <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-emerald-500 font-bold">₹</span>
+                            </div>
+                          </div>
 
-                        {/* 5. Spare Cost (for Profit & Loss) */}
-                        <div>
-                          <label className={`block text-[10px] font-bold mb-0.5 truncate ${isDark ? 'text-rose-400' : 'text-rose-700'}`}>
-                            Spare Cost (₹)
-                          </label>
-                          <div className="relative">
-                            <input
-                              type="number"
-                              min="0"
-                              value={item.purchaseCost || 0}
-                              onChange={(e) => handleDocItemChange(idx, 'purchaseCost', Number(e.target.value))}
-                              placeholder="Spare Cost"
-                              className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono focus:outline-none ${
-                                isDark ? 'bg-slate-900 border border-slate-700 text-rose-300' : 'bg-white border border-slate-300 text-rose-700'
-                              }`}
-                            />
-                            <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-rose-400">₹</span>
+                          {/* 2. Individual GST % Input Box */}
+                          <div>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <label className={`text-[10px] font-bold ${isDark ? 'text-blue-400' : 'text-blue-700'}`}>
+                                GST % Box
+                              </label>
+                              <span className="text-[9px] text-blue-500 font-mono">Tax %</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <div className="relative flex-1">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="0.5"
+                                  value={item.gstPercent !== undefined ? item.gstPercent : 18}
+                                  onChange={(e) => handleDocItemChange(idx, 'gstPercent', e.target.value)}
+                                  placeholder="GST %"
+                                  className={`w-full rounded-md pl-2 pr-4 py-1 text-xs font-mono font-bold text-center focus:outline-none ${
+                                    isDark ? 'bg-slate-900 border border-blue-700 text-blue-300' : 'bg-white border border-blue-400 text-blue-800'
+                                  }`}
+                                />
+                                <span className="text-[10px] absolute right-1.5 top-1/2 -translate-y-1/2 text-blue-500 font-bold">%</span>
+                              </div>
+                            </div>
+                            {/* Quick GST % Presets */}
+                            <div className="flex items-center gap-1 mt-1">
+                              {[0, 5, 12, 18, 28].map(ratePct => (
+                                <button
+                                  key={ratePct}
+                                  type="button"
+                                  onClick={() => handleDocItemChange(idx, 'gstPercent', ratePct)}
+                                  className={`text-[9px] font-bold px-1 py-0.5 rounded transition-colors cursor-pointer ${
+                                    (item.gstPercent ?? 18) === ratePct
+                                      ? 'bg-blue-600 text-white'
+                                      : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-blue-100'
+                                  }`}
+                                >
+                                  {ratePct}%
+                                </button>
+                              ))}
+                            </div>
                           </div>
-                          <span className="text-[9px] text-slate-500 block truncate mt-0.5">Workshop cost</span>
-                        </div>
 
-                        {/* 6. Total With GST */}
-                        <div className="text-right">
-                          <label className={`block text-[10px] font-bold mb-0.5 ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
-                            Item Total with GST
-                          </label>
-                          <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold text-right border ${
-                            isDark ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                          }`}>
-                            ₹{(item.totalWithGst ?? ((item.amount || 0) + (item.gstAmount || 0))).toLocaleString('en-IN')}
+                          {/* 3. GST Tax Amount */}
+                          <div>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <label className={`text-[10px] font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+                                GST Tax (₹)
+                              </label>
+                              <span className="text-[9px] text-amber-500 font-mono">Tax Amount</span>
+                            </div>
+                            <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold border ${
+                              isDark ? 'bg-slate-900 border-amber-900/60 text-amber-300' : 'bg-white border-amber-200 text-amber-800'
+                            }`}>
+                              +₹{(item.gstAmount ?? (((item.amount || 0) * (item.gstPercent || 0)) / 100)).toFixed(2)}
+                            </div>
+                            <span className="text-[9px] text-slate-400 block truncate mt-0.5 font-mono">
+                              CGST: ₹{(((item.gstAmount || 0) / 2)).toFixed(2)} | SGST: ₹{(((item.gstAmount || 0) / 2)).toFixed(2)}
+                            </span>
                           </div>
-                          <span className="text-[9px] text-slate-400 block truncate mt-0.5 font-mono">
-                            Base: ₹{(item.amount || 0).toLocaleString('en-IN')}
-                          </span>
+
+                          {/* 4. Spare Cost (for Profit & Loss) */}
+                          <div>
+                            <label className={`block text-[10px] font-bold mb-0.5 truncate ${isDark ? 'text-rose-400' : 'text-rose-700'}`}>
+                              Spare Cost (₹)
+                            </label>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.purchaseCost || 0}
+                                onChange={(e) => handleDocItemChange(idx, 'purchaseCost', Number(e.target.value))}
+                                placeholder="Spare Cost"
+                                className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono focus:outline-none ${
+                                  isDark ? 'bg-slate-900 border border-slate-700 text-rose-300' : 'bg-white border border-slate-300 text-rose-700'
+                                }`}
+                              />
+                              <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-rose-400">₹</span>
+                            </div>
+                            <span className="text-[9px] text-slate-500 block truncate mt-0.5">Workshop cost</span>
+                          </div>
+
+                          {/* 5. Total With GST */}
+                          <div className="text-right">
+                            <label className={`block text-[10px] font-bold mb-0.5 ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                              Item Total with GST
+                            </label>
+                            <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold text-right border ${
+                              isDark ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                            }`}>
+                              ₹{(item.totalWithGst ?? ((item.amount || 0) + (item.gstAmount || 0))).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <span className="text-[9px] text-slate-400 block truncate mt-0.5 font-mono">
+                              Base: ₹{(item.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </span>
+                          </div>
                         </div>
-                      </div>
+                      )}
                     </div>
                   ))}
+                  
+                  <div className="pt-1 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={handleAddDocItem}
+                      className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1.5 cursor-pointer bg-blue-50 dark:bg-blue-950/40 px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Add Blank Item</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsStockPickerOpen(true)}
+                      className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 cursor-pointer bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 transition-colors"
+                    >
+                      <Boxes className="w-3.5 h-3.5" />
+                      <span>Search & Add From Stock</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -2004,77 +2621,191 @@ export const BillingCashFlow: React.FC = () => {
                 </div>
               </div>
 
-              {/* Tax & Total */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>GST Percentage</label>
-                  <select
-                    value={gstPercent}
-                    onChange={(e) => setGstPercent(Number(e.target.value))}
-                    className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
-                      isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
-                    }`}
-                  >
-                    <option value={0}>0% (Non-GST / Composition)</option>
-                    <option value={5}>5% GST</option>
-                    <option value={12}>12% GST</option>
-                    <option value={18}>18% GST (Standard)</option>
-                  </select>
+              {/* Financial Totals: Subtotal, Total GST, Discount, Round Off, Grand Total & Payment */}
+              <div className={`p-4 rounded-xl border space-y-3 ${
+                isDark ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'
+              }`}>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {/* 1. Subtotal / Taxable Value */}
+                  <div>
+                    <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Subtotal {billingFirm !== 'pandiyan' ? '(Taxable)' : ''}
+                    </label>
+                    <div className={`rounded-lg px-3 py-2 text-xs font-mono font-bold border ${
+                      isDark ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800'
+                    }`}>
+                      ₹{subtotalCalc.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                  </div>
+
+                  {/* 2. Total GST Amount (Replaced GST Percentage dropdown) */}
+                  <div>
+                    <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Total GST Amount
+                    </label>
+                    {billingFirm === 'pandiyan' ? (
+                      <div className={`rounded-lg px-3 py-2 text-xs font-bold border text-amber-600 dark:text-amber-400 ${
+                        isDark ? 'bg-slate-900 border-amber-900/50' : 'bg-white border-amber-200'
+                      }`}>
+                        ₹0.00 <span className="text-[10px] font-normal text-slate-400">(Exempt)</span>
+                      </div>
+                    ) : (
+                      <div className={`rounded-lg px-3 py-1.5 text-xs font-mono font-bold border ${
+                        isDark ? 'bg-slate-900 border-blue-900 text-blue-400' : 'bg-white border-blue-200 text-blue-700'
+                      }`}>
+                        +₹{taxCalc.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <span className="text-[9px] text-slate-400 block font-normal font-sans">
+                          CGST: ₹{(taxCalc/2).toFixed(2)} | SGST: ₹{(taxCalc/2).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 3. Discount (₹) */}
+                  <div>
+                    <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Discount (₹)
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={discount === 0 ? '' : discount}
+                        onChange={(e) => setDiscount(Math.max(0, Number(e.target.value) || 0))}
+                        placeholder="0.00"
+                        className={`w-full rounded-lg pl-6 pr-3 py-2 text-xs font-mono focus:outline-none ${
+                          isDark ? 'bg-slate-900 border border-slate-800 text-rose-300' : 'bg-white border border-slate-300 text-rose-700'
+                        }`}
+                      />
+                      <span className="text-xs absolute left-2.5 top-1/2 -translate-y-1/2 text-rose-400 font-bold">-₹</span>
+                    </div>
+                  </div>
+
+                  {/* 4. Manual Round Off (₹) with Auto Round button */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className={`text-xs font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                        Round Off (₹)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const base = subtotalCalc + taxCalc - discount;
+                          const rounded = Math.round(base);
+                          const diff = Number((rounded - base).toFixed(2));
+                          setRoundOff(diff);
+                        }}
+                        className="text-[10px] text-blue-600 hover:underline cursor-pointer font-bold"
+                        title="Auto-calculate round off to nearest rupee"
+                      >
+                        Auto Round
+                      </button>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="any"
+                        value={roundOff === 0 ? '' : roundOff}
+                        onChange={(e) => setRoundOff(Number(e.target.value) || 0)}
+                        placeholder="0.00"
+                        className={`w-full rounded-lg pl-6 pr-3 py-2 text-xs font-mono focus:outline-none ${
+                          isDark ? 'bg-slate-900 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
+                        }`}
+                      />
+                      <span className="text-xs absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">±₹</span>
+                    </div>
+                  </div>
                 </div>
 
-                <div>
-                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Grand Total (₹)</label>
-                  <input
-                    type="number"
-                    value={grandTotalCalc}
-                    readOnly
-                    className={`w-full rounded-lg px-3 py-2 text-xs font-mono font-bold focus:outline-none ${
-                      isDark ? 'bg-slate-900 border border-slate-800 text-white' : 'bg-slate-100 border border-slate-300 text-slate-900'
-                    }`}
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-200 dark:border-slate-800 items-end">
+                  {/* Grand Total */}
+                  <div>
+                    <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Grand Total Amount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      value={grandTotalCalc}
+                      readOnly
+                      className={`w-full rounded-lg px-3 py-2 text-sm font-mono font-bold focus:outline-none ${
+                        isDark ? 'bg-slate-900 border border-emerald-900 text-emerald-400' : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+                      }`}
+                    />
+                  </div>
+
+                  {/* Payment Status */}
+                  <div>
+                    <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Payment Status
+                    </label>
+                    <select
+                      value={paymentStatus}
+                      onChange={(e) => {
+                        const newStatus = e.target.value as any;
+                        setPaymentStatus(newStatus);
+                        if (newStatus === 'paid') setPaidAmount(grandTotalCalc);
+                        else if (newStatus === 'unpaid') setPaidAmount(0);
+                      }}
+                      className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
+                        isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
+                      }`}
+                    >
+                      <option value="paid">Paid in Full</option>
+                      <option value="partial">Partial Payment</option>
+                      <option value="unpaid">Unpaid / Credit</option>
+                    </select>
+                  </div>
+
+                  {/* Paid Amount */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className={`text-xs font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                        Paid Amount (₹)
+                      </label>
+                      {paymentStatus === 'paid' && (
+                        <span className="text-[10px] text-emerald-600 font-bold">Auto-matched</span>
+                      )}
+                    </div>
+                    <input
+                      type="number"
+                      value={paidAmount}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setPaidAmount(val);
+                        if (val >= grandTotalCalc) setPaymentStatus('paid');
+                        else if (val > 0) setPaymentStatus('partial');
+                        else setPaymentStatus('unpaid');
+                      }}
+                      className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
+                        isDark ? 'bg-slate-950 border border-slate-800 text-emerald-400 font-bold' : 'bg-white border border-slate-300 text-emerald-700 font-bold'
+                      }`}
+                    />
+                  </div>
+
+                  {/* Payment Mode */}
+                  <div>
+                    <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Payment Mode
+                    </label>
+                    <select
+                      value={paymentMode}
+                      onChange={(e) => setPaymentMode(e.target.value as PaymentMode)}
+                      className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
+                        isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
+                      }`}
+                    >
+                      <option value="upi">UPI / GPay / PhonePe</option>
+                      <option value="cash">Cash in Hand</option>
+                      <option value="bank_transfer">Bank Transfer (NEFT / IMPS)</option>
+                      <option value="card">Debit / Credit Card</option>
+                      <option value="cheque">Cheque</option>
+                    </select>
+                  </div>
                 </div>
 
-                <div>
-                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Paid Amount (₹)</label>
-                  <input
-                    type="number"
-                    value={paidAmount}
-                    onChange={(e) => {
-                      const val = Number(e.target.value);
-                      setPaidAmount(val);
-                      if (val >= grandTotalCalc) setPaymentStatus('paid');
-                      else if (val > 0) setPaymentStatus('partial');
-                      else setPaymentStatus('unpaid');
-                    }}
-                    className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
-                      isDark ? 'bg-slate-950 border border-slate-800 text-emerald-400 font-bold' : 'bg-white border border-slate-300 text-emerald-700 font-bold'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              {/* Payment Mode & Reference Filling Option */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                    Payment Mode
-                  </label>
-                  <select
-                    value={paymentMode}
-                    onChange={(e) => setPaymentMode(e.target.value as PaymentMode)}
-                    className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
-                      isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
-                    }`}
-                  >
-                    <option value="upi">UPI / GPay / PhonePe</option>
-                    <option value="cash">Cash</option>
-                    <option value="bank_transfer">Bank Transfer (NEFT / IMPS)</option>
-                    <option value="card">Debit / Credit Card</option>
-                    <option value="cheque">Cheque</option>
-                  </select>
-                </div>
-
-                <div>
+                {/* UPI Ref / Reference No */}
+                <div className="pt-1">
                   <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
                     UPI Transaction ID / UTR / Reference No
                   </label>
@@ -2087,23 +2818,6 @@ export const BillingCashFlow: React.FC = () => {
                       isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
                     }`}
                   />
-                </div>
-
-                <div>
-                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                    Payment Status
-                  </label>
-                  <select
-                    value={paymentStatus}
-                    onChange={(e) => setPaymentStatus(e.target.value as any)}
-                    className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
-                      isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
-                    }`}
-                  >
-                    <option value="paid">Paid in Full</option>
-                    <option value="partial">Partial Payment</option>
-                    <option value="unpaid">Unpaid / Credit</option>
-                  </select>
                 </div>
               </div>
 
@@ -2147,7 +2861,7 @@ export const BillingCashFlow: React.FC = () => {
               }`}>
                 <button
                   type="button"
-                  onClick={() => setIsCreateInvoiceOpen(false)}
+                  onClick={handleCloseWithAutoSave}
                   className={`px-4 py-2 text-xs rounded-lg transition-colors cursor-pointer ${
                     isDark ? 'text-slate-400 hover:text-slate-200 bg-slate-800' : 'text-slate-600 hover:text-slate-800 bg-slate-100'
                   }`}
@@ -2404,7 +3118,7 @@ export const BillingCashFlow: React.FC = () => {
                       <th className="py-2 px-2 text-center">HSN/SAC</th>
                     )}
                     <th className="py-2 px-2 text-center">Qty</th>
-                    <th className="py-2 px-2 text-right">Base Rate</th>
+                    <th className="py-2 px-2 text-right">Rate (₹)</th>
                     {printableInvoice.billingFirm !== 'pandiyan' && (
                       <>
                         <th className="py-2 px-2 text-center">GST %</th>
@@ -2417,11 +3131,11 @@ export const BillingCashFlow: React.FC = () => {
                 <tbody className="divide-y">
                   {printableInvoice.items.map((it, idx) => {
                     const itGst = it.gstPercent !== undefined ? it.gstPercent : (printableInvoice.billingFirm === 'pandiyan' ? 0 : printableInvoice.gstPercent);
-                    const itTax = it.gstAmount ?? Math.round(((it.amount || (it.rate * it.quantity)) * itGst) / 100);
+                    const itTax = it.gstAmount ?? (((it.amount || (it.rate * it.quantity)) * itGst) / 100);
                     const itTotal = it.totalWithGst ?? (it.amount + itTax);
                     return (
                       <tr key={idx}>
-                        <td className="py-2 px-3 font-semibold">{it.description}</td>
+                        <td className="py-2 px-3 font-semibold whitespace-pre-line">{it.description}</td>
                         {printableInvoice.billingFirm !== 'pandiyan' && (
                           <td className="py-2 px-2 text-center font-mono text-[11px] text-blue-700">
                             {it.hsnCode || '998713'}
@@ -2432,10 +3146,10 @@ export const BillingCashFlow: React.FC = () => {
                         {printableInvoice.billingFirm !== 'pandiyan' && (
                           <>
                             <td className="py-2 px-2 text-center font-mono text-blue-700 font-bold">{itGst}%</td>
-                            <td className="py-2 px-2 text-right font-mono text-slate-700">₹{itTax.toLocaleString('en-IN')}</td>
+                            <td className="py-2 px-2 text-right font-mono text-slate-700">₹{itTax.toFixed(2)}</td>
                           </>
                         )}
-                        <td className="py-2 px-3 text-right font-mono font-bold">₹{itTotal.toLocaleString('en-IN')}</td>
+                        <td className="py-2 px-3 text-right font-mono font-bold">₹{itTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       </tr>
                     );
                   })}
@@ -2447,31 +3161,47 @@ export const BillingCashFlow: React.FC = () => {
                 <div className="w-72 space-y-1.5 text-xs">
                   <div className="flex justify-between text-slate-600">
                     <span>Taxable Value (Subtotal):</span>
-                    <span className="font-mono">₹{printableInvoice.subtotal.toLocaleString('en-IN')}</span>
+                    <span className="font-mono">₹{printableInvoice.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
-                  {printableInvoice.billingFirm !== 'pandiyan' && printableInvoice.taxAmount > 0 && (
-                    <>
-                      <div className="flex justify-between text-slate-600">
-                        <span>CGST (Central Tax 50%):</span>
-                        <span className="font-mono">₹{(Math.round((printableInvoice.taxAmount / 2) * 10) / 10).toLocaleString('en-IN')}</span>
-                      </div>
-                      <div className="flex justify-between text-slate-600">
-                        <span>SGST (State Tax 50%):</span>
-                        <span className="font-mono">₹{(Math.round((printableInvoice.taxAmount / 2) * 10) / 10).toLocaleString('en-IN')}</span>
-                      </div>
-                      <div className="flex justify-between text-blue-700 font-semibold">
-                        <span>Total GST Amount:</span>
-                        <span className="font-mono">₹{printableInvoice.taxAmount.toLocaleString('en-IN')}</span>
-                      </div>
-                    </>
+                  {printableInvoice.billingFirm !== 'pandiyan' && printableInvoice.taxAmount > 0 && (() => {
+                    const gstRate = printableInvoice.gstPercent || 18;
+                    const halfRate = (gstRate / 2).toFixed(gstRate % 2 === 0 ? 0 : 1);
+                    return (
+                      <>
+                        <div className="flex justify-between text-slate-600">
+                          <span>CGST (Central Tax {halfRate}%):</span>
+                          <span className="font-mono">₹{(printableInvoice.taxAmount / 2).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-600">
+                          <span>SGST (State Tax {halfRate}%):</span>
+                          <span className="font-mono">₹{(printableInvoice.taxAmount / 2).toFixed(2)}</span>
+                        </div>
+                        <div className="flex justify-between text-blue-700 font-semibold">
+                          <span>Total GST Amount:</span>
+                          <span className="font-mono">₹{printableInvoice.taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                  {printableInvoice.discount !== undefined && printableInvoice.discount > 0 && (
+                    <div className="flex justify-between text-rose-600 font-semibold">
+                      <span>Discount:</span>
+                      <span className="font-mono">-₹{printableInvoice.discount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+                  {printableInvoice.roundOff !== undefined && printableInvoice.roundOff !== 0 && (
+                    <div className="flex justify-between text-slate-600 font-mono">
+                      <span>Round Off:</span>
+                      <span>{printableInvoice.roundOff > 0 ? '+' : ''}₹{printableInvoice.roundOff.toFixed(2)}</span>
+                    </div>
                   )}
                   <div className="flex justify-between font-bold text-sm border-t pt-1.5">
                     <span>Grand Total:</span>
-                    <span className="font-mono">₹{printableInvoice.grandTotal.toLocaleString('en-IN')}</span>
+                    <span className="font-mono">₹{printableInvoice.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                   <div className="flex justify-between text-emerald-700 font-bold">
                     <span>Paid Amount:</span>
-                    <span className="font-mono">₹{printableInvoice.paidAmount.toLocaleString('en-IN')}</span>
+                    <span className="font-mono">₹{printableInvoice.paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                   </div>
                   {printableInvoice.grandTotal - printableInvoice.paidAmount > 0 && (
                     <div className="flex justify-between text-rose-700 font-bold border-t border-dashed pt-1">
@@ -2542,6 +3272,91 @@ export const BillingCashFlow: React.FC = () => {
               <div className="text-center text-[10px] text-slate-400 border-t pt-2 space-y-0.5">
                 <p className="font-medium">Spider Grid Solutions · Computer, Laptop, CCTV & Network Sales & Service Center · Madurai</p>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {convertToast && (
+        <div className="fixed top-6 right-6 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in fade-in slide-in-from-top-2">
+          <CheckCircle2 className="w-4 h-4" />
+          <span>{convertToast}</span>
+        </div>
+      )}
+
+      {/* Convert Quotation to Official Tax Invoice Modal */}
+      {confirmConvertModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+            isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-emerald-600">
+                  Convert Quotation to Official Invoice?
+                </h3>
+                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Document: <strong className="font-mono">{confirmConvertModal.invoiceNumber}</strong>
+                </p>
+              </div>
+            </div>
+
+            <div className={`p-3.5 rounded-xl border text-xs space-y-2 ${
+              isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+            }`}>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Customer:</span>
+                <span className="font-bold">{confirmConvertModal.customerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Total Amount:</span>
+                <span className="font-mono font-bold text-emerald-600">₹{confirmConvertModal.grandTotal.toLocaleString('en-IN')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Firm:</span>
+                <span className="capitalize">{confirmConvertModal.billingFirm === 'pandiyan' ? 'Pandiyan Computers' : 'Spider Grid Solutions'}</span>
+              </div>
+            </div>
+
+            <p className={`text-xs leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+              This will convert this estimate into an Official Tax Invoice with sequence numbering, register profit metrics, and link with the customer record.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setConfirmConvertModal(null)}
+                className={`px-4 py-2 text-xs rounded-xl font-medium cursor-pointer ${
+                  isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    const targetId = confirmConvertModal.id;
+                    const targetNum = confirmConvertModal.invoiceNumber;
+                    const converted = convertQuotationToInvoice(targetId);
+                    setConfirmConvertModal(null);
+                    setDocTypeFilter('all');
+                    setViewingInvoice(converted);
+                    setConvertToast(`Quotation #${targetNum} converted to Official Invoice #${converted.invoiceNumber}!`);
+                    setTimeout(() => setConvertToast(null), 4000);
+                  } catch (err: any) {
+                    alert(err?.message || 'Failed to convert quotation to invoice');
+                  }
+                }}
+                className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md shadow-emerald-600/20 cursor-pointer flex items-center gap-1.5"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Yes, Convert to Tax Invoice</span>
+              </button>
             </div>
           </div>
         </div>

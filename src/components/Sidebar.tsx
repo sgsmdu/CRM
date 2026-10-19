@@ -11,6 +11,7 @@ import {
   Upload, 
   RotateCcw,
   Sparkles,
+  Trash2,
   FileSpreadsheet,
   Sun,
   Moon,
@@ -19,7 +20,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Menu,
-  X
+  X,
+  ListOrdered
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -48,11 +50,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen,
   setIsMobileOpen,
 }) => {
-  const { customers, jobCards, leadSources, exportDataJson, importDataJson, resetToDefaultData, theme, toggleTheme } = useSgs();
+  const { customers, jobCards, leadSources, exportDataJson, importDataJson, clearAllInputData, resetToDefaultData, theme, toggleTheme } = useSgs();
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
+  const [resetToast, setResetToast] = useState<string | null>(null);
   const isDark = theme === 'dark';
 
   const activeJobsCount = jobCards.filter(j => j.status !== 'delivered' && j.status !== 'completed').length;
+  const pendingTasksCount = jobCards.filter(j => j.status !== 'work_completed' && j.status !== 'completed' && j.status !== 'delivered').length;
 
   const handleExport = () => {
     const jsonStr = exportDataJson();
@@ -74,29 +80,43 @@ export const Sidebar: React.FC<SidebarProps> = ({
       const content = event.target?.result as string;
       const success = importDataJson(content);
       if (success) {
-        alert('Data backup successfully restored!');
+        setResetToast('Data backup successfully restored!');
+        setTimeout(() => setResetToast(null), 3500);
       } else {
-        alert('Failed to parse backup JSON. Please check file format.');
+        setResetToast('Failed to parse backup JSON. Please check file format.');
+        setTimeout(() => setResetToast(null), 3500);
       }
     };
     reader.readAsText(file);
     setShowSettingsMenu(false);
   };
 
-  const handleReset = () => {
-    if (window.confirm('Reset all databases back to default Spider Grid Solutions 31 Golden Customers and seed records?')) {
-      resetToDefaultData();
-      setShowSettingsMenu(false);
-    }
+  const handleConfirmClearAll = () => {
+    clearAllInputData();
+    setShowClearConfirmModal(false);
+    setShowSettingsMenu(false);
+    setResetToast('All input data cleared! App is now 100% fresh with 0 records.');
+    setTimeout(() => setResetToast(null), 4000);
+  };
+
+  const handleConfirmReset = () => {
+    resetToDefaultData();
+    setShowResetConfirmModal(false);
+    setShowSettingsMenu(false);
+    setResetToast('Sample Demo Data Loaded! All 31 Verified Customers and clean records reloaded.');
+    setTimeout(() => setResetToast(null), 4000);
   };
 
   const navItems = [
     { id: 'dashboard', label: 'Command Center', icon: LayoutDashboard },
     { id: 'jobs', label: 'Job Cards & Timeline', count: activeJobsCount, icon: Wrench },
-    { id: 'billing', label: 'Billing & Cash Flow', icon: CreditCard },
+    { id: 'allocation', label: 'Task Assign & Priority', count: pendingTasksCount, icon: ListOrdered },
+    { id: 'billing', label: 'Billing & Quotations', icon: CreditCard },
+    { id: 'reports', label: 'GST Reports & Filing', icon: FileSpreadsheet },
+    { id: 'employees', label: 'Staff & Attendance', icon: Users },
     { id: 'inventory', label: 'Stock & Parts Inventory', icon: Boxes },
     { id: 'vendors', label: 'Vendor Hub & Bill Scan', icon: Receipt },
-    { id: 'customers', label: 'Golden Customers', count: customers.length, icon: Users },
+    { id: 'customers', label: 'Customer Directory', count: customers.length, icon: Users },
     { id: 'leads', label: 'Lead Sources', count: leadSources.length, icon: Share2 },
     { id: 'admin', label: 'Admin Hub & Settings', icon: ShieldCheck },
   ];
@@ -320,11 +340,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </label>
                   <div className={`border-t my-1 ${isDark ? 'border-slate-800' : 'border-slate-100'}`} />
                   <button
-                    onClick={handleReset}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-rose-500 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer text-left"
+                    onClick={() => setShowClearConfirmModal(true)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-rose-500 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer text-left font-semibold text-xs"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Clear All Data (Fresh Start)</span>
+                  </button>
+                  <button
+                    onClick={() => setShowResetConfirmModal(true)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-blue-500 hover:bg-blue-50 hover:text-blue-700 transition-colors cursor-pointer text-left font-semibold text-xs"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
-                    <span>Reset 31 Records</span>
+                    <span>Load Sample / Demo Data</span>
                   </button>
                 </div>
               )}
@@ -332,6 +359,106 @@ export const Sidebar: React.FC<SidebarProps> = ({
           )}
         </div>
       </aside>
+
+      {/* Toast Feedback */}
+      {resetToast && (
+        <div className="fixed top-6 right-6 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in fade-in slide-in-from-top-2">
+          <Sparkles className="w-4 h-4" />
+          <span>{resetToast}</span>
+        </div>
+      )}
+
+      {/* Safe Clear All Confirmation Modal */}
+      {showClearConfirmModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+            isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-rose-600">
+                  Clear All Input Data?
+                </h3>
+                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Start completely fresh with 0 records
+                </p>
+              </div>
+            </div>
+
+            <p className={`text-xs leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+              This will wipe all <strong>customers, job cards, inventory stock, vendor bills, invoices, staff records, and cash flow</strong> to a 100% clean slate. You will be able to test and input fresh workshop data.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowClearConfirmModal(false)}
+                className={`px-4 py-2 text-xs rounded-xl font-medium cursor-pointer ${
+                  isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmClearAll}
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md shadow-rose-600/20 cursor-pointer"
+              >
+                Yes, Clear All Fresh
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Safe Demo Reset Confirmation Modal */}
+      {showResetConfirmModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+            isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center shrink-0">
+                <RotateCcw className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-blue-600">
+                  Load Sample / Demo Data?
+                </h3>
+                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Restore 31 verified customers and demo workshop records
+                </p>
+              </div>
+            </div>
+
+            <p className={`text-xs leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+              This will restore the <strong>31 verified customer accounts</strong>, default inventory stock items, sample job cards, staff roster, and vendor bills.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowResetConfirmModal(false)}
+                className={`px-4 py-2 text-xs rounded-xl font-medium cursor-pointer ${
+                  isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReset}
+                className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md shadow-blue-600/20 cursor-pointer"
+              >
+                Yes, Load Demo Data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

@@ -448,7 +448,7 @@ export const GoogleContactsModal: React.FC<GoogleContactsModalProps> = ({
               <div className="space-y-1">
                 <h4 className="text-sm font-bold">Connect Google Contacts</h4>
                 <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  Sign in with Google to enable automatic syncing of all Golden Customers and referral lead sources with your phone.
+                  Sign in with Google to enable automatic syncing of all Customers and referral lead sources with your phone.
                 </p>
               </div>
               <button
@@ -515,7 +515,7 @@ export const GoogleContactsModal: React.FC<GoogleContactsModalProps> = ({
                   isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
                 }`}>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold">Golden Customers</span>
+                    <span className="text-xs font-bold">Customer Directory</span>
                     <span className="text-xs font-mono font-bold text-blue-600">{customers.length} Clients</span>
                   </div>
                   <p className="text-[11px] text-slate-500">

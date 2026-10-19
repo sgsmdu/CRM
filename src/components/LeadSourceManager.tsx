@@ -24,6 +24,8 @@ import {
   Calendar,
   Layers,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   UserPlus,
   Gift,
   Clock,
@@ -228,6 +230,19 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLead, setEditingLead] = useState<LeadSource | null>(null);
   const [viewingReferredCustomersLead, setViewingReferredCustomersLead] = useState<LeadSource | null>(null);
+  const [expandedLeadIds, setExpandedLeadIds] = useState<string[]>([]);
+  const [leadToast, setLeadToast] = useState<string | null>(null);
+
+  const showLeadToast = (msg: string) => {
+    setLeadToast(msg);
+    setTimeout(() => setLeadToast(null), 3500);
+  };
+
+  const toggleLeadExpand = (id: string) => {
+    setExpandedLeadIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
 
   // Quick Meeting / Gift Modal State
   const [meetingModalLead, setMeetingModalLead] = useState<LeadSource | null>(null);
@@ -543,7 +558,7 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
     });
 
     downloadVCard(`SGS-All-Leads-GoogleContacts-${new Date().toISOString().split('T')[0]}`, masterVcf);
-    alert(`Successfully generated master Google Contacts file (.vcf) with ${leadSources.length} lead persons! Open this file on your phone or Google Contacts to sync all with 1-click.`);
+    showLeadToast(`Master Google Contacts file (.vcf) generated for ${leadSources.length} lead persons!`);
   };
 
   // Category helpers
@@ -823,6 +838,40 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
         </div>
       </div>
 
+      {/* Header Stats & Expand All / Collapse All Toggle */}
+      <div className="flex items-center justify-between text-xs px-1 pb-1">
+        <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>
+          Showing <strong>{filteredLeads.length}</strong> referral partners
+        </span>
+        {filteredLeads.length > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              if (expandedLeadIds.length === filteredLeads.length) {
+                setExpandedLeadIds([]);
+              } else {
+                setExpandedLeadIds(filteredLeads.map(l => l.id));
+              }
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+              isDark ? 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 shadow-2xs'
+            }`}
+          >
+            {expandedLeadIds.length === filteredLeads.length ? (
+              <>
+                <ChevronUp className="w-3.5 h-3.5 text-blue-500" />
+                <span>Collapse All</span>
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-3.5 h-3.5 text-blue-500" />
+                <span>Expand All Details</span>
+              </>
+            )}
+          </button>
+        )}
+      </div>
+
       {/* Lead Cards / Directory Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {filteredLeads.length === 0 ? (
@@ -849,335 +898,369 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
             const waUrl = cleanPhone 
               ? `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(`Hello ${lead.name}! Greetings from Spider Grid Solutions (SGS) Madurai. Thank you for your continued support and customer referrals!`)}`
               : null;
+            const isExpanded = expandedLeadIds.includes(lead.id);
 
             return (
               <div
                 key={lead.id}
-                className={`rounded-xl border p-4 flex flex-col justify-between transition-all hover:shadow-md ${
-                  isDark ? 'bg-slate-900/70 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-200/90 shadow-xs hover:border-blue-300'
+                className={`rounded-xl border transition-all overflow-hidden ${
+                  isExpanded
+                    ? (isDark ? 'bg-slate-900/90 border-blue-600/80 shadow-md ring-1 ring-blue-600/30' : 'bg-white border-blue-400 shadow-md ring-1 ring-blue-400/20')
+                    : (isDark ? 'bg-slate-900/70 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-200/90 shadow-xs hover:border-blue-300')
                 }`}
               >
-                <div>
+                {/* 1. MAIN COLLAPSED VIEW (Always visible - Click to Expand) */}
+                <div 
+                  onClick={() => toggleLeadExpand(lead.id)}
+                  className="p-3.5 cursor-pointer select-none space-y-2 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
+                  title="Click to expand/collapse full commission, meetings & partner actions"
+                >
                   {/* Lead Header */}
-                  <div className="flex items-start justify-between gap-2 mb-2.5">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm ${badge.bg} ${badge.text}`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${badge.bg} ${badge.text}`}>
                         {lead.name.charAt(0).toUpperCase()}
                       </div>
-                      <div>
-                        <h3 className={`text-sm font-bold leading-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                      <div className="min-w-0">
+                        <h3 className={`text-sm font-bold leading-tight truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>
                           {lead.name}
                         </h3>
                         {lead.companyOrOccupation && (
-                          <p className={`text-[11px] truncate max-w-[190px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`} title={lead.companyOrOccupation}>
+                          <p className={`text-[11px] truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`} title={lead.companyOrOccupation}>
                             {lead.companyOrOccupation}
                           </p>
                         )}
                       </div>
                     </div>
 
-                    {/* Category Chip */}
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${badge.bg} ${badge.text}`}>
-                      {badge.icon}
-                      <span>{formatCategoryLabel(lead.category)}</span>
-                    </span>
-                  </div>
-
-                  {/* Contact Info Rows */}
-                  <div className="space-y-1.5 text-xs py-2 border-y my-2.5 border-dashed border-slate-200 dark:border-slate-800">
-                    {lead.phone ? (
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 text-slate-500">
-                          <Phone className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                          <span className="font-mono font-medium text-slate-800 dark:text-slate-200">{lead.phone}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <a
-                            href={`tel:${lead.phone}`}
-                            className={`p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-blue-600 dark:text-sky-400 transition-colors`}
-                            title="Direct Call"
-                          >
-                            <Phone className="w-3 h-3" />
-                          </a>
-                          {waUrl && (
-                            <a
-                              href={waUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className={`p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-emerald-600 dark:text-emerald-400 transition-colors`}
-                              title="Chat on WhatsApp"
-                            >
-                              <MessageSquare className="w-3 h-3" />
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="text-[11px] text-slate-400 italic">No phone number recorded</div>
-                    )}
-
-                    {lead.area && (
-                      <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400 text-[11px]">
-                        <MapPin className="w-3 h-3 text-rose-500 shrink-0" />
-                        <span>{lead.area}</span>
-                        <a
-                          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${lead.area}, Madurai`)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5"
-                          title="Open in Google Maps"
-                        >
-                          <ExternalLink className="w-2.5 h-2.5" />
-                        </a>
-                      </div>
-                    )}
-
-                    {lead.notes && (
-                      <p className={`text-[11px] line-clamp-2 pt-0.5 italic ${isDark ? 'text-slate-400' : 'text-slate-500'}`} title={lead.notes}>
-                        "{lead.notes}"
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Business & Referral Metrics */}
-                  {/* Business & Referral Metrics */}
-                  <div className={`grid grid-cols-2 gap-2 p-2.5 rounded-lg mb-2.5 ${
-                    isDark ? 'bg-slate-950/60 border border-slate-800/80' : 'bg-slate-50 border border-slate-200/70'
-                  }`}>
-                    <div>
-                      <span className={`block text-[10px] font-medium uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                        Referred Clients
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {/* Category Chip */}
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border ${badge.bg} ${badge.text}`}>
+                        {badge.icon}
+                        <span>{formatCategoryLabel(lead.category)}</span>
                       </span>
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <span className={`text-sm font-bold font-mono ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                          {stats.customersCount}
+                      {/* Expand Chevron Icon Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleLeadExpand(lead.id);
+                        }}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors cursor-pointer ${
+                          isExpanded 
+                            ? 'bg-blue-600 text-white border-blue-600 shadow-2xs' 
+                            : (isDark ? 'border-slate-800 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-100 shadow-2xs')
+                        }`}
+                        title={isExpanded ? 'Collapse' : 'Expand full options'}
+                      >
+                        <span>{isExpanded ? 'Less' : 'Details'}</span>
+                        {isExpanded ? <ChevronUp className="w-3 h-3 text-white" /> : <ChevronDown className="w-3 h-3" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Main Essential Info Row: Phone + Primary Metrics */}
+                  <div className="flex items-center justify-between text-xs gap-2 pt-1.5 border-t border-slate-100 dark:border-slate-800/60">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {lead.phone ? (
+                        <div className="flex items-center gap-1 font-mono text-[11px] text-slate-700 dark:text-slate-300">
+                          <Phone className="w-3 h-3 text-blue-500 shrink-0" />
+                          <span>{lead.phone}</span>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 italic">No phone</span>
+                      )}
+                      {lead.area && (
+                        <span className="text-[11px] text-slate-500 truncate">
+                          · {lead.area}
                         </span>
-                        {stats.customersCount > 0 && (
-                          <button
-                            onClick={() => setViewingReferredCustomersLead(lead)}
-                            className="text-[10px] font-semibold text-blue-600 hover:underline cursor-pointer"
-                          >
-                            (View list)
-                          </button>
-                        )}
-                      </div>
+                      )}
                     </div>
 
-                    <div>
-                      <span className={`block text-[10px] font-medium uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                        Total Revenue
+                    {/* Compact Main Metric Badge */}
+                    <div className="flex items-center gap-1.5 shrink-0 font-mono text-[11px]">
+                      <span className={`px-2 py-0.5 rounded-md font-bold ${
+                        isDark ? 'bg-slate-800 text-slate-200' : 'bg-slate-100 text-slate-800'
+                      }`}>
+                        {stats.customersCount} Clients
                       </span>
-                      <span className={`text-sm font-bold font-mono ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                      <span className="text-emerald-600 dark:text-emerald-400 font-bold">
                         ₹{stats.revenue.toLocaleString('en-IN')}
                       </span>
                     </div>
                   </div>
+                </div>
 
-                  {/* Meeting Plan & Last Met Details */}
-                  <div className={`p-2.5 rounded-lg mb-2.5 text-xs space-y-1.5 border ${
-                    isDark ? 'bg-blue-950/20 border-blue-900/40 text-slate-300' : 'bg-blue-50/50 border-blue-100 text-slate-800'
+                {/* 2. EXPANDED CONTENT: ONLY SHOWN WHEN CLICKED */}
+                {isExpanded && (
+                  <div className={`p-4 border-t space-y-3.5 animate-in fade-in duration-150 ${
+                    isDark ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50/50 border-slate-200'
                   }`}>
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="font-semibold text-blue-700 dark:text-blue-300 flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        <span>Meeting Plan</span>
-                      </span>
-                      <button
-                        onClick={() => handleOpenMeetingModal(lead)}
-                        className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
-                      >
-                        {lead.nextMeetingPlan ? 'Edit Meeting' : '+ Plan Meeting'}
-                      </button>
-                    </div>
-
-                    <div className="text-[11px] space-y-0.5">
-                      <div className="flex items-center gap-1 text-slate-500">
-                        <Clock className="w-3 h-3" />
-                        <span>Last Met: </span>
-                        <strong className="text-slate-700 dark:text-slate-300">
-                          {lead.lastMeetingDate ? new Date(lead.lastMeetingDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not logged yet'}
-                        </strong>
+                    {/* Quick Call & WhatsApp Action Row */}
+                    <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-blue-500/5 border border-blue-500/10">
+                      <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">Quick Connect:</span>
+                      <div className="flex items-center gap-2">
+                        {lead.phone && (
+                          <a
+                            href={`tel:${lead.phone}`}
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-sky-400 hover:bg-blue-100 transition-colors"
+                            title="Direct Call"
+                          >
+                            <Phone className="w-3 h-3" />
+                            <span>Call</span>
+                          </a>
+                        )}
+                        {waUrl && (
+                          <a
+                            href={waUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 transition-colors"
+                            title="Chat on WhatsApp"
+                          >
+                            <MessageSquare className="w-3 h-3" />
+                            <span>WhatsApp</span>
+                          </a>
+                        )}
                       </div>
-                      {lead.nextMeetingPlan && (
-                        <p className="text-[11px] font-medium text-amber-700 dark:text-amber-400 pt-0.5">
-                          👉 Next: {lead.nextMeetingPlan}
-                        </p>
-                      )}
-                      {lead.meetingNotes && (
-                        <p className="text-[10px] text-slate-500 italic">
-                          Notes: "{lead.meetingNotes}"
-                        </p>
-                      )}
                     </div>
-                  </div>
 
-                  {/* Gift & Lead Commission Section */}
-                  {(() => {
-                    const rate = lead.commissionRatePercent || 0;
-                    const earned = Math.round((stats.revenue * rate) / 100);
-                    const paid = lead.commissionPaid || 0;
-                    const pending = Math.max(0, earned - paid);
-
-                    return (
-                      <div className={`p-2.5 rounded-lg mb-3 text-xs space-y-2 border ${
-                        isDark ? 'bg-amber-950/15 border-amber-900/40' : 'bg-amber-50/50 border-amber-200/60'
+                    {/* Detailed Metrics Grid */}
+                    <div className={`grid grid-cols-2 gap-2 p-2.5 rounded-lg text-center ${
+                      isDark ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-200 shadow-2xs'
+                    }`}>
+                      <div>
+                        <span className={`block text-[10px] font-medium uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                          Referred Clients
+                        </span>
+                        <span className={`text-base font-bold font-mono ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                          {stats.customersCount}
+                        </span>
+                      </div>
+                      <div>
+                        <span className={`block text-[10px] font-medium uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                          Total Revenue
+                        </span>
+                        <span className={`text-base font-bold font-mono ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                          ₹{stats.revenue.toLocaleString('en-IN')}
+                        </span>
+                      </div>
+                    </div>
+                    {/* Notes if available */}
+                    {lead.notes && (
+                      <p className={`text-[11px] italic p-2 rounded-lg border ${
+                        isDark ? 'bg-slate-900 border-slate-800 text-slate-300' : 'bg-white border-slate-200 text-slate-700'
                       }`}>
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1">
-                            <Award className="w-3 h-3 text-amber-500" />
-                            <span>Commission & Gifts ({rate}%)</span>
-                          </span>
-                          {pending > 0 && (
-                            <button
-                              onClick={() => handleOpenPayCommissionModal(lead, pending)}
-                              className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer shadow-xs"
-                            >
-                              Pay ₹{pending.toLocaleString('en-IN')}
-                            </button>
-                          )}
-                        </div>
+                        "{lead.notes}"
+                      </p>
+                    )}
 
-                        {/* Gift status */}
-                        {lead.giftDetails ? (
-                          <div className="flex items-center justify-between text-[11px] pt-0.5">
-                            <div className="flex items-center gap-1">
-                              <Gift className="w-3 h-3 text-rose-500 shrink-0" />
-                              <span className="truncate max-w-[170px]" title={lead.giftDetails}>{lead.giftDetails}</span>
-                            </div>
-                            {lead.giftStatus === 'handed_over' ? (
-                              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-950/80 px-1.5 py-0.2 rounded">
-                                Handed Over ✓
-                              </span>
-                            ) : (
+                    {/* Meeting Plan & Last Met Details */}
+                    <div className={`p-2.5 rounded-lg text-xs space-y-1.5 border ${
+                      isDark ? 'bg-blue-950/20 border-blue-900/40 text-slate-300' : 'bg-blue-50/50 border-blue-100 text-slate-800'
+                    }`}>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-semibold text-blue-700 dark:text-blue-300 flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          <span>Meeting Plan</span>
+                        </span>
+                        <button
+                          onClick={() => handleOpenMeetingModal(lead)}
+                          className="text-[10px] font-bold text-blue-600 hover:underline cursor-pointer"
+                        >
+                          {lead.nextMeetingPlan ? 'Edit Meeting' : '+ Plan Meeting'}
+                        </button>
+                      </div>
+
+                      <div className="text-[11px] space-y-0.5">
+                        <div className="flex items-center gap-1 text-slate-500">
+                          <Clock className="w-3 h-3" />
+                          <span>Last Met: </span>
+                          <strong className="text-slate-700 dark:text-slate-300">
+                            {lead.lastMeetingDate ? new Date(lead.lastMeetingDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not logged yet'}
+                          </strong>
+                        </div>
+                        {lead.nextMeetingPlan && (
+                          <p className="text-[11px] font-medium text-amber-700 dark:text-amber-400 pt-0.5">
+                            👉 Next: {lead.nextMeetingPlan}
+                          </p>
+                        )}
+                        {lead.meetingNotes && (
+                          <p className="text-[10px] text-slate-500 italic">
+                            Notes: "{lead.meetingNotes}"
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Gift & Lead Commission Section */}
+                    {(() => {
+                      const rate = lead.commissionRatePercent || 0;
+                      const earned = Math.round((stats.revenue * rate) / 100);
+                      const paid = lead.commissionPaid || 0;
+                      const pending = Math.max(0, earned - paid);
+
+                      return (
+                        <div className={`p-2.5 rounded-lg text-xs space-y-2 border ${
+                          isDark ? 'bg-amber-950/15 border-amber-900/40' : 'bg-amber-50/50 border-amber-200/60'
+                        }`}>
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                              <Award className="w-3 h-3 text-amber-500" />
+                              <span>Commission & Gifts ({rate}%)</span>
+                            </span>
+                            {pending > 0 && (
                               <button
-                                onClick={() => handleMarkGiftHandedOver(lead)}
-                                className="text-[10px] font-bold text-amber-700 hover:underline cursor-pointer"
-                                title="Click to mark as handed over"
+                                onClick={() => handleOpenPayCommissionModal(lead, pending)}
+                                className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer shadow-xs"
                               >
-                                Mark Handed Over
+                                Pay ₹{pending.toLocaleString('en-IN')}
                               </button>
                             )}
                           </div>
-                        ) : (
-                          <div className="text-[10px] text-slate-400 italic">No gift registered for this lead</div>
+
+                          {/* Gift status */}
+                          {lead.giftDetails ? (
+                            <div className="flex items-center justify-between text-[11px] pt-0.5">
+                              <div className="flex items-center gap-1">
+                                <Gift className="w-3 h-3 text-rose-500 shrink-0" />
+                                <span className="truncate max-w-[170px]" title={lead.giftDetails}>{lead.giftDetails}</span>
+                              </div>
+                              {lead.giftStatus === 'handed_over' ? (
+                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-950/80 px-1.5 py-0.2 rounded">
+                                  Handed Over ✓
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => handleMarkGiftHandedOver(lead)}
+                                  className="text-[10px] font-bold text-amber-700 hover:underline cursor-pointer"
+                                  title="Click to mark as handed over"
+                                >
+                                  Mark Handed Over
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-slate-400 italic">No gift registered for this lead</div>
+                          )}
+
+                          {/* Commission breakdown */}
+                          {(() => {
+                            const manualComms = stats.customers.reduce((sum, c) => sum + (c.referralCommissionAmount || 0), 0);
+                            const manualPaid = stats.customers.filter(c => c.referralCommissionStatus === 'paid').reduce((sum, c) => sum + (c.referralCommissionAmount || 0), 0);
+                            const manualPending = stats.customers.filter(c => c.referralCommissionStatus !== 'paid').reduce((sum, c) => sum + (c.referralCommissionAmount || 0), 0);
+                            const effectiveEarned = manualComms > 0 ? manualComms : earned;
+                            const effectivePaid = manualComms > 0 ? manualPaid : paid;
+                            const effectivePending = manualComms > 0 ? manualPending : pending;
+
+                            return (
+                              <div className="space-y-1.5 pt-1 border-t border-amber-200/40 dark:border-amber-900/30">
+                                <div className="grid grid-cols-3 gap-1 text-center font-mono text-[10px]">
+                                  <div>
+                                    <span className="text-slate-400 block text-[9px]">EARNED</span>
+                                    <span className="font-bold text-slate-700 dark:text-slate-200">₹{effectiveEarned.toLocaleString('en-IN')}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 block text-[9px]">PAID</span>
+                                    <span className="font-bold text-emerald-600">₹{effectivePaid.toLocaleString('en-IN')}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-slate-400 block text-[9px]">PENDING</span>
+                                    <span className={`font-bold ${effectivePending > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
+                                      ₹{effectivePending.toLocaleString('en-IN')}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingReferredCustomersLead(lead)}
+                                  className="w-full text-center py-1 rounded text-[11px] font-bold text-amber-800 dark:text-amber-300 hover:bg-amber-100/60 dark:hover:bg-amber-900/30 flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                                >
+                                  <span>Manage Commissions per Client ({stats.customersCount})</span>
+                                  <ChevronRight className="w-3 h-3" />
+                                </button>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Footer Controls & Google Contact Sync */}
+                    <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2">
+                      {/* Google Contact Sync Button */}
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleSyncToGoogleContacts(lead)}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-md border transition-all cursor-pointer ${
+                            lead.syncedWithGoogleContacts
+                              ? (isDark ? 'bg-emerald-950/50 border-emerald-800 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-700')
+                              : (isDark ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 shadow-xs')
+                          }`}
+                          title={lead.syncedWithGoogleContacts ? 'Click to re-download vCard contact file' : 'Sync to phone & Google Contacts'}
+                        >
+                          {lead.syncedWithGoogleContacts ? (
+                            <>
+                              <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+                              <span>Google Contact Synced</span>
+                            </>
+                          ) : (
+                            <>
+                              <Download className="w-3 h-3 text-blue-500" />
+                              <span>Sync to Contacts (.vcf)</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-1">
+                        {onOpenNewCustomerWithLead && (
+                          <button
+                            onClick={() => onOpenNewCustomerWithLead(lead)}
+                            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                              isDark ? 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800' : 'text-slate-500 hover:text-emerald-700 hover:bg-emerald-50'
+                            }`}
+                            title="Register New Customer referred by this Lead"
+                          >
+                            <UserPlus className="w-3.5 h-3.5" />
+                          </button>
                         )}
 
-                        {/* Commission breakdown */}
-                        {(() => {
-                          const manualComms = stats.customers.reduce((sum, c) => sum + (c.referralCommissionAmount || 0), 0);
-                          const manualPaid = stats.customers.filter(c => c.referralCommissionStatus === 'paid').reduce((sum, c) => sum + (c.referralCommissionAmount || 0), 0);
-                          const manualPending = stats.customers.filter(c => c.referralCommissionStatus !== 'paid').reduce((sum, c) => sum + (c.referralCommissionAmount || 0), 0);
-                          const effectiveEarned = manualComms > 0 ? manualComms : earned;
-                          const effectivePaid = manualComms > 0 ? manualPaid : paid;
-                          const effectivePending = manualComms > 0 ? manualPending : pending;
+                        <button
+                          onClick={() => handleOpenMeetingModal(lead)}
+                          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                            isDark ? 'text-slate-400 hover:text-amber-400 hover:bg-slate-800' : 'text-slate-500 hover:text-amber-700 hover:bg-amber-50'
+                          }`}
+                          title="Plan Meeting / Log Discussion"
+                        >
+                          <Calendar className="w-3.5 h-3.5" />
+                        </button>
 
-                          return (
-                            <div className="space-y-1.5 pt-1 border-t border-amber-200/40 dark:border-amber-900/30">
-                              <div className="grid grid-cols-3 gap-1 text-center font-mono text-[10px]">
-                                <div>
-                                  <span className="text-slate-400 block text-[9px]">EARNED</span>
-                                  <span className="font-bold text-slate-700 dark:text-slate-200">₹{effectiveEarned.toLocaleString('en-IN')}</span>
-                                </div>
-                                <div>
-                                  <span className="text-slate-400 block text-[9px]">PAID</span>
-                                  <span className="font-bold text-emerald-600">₹{effectivePaid.toLocaleString('en-IN')}</span>
-                                </div>
-                                <div>
-                                  <span className="text-slate-400 block text-[9px]">PENDING</span>
-                                  <span className={`font-bold ${effectivePending > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`}>
-                                    ₹{effectivePending.toLocaleString('en-IN')}
-                                  </span>
-                                </div>
-                              </div>
+                        <button
+                          onClick={() => handleOpenEditModal(lead)}
+                          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                            isDark ? 'text-slate-400 hover:text-sky-400 hover:bg-slate-800' : 'text-slate-500 hover:text-sky-700 hover:bg-sky-50'
+                          }`}
+                          title="Edit Lead Details"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
 
-                              <button
-                                type="button"
-                                onClick={() => setViewingReferredCustomersLead(lead)}
-                                className="w-full text-center py-1 rounded text-[11px] font-bold text-amber-800 dark:text-amber-300 hover:bg-amber-100/60 dark:hover:bg-amber-900/30 flex items-center justify-center gap-1 cursor-pointer transition-colors"
-                              >
-                                <span>Manage Commissions per Client ({stats.customersCount})</span>
-                                <ChevronRight className="w-3 h-3" />
-                              </button>
-                            </div>
-                          );
-                        })()}
+                        <button
+                          onClick={() => handleDelete(lead.id, lead.name)}
+                          className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                            isDark ? 'text-slate-500 hover:text-rose-400 hover:bg-slate-800' : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                          }`}
+                          title="Delete Lead Record"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-                    );
-                  })()}
-                </div>
-
-                {/* Footer Controls & Google Contact Sync */}
-                <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between gap-2">
-                  {/* Google Contact Sync Button */}
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => handleSyncToGoogleContacts(lead)}
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-md border transition-all cursor-pointer ${
-                        lead.syncedWithGoogleContacts
-                          ? (isDark ? 'bg-emerald-950/50 border-emerald-800 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-700')
-                          : (isDark ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 shadow-xs')
-                      }`}
-                      title={lead.syncedWithGoogleContacts ? 'Click to re-download vCard contact file' : 'Sync to phone & Google Contacts'}
-                    >
-                      {lead.syncedWithGoogleContacts ? (
-                        <>
-                          <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-                          <span>Google Contact Synced</span>
-                        </>
-                      ) : (
-                        <>
-                          <Download className="w-3 h-3 text-blue-500" />
-                          <span>Sync to Contacts (.vcf)</span>
-                        </>
-                      )}
-                    </button>
+                    </div>
                   </div>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1">
-                    {onOpenNewCustomerWithLead && (
-                      <button
-                        onClick={() => onOpenNewCustomerWithLead(lead)}
-                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                          isDark ? 'text-slate-400 hover:text-emerald-400 hover:bg-slate-800' : 'text-slate-500 hover:text-emerald-700 hover:bg-emerald-50'
-                        }`}
-                        title="Register New Customer referred by this Lead"
-                      >
-                        <UserPlus className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-
-                    <button
-                      onClick={() => handleOpenMeetingModal(lead)}
-                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                        isDark ? 'text-slate-400 hover:text-amber-400 hover:bg-slate-800' : 'text-slate-500 hover:text-amber-700 hover:bg-amber-50'
-                      }`}
-                      title="Plan Meeting / Log Discussion"
-                    >
-                      <Calendar className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      onClick={() => handleOpenEditModal(lead)}
-                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                        isDark ? 'text-slate-400 hover:text-sky-400 hover:bg-slate-800' : 'text-slate-500 hover:text-sky-700 hover:bg-sky-50'
-                      }`}
-                      title="Edit Lead Details"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      onClick={() => handleDelete(lead.id, lead.name)}
-                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                        isDark ? 'text-slate-500 hover:text-rose-400 hover:bg-slate-800' : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
-                      }`}
-                      title="Delete Lead Record"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
+                )}
               </div>
             );
           })
@@ -1815,6 +1898,14 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* Lead Toast Feedback */}
+      {leadToast && (
+        <div className="fixed top-6 right-6 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in fade-in slide-in-from-top-2">
+          <Sparkles className="w-4 h-4" />
+          <span>{leadToast}</span>
         </div>
       )}
 

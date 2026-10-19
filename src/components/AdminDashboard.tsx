@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, 
   Settings, 
@@ -56,6 +56,7 @@ export const AdminDashboard: React.FC = () => {
     theme,
     exportDataJson,
     importDataJson,
+    clearAllInputData,
     resetToDefaultData
   } = useSgs();
   
@@ -63,9 +64,15 @@ export const AdminDashboard: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'prefill' | 'billing_themes' | 'whatsapp' | 'profitloss' | 'backup'>('prefill');
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetSuccessToast, setResetSuccessToast] = useState<string | null>(null);
 
   // Local Form state for admin settings
   const [formData, setFormData] = useState<AdminSettings>(adminSettings);
+  useEffect(() => {
+    setFormData(adminSettings);
+  }, [adminSettings]);
   const [newTechnician, setNewTechnician] = useState('');
   
   // New Quick Service state
@@ -227,7 +234,16 @@ export const AdminDashboard: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setShowResetModal(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/50 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900 rounded-xl transition-all cursor-pointer"
+              title="Reset database to clean 31 verified customers and default records"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Factory Defaults</span>
+            </button>
             <button
               onClick={handleSaveSettings}
               className="flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-all cursor-pointer"
@@ -1464,14 +1480,14 @@ export const AdminDashboard: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className={`divide-y ${isDark ? 'divide-slate-800/70' : 'divide-slate-100'}`}>
-                    {activeInvoices.map((inv) => {
+                    {activeInvoices.map((inv, idx) => {
                       const cost = inv.purchaseCostTotal || 0;
                       const manual = inv.manualExtraCost || 0;
                       const profit = (inv.subtotal || 0) - cost - manual;
                       const margin = inv.subtotal > 0 ? Math.round((profit / inv.subtotal) * 100) : 0;
 
                       return (
-                        <tr key={inv.id} className={isDark ? 'hover:bg-slate-900/60' : 'hover:bg-slate-50'}>
+                        <tr key={`${inv.id}-${idx}`} className={isDark ? 'hover:bg-slate-900/60' : 'hover:bg-slate-50'}>
                           <td className={`py-3 px-4 font-mono font-bold ${isDark ? 'text-blue-400' : 'text-blue-700'}`}>
                             {inv.invoiceNumber}
                           </td>
@@ -1521,10 +1537,10 @@ export const AdminDashboard: React.FC = () => {
         }`}>
           <div>
             <h2 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-              Database Backup & Golden Customer Archive
+              Database Backup & Customer Directory Archive
             </h2>
             <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              Export all workshop records (Golden Customers, Invoices, Vendor Bills, Parts) to a secure JSON file
+              Export all workshop records (Customers, Invoices, Vendor Bills, Parts) to a secure JSON file
             </p>
           </div>
 
@@ -1539,7 +1555,7 @@ export const AdminDashboard: React.FC = () => {
                 Export Full Backup JSON
               </h3>
               <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                Download offline copy containing all 31 Golden Customers, Job Cards, and Billing History.
+                Download offline copy containing all 31 Verified Customers, Job Cards, and Billing History.
               </p>
               <button
                 type="button"
@@ -1576,18 +1592,73 @@ export const AdminDashboard: React.FC = () => {
                 Reset to Factory Defaults
               </h3>
               <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                Restore clean 31 Golden Customer roster & seed records.
+                Restore clean 31 Verified Customer roster & seed records.
               </p>
               <button
                 type="button"
-                onClick={() => {
-                  if (window.confirm('Reset all databases back to default Spider Grid Solutions 31 Golden Customers and seed records?')) {
-                    resetToDefaultData();
-                  }
-                }}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold text-rose-600 border border-rose-300 hover:bg-rose-50 rounded-lg cursor-pointer"
+                onClick={() => setShowResetModal(true)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold text-rose-600 border border-rose-300 hover:bg-rose-50 rounded-lg cursor-pointer transition-colors"
               >
                 <RotateCcw className="w-4 h-4" /> Reset Database
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Success Toast */}
+      {resetSuccessToast && (
+        <div className="fixed top-6 right-6 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in fade-in slide-in-from-top-2">
+          <Sparkles className="w-4 h-4" />
+          <span>{resetSuccessToast}</span>
+        </div>
+      )}
+
+      {/* Reset Confirmation Modal */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+            isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center shrink-0">
+                <RotateCcw className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-rose-600">
+                  Reset to Factory Defaults?
+                </h3>
+                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Restore clean Spider Grid Solutions database
+                </p>
+              </div>
+            </div>
+
+            <p className={`text-xs leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+              This will restore all <strong>31 verified customer accounts</strong>, default inventory stock items, seed job cards, staff records, and cash flow entries to fresh factory defaults.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowResetModal(false)}
+                className={`px-4 py-2 text-xs rounded-xl font-medium cursor-pointer ${
+                  isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  resetToDefaultData();
+                  setShowResetModal(false);
+                  setResetSuccessToast('Factory Defaults Restored! All 31 Verified Customers and clean records reloaded.');
+                  setTimeout(() => setResetSuccessToast(null), 4000);
+                }}
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md shadow-rose-600/20 cursor-pointer"
+              >
+                Yes, Restore Defaults
               </button>
             </div>
           </div>

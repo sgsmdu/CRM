@@ -25,10 +25,13 @@ export const HeaderTopBar: React.FC<HeaderTopBarProps> = ({
   const tabTitles: Record<NavTab, { title: string; subtitle: string }> = {
     dashboard: { title: 'Command Center', subtitle: 'Overview, quick actions, performance & alerts' },
     jobs: { title: 'Job Cards & Timeline', subtitle: 'Process tracking, quotations, approvals, delivery & calls' },
-    billing: { title: 'Billing & Cash Flow', subtitle: 'Invoices, estimates, GST & profit calculation' },
+    allocation: { title: 'Task Assign & Work Priority', subtitle: 'Order pending tasks, assign to staff & share WhatsApp work schedule' },
+    billing: { title: 'Billing & Quotations', subtitle: 'Tax invoices, quotations, manual GST edit & printable vouchers' },
+    reports: { title: 'GST Reports & Filing', subtitle: 'Official GSTR-1, GSTR-2 JSON & Excel exports, master ledger' },
+    employees: { title: 'Staff, Attendance & Allocation', subtitle: 'Staff attendance, wage slips, work allocation & WhatsApp orders' },
     inventory: { title: 'Stock & Parts Inventory', subtitle: 'Spares tracking, category summaries, vendor link & movements' },
     vendors: { title: 'Vendor Hub & Bill Scan', subtitle: 'AI scanner, item matching, purchase ledger & payments' },
-    customers: { title: 'Golden Customer Directory', subtitle: '31 verified accounts, GPS pins & Google Contacts' },
+    customers: { title: 'Customer Directory', subtitle: 'Verified client accounts, contact details, GPS pins & Google Contacts' },
     leads: { title: 'Lead Sources & Referrals', subtitle: 'Referrer commissions, meetings & lead origin tracking' },
     admin: { title: 'Admin Hub & Settings', subtitle: 'Firm branding, logos, rubber stamps, presets & rates' },
   };

@@ -375,7 +375,7 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({ isOpen, on
           }`}>
             <span className={`font-semibold block ${isDark ? 'text-slate-300' : 'text-slate-800'}`}>Spreadsheet Tabs that will be synchronized:</span>
             <div className="grid grid-cols-2 gap-1 pt-1 font-mono text-[10px]">
-              <div>• Golden Customers ({customers.length} records)</div>
+              <div>• Customers ({customers.length} records)</div>
               <div>• Job Cards ({jobCards.length} work orders)</div>
               <div>• Hardware Inventory ({inventory.length} parts)</div>
               <div>• Vendor Purchases ({vendorBills.length} invoices)</div>

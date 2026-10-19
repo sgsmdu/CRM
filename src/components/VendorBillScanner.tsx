@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Camera, 
   Upload, 
@@ -22,6 +22,7 @@ import {
   MapPin,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   UserPlus,
   Edit2,
   Filter,
@@ -78,6 +79,8 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     { itemName: '', quantity: 1, unitCost: 0, grossUnitCost: 0, gstPercent: 18, gstAmount: 0, total: 0, totalWithGst: 0 },
   ]);
   const [taxAmount, setTaxAmount] = useState<number>(0);
+  const [discount, setDiscount] = useState<number>(0);
+  const [roundOff, setRoundOff] = useState<number>(0);
   const [totalAmount, setTotalAmount] = useState<number>(0);
   const [paidAmount, setPaidAmount] = useState<number>(0);
   const [paymentStatus, setPaymentStatus] = useState<'paid' | 'pending' | 'partial'>('paid');
@@ -85,6 +88,17 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
   const [paymentReference, setPaymentReference] = useState('');
   const [autoUpdateStock, setAutoUpdateStock] = useState(true);
   const [notes, setNotes] = useState('');
+
+  // Auto-fill and keep paidAmount in sync when paymentStatus is 'paid'
+  useEffect(() => {
+    if (paymentStatus === 'paid') {
+      setPaidAmount(totalAmount);
+    }
+  }, [paymentStatus, totalAmount]);
+
+  // Stock Search / Picker Drawer
+  const [isStockPickerOpen, setIsStockPickerOpen] = useState(false);
+  const [stockSearchQuery, setStockSearchQuery] = useState('');
 
   // Payment update modal
   const [selectedBillForPayment, setSelectedBillForPayment] = useState<VendorBill | null>(null);
@@ -113,6 +127,20 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
 
   // Expanded vendor bills tracker in Vendor directory
   const [expandedVendorId, setExpandedVendorId] = useState<string | null>(null);
+
+  // Expanded individual bill tracker for inline expansion in bills view
+  const [expandedBillIds, setExpandedBillIds] = useState<string[]>([]);
+  const toggleBillExpand = (id: string) => {
+    setExpandedBillIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+
+  // Expanded items in bill entry scanner modal: shows main thing only by default, click to expand full form
+  const [expandedItemIndices, setExpandedItemIndices] = useState<number[]>([0]);
+  const toggleItemExpand = (index: number) => {
+    setExpandedItemIndices(prev => 
+      prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
+    );
+  };
 
   // Search filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -197,6 +225,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
           }));
         }
         setScanSuccess(true);
+        setExpandedItemIndices([0]);
       } else {
         setScanError(result.error || 'Failed to extract text from bill. Please enter details manually.');
       }
@@ -279,37 +308,73 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
 
     setItems(updated);
 
-    // Sum overall totals
-    const sumBase = updated.reduce((acc, it) => acc + (it.total || 0), 0);
-    const sumGst = updated.reduce((acc, it) => acc + (it.gstAmount || 0), 0);
-    const sumGross = updated.reduce((acc, it) => acc + (it.totalWithGst ?? ((it.total || 0) + (it.gstAmount || 0))), 0);
-    setTaxAmount(Math.round(sumGst));
-    setTotalAmount(Math.round(sumGross || (sumBase + sumGst)));
+    // Sum overall totals as per exact value (no integer rounding)
+    const sumBase = Number(updated.reduce((acc, it) => acc + (it.total || 0), 0).toFixed(2));
+    const sumGst = Number(updated.reduce((acc, it) => acc + (it.gstAmount || 0), 0).toFixed(2));
+    setTaxAmount(sumGst);
+    setTotalAmount(Number(Math.max(0, sumBase + sumGst - (discount || 0) + (roundOff || 0)).toFixed(2)));
   };
 
   const handleAddItem = () => {
-    setItems([...items, { 
-      itemName: '', 
-      quantity: 1, 
-      unitCost: 0, 
-      grossUnitCost: 0, 
-      gstPercent: 18, 
-      gstAmount: 0, 
-      total: 0, 
-      totalWithGst: 0 
-    }]);
+    setItems(prev => {
+      setExpandedItemIndices(old => [...old, prev.length]);
+      return [...prev, { 
+        itemName: '', 
+        quantity: 1, 
+        unitCost: 0, 
+        grossUnitCost: 0, 
+        gstPercent: 18, 
+        gstAmount: 0, 
+        total: 0, 
+        totalWithGst: 0 
+      }];
+    });
+  };
+
+  const handleSelectStockItem = (inv: any) => {
+    const grossCost = inv.unitCost || 0;
+    const calc = calculateFromInclusiveRate(grossCost, 18, 1);
+    const updated = [
+      ...items.filter(it => it.itemName.trim() !== '' || items.length === 1 && it.itemName === '' ? false : true),
+      {
+        itemName: inv.name,
+        hsnCode: inv.hsnCode || '8471',
+        quantity: 1,
+        grossUnitCost: grossCost,
+        gstPercent: 18,
+        unitCost: calc.baseRate,
+        total: calc.baseAmount,
+        gstAmount: calc.totalGst,
+        totalWithGst: calc.totalWithGst,
+        matchedInventoryId: inv.id,
+        syncMode: 'merge_existing' as const,
+      }
+    ];
+    setItems(updated);
+    const sumBase = Number(updated.reduce((acc, it) => acc + (it.total || 0), 0).toFixed(2));
+    const sumGst = Number(updated.reduce((acc, it) => acc + (it.gstAmount || 0), 0).toFixed(2));
+    setTaxAmount(sumGst);
+    setTotalAmount(Number(Math.max(0, sumBase + sumGst - (discount || 0) + (roundOff || 0)).toFixed(2)));
+    setIsStockPickerOpen(false);
+    setStockSearchQuery('');
   };
 
   const handleRemoveItem = (index: number) => {
     if (items.length === 1) return;
     const updated = items.filter((_, i) => i !== index);
     setItems(updated);
-    const sumBase = updated.reduce((acc, it) => acc + (it.total || 0), 0);
-    const sumGst = updated.reduce((acc, it) => acc + (it.gstAmount || 0), 0);
-    const sumGross = updated.reduce((acc, it) => acc + (it.totalWithGst ?? ((it.total || 0) + (it.gstAmount || 0))), 0);
-    setTaxAmount(Math.round(sumGst));
-    setTotalAmount(Math.round(sumGross || (sumBase + sumGst)));
+    const sumBase = Number(updated.reduce((acc, it) => acc + (it.total || 0), 0).toFixed(2));
+    const sumGst = Number(updated.reduce((acc, it) => acc + (it.gstAmount || 0), 0).toFixed(2));
+    setTaxAmount(sumGst);
+    setTotalAmount(Number(Math.max(0, sumBase + sumGst - (discount || 0) + (roundOff || 0)).toFixed(2)));
   };
+
+  // Auto-sync paidAmount when paymentStatus is 'paid'
+  useEffect(() => {
+    if (paymentStatus === 'paid') {
+      setPaidAmount(totalAmount);
+    }
+  }, [totalAmount, paymentStatus]);
 
   // Save new bill
   const handleSaveBill = (e: React.FormEvent) => {
@@ -340,6 +405,10 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       }
     }
 
+    const sumBase = Number(items.reduce((acc, it) => acc + (it.total || 0), 0).toFixed(2));
+    const effectiveDiscount = Number(discount) || 0;
+    const effectiveRoundOff = Number(roundOff) || 0;
+
     addVendorBill({
       vendorId: matchedVendorId,
       vendorName: vendorName.trim(),
@@ -347,9 +416,12 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       invoiceDate,
       billImage: billImage || undefined,
       items: items.filter(it => it.itemName.trim() !== ''),
-      taxAmount,
+      subtotal: sumBase,
+      taxAmount: Number(taxAmount) || 0,
+      discount: effectiveDiscount,
+      roundOff: effectiveRoundOff,
       totalAmount,
-      paidAmount,
+      paidAmount: Number(paidAmount) || 0,
       paymentStatus,
       paymentMode,
       paymentReference: paymentReference.trim() || undefined,
@@ -564,10 +636,16 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
               setSelectedVendorId('');
               setInvoiceNumber('');
               setInvoiceDate(new Date().toISOString().split('T')[0]);
-              setItems([{ itemName: '', quantity: 1, unitCost: 0, total: 0 }]);
+              setItems([{ itemName: '', quantity: 1, unitCost: 0, grossUnitCost: 0, gstPercent: 18, gstAmount: 0, total: 0, totalWithGst: 0 }]);
+              setTaxAmount(0);
+              setDiscount(0);
+              setRoundOff(0);
               setTotalAmount(0);
               setPaidAmount(0);
+              setPaymentStatus('paid');
               setPaymentReference('');
+              setIsStockPickerOpen(false);
+              setStockSearchQuery('');
               setIsScannerModalOpen(true);
             }}
             className="flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-md shadow-blue-500/20 cursor-pointer"
@@ -690,11 +768,17 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                   <div
                     key={vendor.id}
                     className={`rounded-xl border overflow-hidden transition-all ${
-                      isDark ? 'bg-slate-900/70 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
+                      isExpanded 
+                        ? (isDark ? 'bg-slate-900/90 border-blue-600/80 shadow-md ring-1 ring-blue-600/30' : 'bg-white border-blue-400 shadow-md ring-1 ring-blue-400/20')
+                        : (isDark ? 'bg-slate-900/70 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-200 shadow-xs hover:border-blue-300')
                     }`}
                   >
-                    {/* Main Vendor Card Header */}
-                    <div className="p-4 space-y-3">
+                    {/* Main Vendor Card (Click to Expand) */}
+                    <div 
+                      onClick={() => setExpandedVendorId(isExpanded ? null : vendor.id)}
+                      className="p-4 cursor-pointer select-none space-y-3"
+                      title="Click to expand full vendor bills ledger, bank info & actions"
+                    >
                       <div className="flex items-start justify-between gap-2">
                         <div>
                           <div className="flex items-center gap-2">
@@ -707,61 +791,34 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                               {vendor.category || 'Spares'}
                             </span>
                           </div>
-                          {vendor.gstin && (
-                            <p className="text-[11px] font-mono text-slate-500 mt-0.5">
-                              GSTIN: <span className="font-semibold text-slate-700 dark:text-slate-300">{vendor.gstin}</span>
+                          {vendor.phone && (
+                            <p className="text-[11px] font-mono text-slate-500 mt-1 flex items-center gap-1.5">
+                              <Phone className="w-3 h-3 text-blue-500" />
+                              <span>{vendor.phone}</span>
                             </p>
                           )}
                         </div>
 
-                        <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => handleOpenEditVendorModal(vendor)}
-                            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                              isDark ? 'text-slate-400 hover:text-sky-300 hover:bg-slate-800' : 'text-slate-500 hover:text-sky-700 hover:bg-sky-50'
-                            }`}
-                            title="Edit Vendor"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteVendor(vendor.id, vendor.name)}
-                            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                              isDark ? 'text-slate-500 hover:text-rose-400 hover:bg-slate-800' : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
-                            }`}
-                            title="Delete Vendor"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                        {/* Expand Toggle Button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedVendorId(isExpanded ? null : vendor.id);
+                          }}
+                          className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-lg border transition-colors cursor-pointer shrink-0 ${
+                            isExpanded 
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-2xs' 
+                              : (isDark ? 'border-slate-800 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-100 shadow-2xs')
+                          }`}
+                        >
+                          <span>{isExpanded ? 'Less' : 'Details & Bills'}</span>
+                          {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                        </button>
                       </div>
 
-                      {/* Contact details */}
-                      <div className="text-xs space-y-1 text-slate-500">
-                        {vendor.phone && (
-                          <div className="flex items-center gap-2">
-                            <Phone className="w-3.5 h-3.5 text-blue-500" />
-                            <a href={`tel:${vendor.phone}`} className="hover:underline font-mono text-slate-700 dark:text-slate-300">
-                              {vendor.phone}
-                            </a>
-                          </div>
-                        )}
-                        {vendor.address && (
-                          <div className="flex items-center gap-2">
-                            <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                            <span className="truncate">{vendor.address}</span>
-                          </div>
-                        )}
-                        {vendor.upiId && (
-                          <div className="flex items-center gap-2 text-[11px]">
-                            <CreditCard className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                            <span className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold">{vendor.upiId}</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Vendor Financial Metrics */}
-                      <div className={`grid grid-cols-3 gap-2 p-2.5 rounded-lg text-center ${
+                      {/* Main Financial Metrics Pill */}
+                      <div className={`grid grid-cols-3 gap-2 p-2 rounded-lg text-center ${
                         isDark ? 'bg-slate-950/70 border border-slate-800' : 'bg-slate-50 border border-slate-200'
                       }`}>
                         <div>
@@ -793,39 +850,85 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                           </span>
                         </div>
                       </div>
-
-                      {/* Vendor Via Bill Toggle Button */}
-                      <div className="pt-1 flex items-center justify-between">
-                        <button
-                          onClick={() => setExpandedVendorId(isExpanded ? null : vendor.id)}
-                          className={`flex items-center gap-1.5 text-xs font-semibold cursor-pointer ${
-                            isDark ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'
-                          }`}
-                        >
-                          {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-                          <span>Vendor via Bills ({stat.bills.length})</span>
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            setBillImage(null);
-                            setVendorName(vendor.name);
-                            setSelectedVendorId(vendor.id);
-                            setInvoiceNumber('');
-                            setInvoiceDate(new Date().toISOString().split('T')[0]);
-                            setItems([{ itemName: '', quantity: 1, unitCost: 0, total: 0 }]);
-                            setTotalAmount(0);
-                            setPaidAmount(0);
-                            setIsScannerModalOpen(true);
-                          }}
-                          className={`text-[11px] font-semibold px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${
-                            isDark ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
-                          }`}
-                        >
-                          + New Bill for Vendor
-                        </button>
-                      </div>
                     </div>
+
+                    {/* Expandable Section: Address, GSTIN, Bank & Bills */}
+                    {isExpanded && (
+                      <div className={`p-4 border-t space-y-3 animate-in fade-in duration-150 ${
+                        isDark ? 'bg-slate-950/50 border-slate-800' : 'bg-slate-50/60 border-slate-200'
+                      }`}>
+                        {/* GSTIN, Address, UPI */}
+                        <div className="text-xs space-y-1.5 text-slate-500 p-2.5 rounded-lg border dark:border-slate-800 bg-white dark:bg-slate-900">
+                          {vendor.gstin && (
+                            <p className="font-mono text-[11px]">
+                              GSTIN: <span className="font-semibold text-slate-700 dark:text-slate-200">{vendor.gstin}</span>
+                            </p>
+                          )}
+                          {vendor.address && (
+                            <div className="flex items-center gap-1.5">
+                              <MapPin className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                              <span className="truncate">{vendor.address}</span>
+                            </div>
+                          )}
+                          {vendor.upiId && (
+                            <div className="flex items-center gap-1.5">
+                              <CreditCard className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                              <span className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold">{vendor.upiId}</span>
+                            </div>
+                          )}
+                          {vendor.notes && (
+                            <p className="italic text-[11px] text-slate-400 pt-0.5">"{vendor.notes}"</p>
+                          )}
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex items-center justify-between gap-2 pt-1">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => handleOpenEditVendorModal(vendor)}
+                              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium border transition-colors cursor-pointer ${
+                                isDark ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                              }`}
+                            >
+                              <Edit2 className="w-3 h-3 text-blue-500" />
+                              <span>Edit Vendor</span>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteVendor(vendor.id, vendor.name)}
+                              className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              <span>Delete</span>
+                            </button>
+                          </div>
+
+                          <button
+                            onClick={() => {
+                              setBillImage(null);
+                              setVendorName(vendor.name);
+                              setSelectedVendorId(vendor.id);
+                              setInvoiceNumber('');
+                              setInvoiceDate(new Date().toISOString().split('T')[0]);
+                              setItems([{ itemName: '', quantity: 1, unitCost: 0, grossUnitCost: 0, gstPercent: 18, gstAmount: 0, total: 0, totalWithGst: 0 }]);
+                              setTaxAmount(0);
+                              setDiscount(0);
+                              setRoundOff(0);
+                              setTotalAmount(0);
+                              setPaidAmount(0);
+                              setPaymentStatus('paid');
+                              setPaymentReference('');
+                              setIsStockPickerOpen(false);
+                              setStockSearchQuery('');
+                              setIsScannerModalOpen(true);
+                            }}
+                            className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors cursor-pointer shadow-xs"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>+ New Bill</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Expandable Bills Ledger Under This Vendor */}
                     {isExpanded && (
@@ -974,15 +1077,15 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                   isDark ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
                 }`}>
                   <tr>
-                    <th className="py-3 px-4">Vendor / Supplier</th>
-                    <th className="py-3 px-4">Invoice No (Click to View)</th>
-                    <th className="py-3 px-4">Date</th>
-                    <th className="py-3 px-4">Items Summary</th>
-                    <th className="py-3 px-4 font-mono">Total Amount</th>
-                    <th className="py-3 px-4 font-mono">Paid Amount</th>
-                    <th className="py-3 px-4">Payment Info</th>
-                    <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
+                    <th className="py-3 px-2 w-8 text-center"></th>
+                    <th className="py-3 px-3">Vendor / Supplier</th>
+                    <th className="py-3 px-3">Bill Number</th>
+                    <th className="py-3 px-3">Date</th>
+                    <th className="py-3 px-3">Items</th>
+                    <th className="py-3 px-3 font-mono">Total Amount</th>
+                    <th className="py-3 px-3 font-mono">Paid</th>
+                    <th className="py-3 px-3">Status</th>
+                    <th className="py-3 px-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${isDark ? 'divide-slate-800/70' : 'divide-slate-100'}`}>
@@ -994,100 +1097,257 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                     </tr>
                   ) : (
                     filteredBills.map((bill) => {
+                      const isExpanded = expandedBillIds.includes(bill.id);
                       const statusClass = 
                         bill.paymentStatus === 'paid' ? (isDark ? 'text-emerald-400 bg-emerald-950/50 border-emerald-800' : 'text-emerald-700 bg-emerald-50 border-emerald-200') :
                         bill.paymentStatus === 'partial' ? (isDark ? 'text-amber-400 bg-amber-950/50 border-amber-800' : 'text-amber-700 bg-amber-50 border-amber-200') :
                         (isDark ? 'text-rose-400 bg-rose-950/50 border-rose-800' : 'text-rose-700 bg-rose-50 border-rose-200');
 
                       return (
-                        <tr key={bill.id} className={`transition-colors ${isDark ? 'hover:bg-slate-900/60' : 'hover:bg-slate-50'}`}>
-                          <td className={`py-3 px-4 font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                            {bill.vendorName}
-                          </td>
-                          
-                          {/* Clickable Bill Number */}
-                          <td className="py-3 px-4">
-                            <button
-                              type="button"
-                              onClick={() => setViewingBill(bill)}
-                              className="flex items-center gap-1.5 font-mono font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
-                              title="Click to view full bill details & uploaded image"
-                            >
-                              <FileText className="w-3.5 h-3.5" />
-                              <span>{bill.invoiceNumber}</span>
-                            </button>
-                          </td>
-
-                          <td className={`py-3 px-4 font-mono ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                            {bill.invoiceDate}
-                          </td>
-
-                          <td className={`py-3 px-4 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                            {bill.items && bill.items.length > 0 ? (
-                              <span title={bill.items.map(i => `${i.quantity}x ${i.itemName}`).join(', ')}>
-                                {bill.items.length} item(s) · {bill.items[0]?.itemName}
-                              </span>
-                            ) : (
-                              <span className={isDark ? 'text-slate-500' : 'text-slate-400'}>General Hardware</span>
-                            )}
-                          </td>
-
-                          <td className={`py-3 px-4 font-mono font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                            ₹{bill.totalAmount.toLocaleString('en-IN')}
-                          </td>
-
-                          <td className={`py-3 px-4 font-mono ${isDark ? 'text-emerald-400' : 'text-emerald-700 font-semibold'}`}>
-                            ₹{bill.paidAmount.toLocaleString('en-IN')}
-                          </td>
-
-                          <td className="py-3 px-4">
-                            <div className="space-y-0.5">
-                              <span className="uppercase text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                                {bill.paymentMode || 'UPI'}
-                              </span>
-                              {bill.paymentReference && (
-                                <p className={`font-mono text-[10px] truncate max-w-[120px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`} title={bill.paymentReference}>
-                                  Ref: {bill.paymentReference}
-                                </p>
+                        <React.Fragment key={bill.id}>
+                          {/* Main Row: Main thing only (Click to Expand) */}
+                          <tr 
+                            onClick={() => toggleBillExpand(bill.id)}
+                            className={`transition-colors cursor-pointer select-none ${
+                              isExpanded 
+                                ? (isDark ? 'bg-slate-800/60' : 'bg-blue-50/50') 
+                                : (isDark ? 'hover:bg-slate-900/60' : 'hover:bg-slate-50')
+                            }`}
+                            title="Click row to expand itemized spares, receipt image & payment details"
+                          >
+                            <td className="py-3 px-2 text-center text-slate-400">
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4 text-blue-500 inline-block" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4 inline-block" />
                               )}
-                            </div>
-                          </td>
+                            </td>
 
-                          <td className="py-3 px-4">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${statusClass}`}>
-                              {bill.paymentStatus}
-                            </span>
-                          </td>
+                            <td className={`py-3 px-3 font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                              {bill.vendorName}
+                            </td>
+                            
+                            {/* Clickable Bill Number */}
+                            <td className="py-3 px-3">
+                              <span className="font-mono font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                                <FileText className="w-3.5 h-3.5" />
+                                <span>{bill.invoiceNumber}</span>
+                              </span>
+                            </td>
 
-                          <td className="py-3 px-4 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => setViewingBill(bill)}
-                                className={`p-1.5 rounded transition-colors cursor-pointer ${
-                                  isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                                }`}
-                                title="View uploaded bill & items"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </button>
+                            <td className={`py-3 px-3 font-mono ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                              {bill.invoiceDate}
+                            </td>
 
-                              <button
-                                onClick={() => {
-                                  setSelectedBillForPayment(bill);
-                                  setPayModalAmount(bill.paidAmount);
-                                  setPayModalStatus(bill.paymentStatus);
-                                  setPayModalMode(bill.paymentMode || 'upi');
-                                  setPayModalRef(bill.paymentReference || '');
-                                }}
-                                className={`px-2.5 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
-                                  isDark ? 'text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700' : 'text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200'
-                                }`}
-                              >
-                                Pay / Ref
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
+                            <td className={`py-3 px-3 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                              <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${
+                                isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-700'
+                              }`}>
+                                {bill.items?.length || 0} items
+                              </span>
+                            </td>
+
+                            <td className={`py-3 px-3 font-mono font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                              ₹{bill.totalAmount.toLocaleString('en-IN')}
+                            </td>
+
+                            <td className={`py-3 px-3 font-mono ${isDark ? 'text-emerald-400' : 'text-emerald-700 font-semibold'}`}>
+                              ₹{bill.paidAmount.toLocaleString('en-IN')}
+                            </td>
+
+                            <td className="py-3 px-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${statusClass}`}>
+                                {bill.paymentStatus}
+                              </span>
+                            </td>
+
+                            <td className="py-3 px-3 text-right" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleBillExpand(bill.id)}
+                                  className={`px-2 py-1 rounded text-[11px] font-semibold border transition-colors cursor-pointer ${
+                                    isExpanded 
+                                      ? 'bg-blue-600 text-white border-blue-600' 
+                                      : (isDark ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-100')
+                                  }`}
+                                >
+                                  {isExpanded ? 'Hide' : 'Expand'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingBill(bill)}
+                                  className={`p-1.5 rounded transition-colors cursor-pointer ${
+                                    isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                                  }`}
+                                  title="View full tax bill slip & print"
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+
+                          {/* 2. EXPANDED INLINE DETAILS (Only shown when clicked) */}
+                          {isExpanded && (
+                            <tr key={`${bill.id}-expanded`} className={isDark ? 'bg-slate-950/70 border-b border-slate-800' : 'bg-slate-50/70 border-b border-slate-200'}>
+                              <td colSpan={9} className="p-4 space-y-3">
+                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                                  
+                                  {/* Left: Itemized Spares List */}
+                                  <div className="lg:col-span-8 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                                        <Boxes className="w-3.5 h-3.5 text-blue-500" />
+                                        <span>Purchased Items & Spares ({bill.items?.length || 0})</span>
+                                      </span>
+                                      <span className="text-xs font-mono text-slate-400">
+                                        Tax: ₹{(bill.taxAmount || 0).toLocaleString('en-IN')}
+                                      </span>
+                                    </div>
+
+                                    <div className={`rounded-lg border overflow-hidden ${
+                                      isDark ? 'border-slate-800 bg-slate-900/60' : 'border-slate-200 bg-white'
+                                    }`}>
+                                      <table className="w-full text-xs">
+                                        <thead className={`border-b text-[10px] uppercase font-semibold ${
+                                          isDark ? 'bg-slate-900 text-slate-400 border-slate-800' : 'bg-slate-100 text-slate-600 border-slate-200'
+                                        }`}>
+                                          <tr>
+                                            <th className="py-2 px-3">Item Description</th>
+                                            <th className="py-2 px-3 text-center">Qty</th>
+                                            <th className="py-2 px-3 text-right">Unit Rate</th>
+                                            <th className="py-2 px-3 text-center">GST</th>
+                                            <th className="py-2 px-3 text-right">Total (Inc. GST)</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                          {bill.items && bill.items.length > 0 ? (
+                                            bill.items.map((item, idx) => (
+                                              <tr key={idx} className={isDark ? 'hover:bg-slate-800/40' : 'hover:bg-slate-50'}>
+                                                <td className="py-2 px-3 font-medium text-slate-800 dark:text-slate-200">
+                                                  {item.itemName}
+                                                </td>
+                                                <td className="py-2 px-3 text-center font-mono">
+                                                  {item.quantity}
+                                                </td>
+                                                <td className="py-2 px-3 text-right font-mono text-slate-500">
+                                                  ₹{item.grossUnitCost || item.unitCost}
+                                                </td>
+                                                <td className="py-2 px-3 text-center font-mono text-[11px] text-slate-500">
+                                                  {item.gstPercent || 0}%
+                                                </td>
+                                                <td className="py-2 px-3 text-right font-mono font-bold text-slate-900 dark:text-white">
+                                                  ₹{(item.totalWithGst || item.total).toLocaleString('en-IN')}
+                                                </td>
+                                              </tr>
+                                            ))
+                                          ) : (
+                                            <tr>
+                                              <td colSpan={5} className="py-3 text-center text-xs text-slate-400 italic">
+                                                No itemized records available.
+                                              </td>
+                                            </tr>
+                                          )}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+
+                                  {/* Right: Payment Details, Receipt Photo & Actions */}
+                                  <div className="lg:col-span-4 space-y-3">
+                                    <div className={`p-3 rounded-xl border text-xs space-y-2 ${
+                                      isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+                                    }`}>
+                                      <div className="flex justify-between items-center pb-1.5 border-b border-slate-100 dark:border-slate-800">
+                                        <span className="text-slate-400 font-semibold">Payment Mode:</span>
+                                        <span className="font-bold uppercase text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
+                                          {bill.paymentMode || 'UPI'}
+                                        </span>
+                                      </div>
+                                      {bill.paymentReference && (
+                                        <div className="flex justify-between items-center text-[11px]">
+                                          <span className="text-slate-400">Reference:</span>
+                                          <span className="font-mono font-bold text-slate-700 dark:text-slate-300 truncate max-w-[150px]">
+                                            {bill.paymentReference}
+                                          </span>
+                                        </div>
+                                      )}
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-slate-400">Paid Amount:</span>
+                                        <span className="font-mono font-bold text-emerald-600">
+                                          ₹{bill.paidAmount.toLocaleString('en-IN')}
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between items-center">
+                                        <span className="text-slate-400">Pending Due:</span>
+                                        <span className={`font-mono font-bold ${
+                                          bill.totalAmount - bill.paidAmount > 0 ? 'text-amber-600' : 'text-slate-400'
+                                        }`}>
+                                          ₹{Math.max(0, bill.totalAmount - bill.paidAmount).toLocaleString('en-IN')}
+                                        </span>
+                                      </div>
+                                      {bill.notes && (
+                                        <p className="text-[11px] italic text-slate-400 pt-1 border-t border-slate-100 dark:border-slate-800">
+                                          "{bill.notes}"
+                                        </p>
+                                      )}
+                                    </div>
+
+                                    {/* Attached Receipt Image Thumbnail */}
+                                    {bill.billImage && (
+                                      <div className="flex items-center gap-2 p-2 rounded-xl border dark:border-slate-800 bg-white dark:bg-slate-900">
+                                        <img 
+                                          src={bill.billImage} 
+                                          alt="Scanned Bill" 
+                                          className="w-12 h-12 object-cover rounded-lg border dark:border-slate-800 cursor-pointer hover:opacity-80"
+                                          onClick={() => setZoomedImage(bill.billImage || null)}
+                                        />
+                                        <div className="flex-1 min-w-0">
+                                          <span className="text-[11px] font-bold block truncate">Attached Tax Invoice Photo</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => setZoomedImage(bill.billImage || null)}
+                                            className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-semibold"
+                                          >
+                                            Click to Zoom Fullscreen ↗
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Action Buttons */}
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedBillForPayment(bill);
+                                          setPayModalAmount(bill.paidAmount);
+                                          setPayModalStatus(bill.paymentStatus);
+                                          setPayModalMode(bill.paymentMode || 'upi');
+                                          setPayModalRef(bill.paymentReference || '');
+                                        }}
+                                        className="flex-1 py-1.5 px-3 text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-xs cursor-pointer text-center"
+                                      >
+                                        Update Payment / Ref
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setViewingBill(bill)}
+                                        className={`py-1.5 px-3 text-xs font-medium rounded-lg border transition-colors cursor-pointer ${
+                                          isDark ? 'border-slate-800 text-slate-300 hover:bg-slate-800' : 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                                        }`}
+                                      >
+                                        Full Slip
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       );
                     })
                   )}
@@ -1314,357 +1574,628 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
 
                 {/* Line Items Container */}
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <label className={`text-xs font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
                       Invoiced Spares & Materials
                     </label>
-                    <button
-                      type="button"
-                      onClick={handleAddItem}
-                      className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Add Item</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsStockPickerOpen(!isStockPickerOpen)}
+                        className="text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1 cursor-pointer bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800 transition-colors"
+                      >
+                        <Boxes className="w-3.5 h-3.5" />
+                        <span>Search Stock Inventory</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAddItem}
+                        className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer bg-blue-50 dark:bg-blue-950/40 px-2.5 py-1 rounded-lg border border-blue-200 dark:border-blue-800 transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add Blank Item</span>
+                      </button>
+                    </div>
                   </div>
+
+                  {/* Stock Inventory Search & Link Drawer */}
+                  {isStockPickerOpen && (
+                    <div className={`p-3 rounded-xl border space-y-2 mb-2 ${
+                      isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
+                          <Boxes className="w-3.5 h-3.5" /> Pick Workshop Inventory Item (Links & Merges into Existing Stock)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setIsStockPickerOpen(false)}
+                          className="text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="relative">
+                        <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                          type="text"
+                          value={stockSearchQuery}
+                          onChange={(e) => setStockSearchQuery(e.target.value)}
+                          placeholder="Search stock by item name, SKU, or HSN..."
+                          className={`w-full rounded-lg pl-8 pr-3 py-1.5 text-xs focus:outline-none ${
+                            isDark ? 'bg-slate-900 border border-slate-700 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
+                          }`}
+                        />
+                      </div>
+
+                      <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                        {inventory
+                          .filter(inv => {
+                            if (!stockSearchQuery.trim()) return true;
+                            const q = stockSearchQuery.toLowerCase();
+                            return inv.name.toLowerCase().includes(q) || (inv.sku && inv.sku.toLowerCase().includes(q)) || (inv.hsnCode && inv.hsnCode.includes(q));
+                          })
+                          .map((inv, idx) => (
+                            <div
+                              key={`${inv.id}-${idx}`}
+                              onClick={() => handleSelectStockItem(inv)}
+                              className={`p-2 flex items-center justify-between cursor-pointer rounded-lg transition-colors ${
+                                isDark ? 'hover:bg-slate-900' : 'hover:bg-emerald-50/60'
+                              }`}
+                            >
+                              <div>
+                                <p className="font-semibold">{inv.name}</p>
+                                <p className="text-[10px] text-slate-400 font-mono">
+                                  Stock: <strong className="text-emerald-500 font-bold">{inv.currentStock} units</strong> · Cost: ₹{inv.unitCost} · HSN: {inv.hsnCode || '—'}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                className="px-2 py-1 text-[11px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-950/60 rounded cursor-pointer hover:bg-emerald-200"
+                              >
+                                + Link & Insert
+                              </button>
+                            </div>
+                          ))}
+                        {inventory.length === 0 && (
+                          <p className="text-slate-400 text-xs p-2 text-center">No inventory items in stock yet.</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Datalist for fast item suggestions while typing */}
+                  <datalist id="vendor-bill-stock-datalist">
+                    {inventory.map((inv, idx) => (
+                      <option key={`${inv.id}-${idx}`} value={inv.name}>
+                        Stock: {inv.currentStock} units (Cost: ₹{inv.unitCost})
+                      </option>
+                    ))}
+                  </datalist>
 
                   <div className="space-y-3">
                     {items.map((it, idx) => {
                       const cleanItemName = it.itemName.trim().toLowerCase();
-                      // Exact match (case-insensitive) only or explicit user match
-                      // Never match "HP" loosely to "HP 12A Toner"
                       const similarStock = it.matchedInventoryId
                         ? inventory.find(i => i.id === it.matchedInventoryId)
                         : (cleanItemName.length >= 2
-                            ? inventory.find(i => i.name.trim().toLowerCase() === cleanItemName)
+                            ? inventory.find(i => {
+                                const invName = i.name.trim().toLowerCase();
+                                return invName === cleanItemName || (cleanItemName.length >= 4 && (invName.includes(cleanItemName) || cleanItemName.includes(invName)));
+                              })
                             : null);
 
+                      const isItemExpanded = expandedItemIndices.includes(idx);
+                      const itemTotalGst = it.totalWithGst ?? ((it.total || 0) + (it.gstAmount || 0));
+
                       return (
-                        <div key={idx} className={`p-3 rounded-xl border transition-all space-y-2.5 ${
+                        <div key={idx} className={`rounded-xl border transition-all overflow-hidden ${
                           isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
                         }`}>
-                          {/* Top: Item Name, HSN No, Quantity, Delete */}
-                          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
-                            {/* Part Name */}
-                            <div className="flex-1 w-full">
-                              <label className={`block text-[10px] font-bold uppercase mb-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                                Part / Item Name
-                              </label>
-                              <input
-                                type="text"
-                                required
-                                value={it.itemName}
-                                onChange={(e) => handleItemChange(idx, 'itemName', e.target.value)}
-                                placeholder="Part Name (e.g. HP 12A Toner, Kingston 240GB SSD)"
-                                className={`w-full rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${
-                                  isDark ? 'bg-slate-950 border border-slate-700 text-slate-200' : 'bg-slate-50 border border-slate-300 text-slate-900'
-                                }`}
-                              />
-                            </div>
-
-                            {/* HSN No */}
-                            <div className="w-full sm:w-28">
-                              <label className={`block text-[10px] font-bold uppercase mb-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                                HSN Code
-                              </label>
-                              <input
-                                type="text"
-                                value={it.hsnCode || ''}
-                                onChange={(e) => handleItemChange(idx, 'hsnCode', e.target.value)}
-                                placeholder="HSN No"
-                                className={`w-full rounded-lg px-2 py-1.5 text-xs font-mono text-center focus:outline-none ${
-                                  isDark ? 'bg-slate-950 border border-slate-700 text-blue-400' : 'bg-slate-50 border border-slate-300 text-blue-700 font-semibold'
-                                }`}
-                              />
-                            </div>
-
-                            {/* Quantity */}
-                            <div className="w-full sm:w-20">
-                              <label className={`block text-[10px] font-bold uppercase mb-0.5 text-center ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                                Quantity
-                              </label>
-                              <input
-                                type="number"
-                                min="1"
-                                value={it.quantity}
-                                onChange={(e) => handleItemChange(idx, 'quantity', e.target.value)}
-                                placeholder="Qty"
-                                className={`w-full rounded-lg px-2 py-1.5 text-xs font-mono text-center focus:outline-none ${
-                                  isDark ? 'bg-slate-950 border border-slate-700 text-slate-200' : 'bg-slate-50 border border-slate-300 text-slate-900 font-bold'
-                                }`}
-                              />
-                            </div>
-
-                            {items.length > 1 && (
-                              <div className="sm:self-end pb-0.5">
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveItem(idx)}
-                                  className="p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg cursor-pointer transition-colors"
-                                  title="Remove Item"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Bottom Row: GST Breakdown & Calculation Grid */}
-                          <div className={`p-2.5 rounded-lg border grid grid-cols-2 sm:grid-cols-5 gap-2.5 items-end text-xs ${
-                            isDark ? 'bg-slate-950/60 border-slate-800/80' : 'bg-slate-50 border-slate-200'
-                          }`}>
-                            {/* 1. Rate with GST (Gross / Inclusive) */}
-                            <div>
-                              <div className="flex items-center justify-between mb-0.5">
-                                <label className={`text-[10px] font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
-                                  Rate with GST (₹)
-                                </label>
-                                <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-950/80 px-1 rounded">Gross</span>
-                              </div>
-                              <div className="relative">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={it.grossUnitCost !== undefined ? it.grossUnitCost : Math.round((it.unitCost * (1 + (it.gstPercent || 0)/100)) * 100) / 100}
-                                  onChange={(e) => handleItemChange(idx, 'grossUnitCost', e.target.value)}
-                                  placeholder="Cost with GST"
-                                  className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono font-bold focus:outline-none ${
-                                    isDark ? 'bg-slate-900 border border-emerald-800 text-emerald-300' : 'bg-white border border-emerald-300 text-emerald-800'
-                                  }`}
-                                />
-                                <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-emerald-500 font-bold">₹</span>
-                              </div>
-                            </div>
-
-                            {/* 2. Individual GST % Input Box */}
-                            <div>
-                              <div className="flex items-center justify-between mb-0.5">
-                                <label className={`text-[10px] font-bold ${isDark ? 'text-blue-400' : 'text-blue-700'}`}>
-                                  GST % Box
-                                </label>
-                                <span className="text-[9px] text-blue-500 font-mono">Tax %</span>
-                              </div>
-                              <div className="flex items-center gap-1">
-                                <div className="relative flex-1">
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    max="100"
-                                    step="0.5"
-                                    value={it.gstPercent !== undefined ? it.gstPercent : 18}
-                                    onChange={(e) => handleItemChange(idx, 'gstPercent', e.target.value)}
-                                    placeholder="GST %"
-                                    className={`w-full rounded-md pl-2 pr-4 py-1 text-xs font-mono font-bold text-center focus:outline-none ${
-                                      isDark ? 'bg-slate-900 border border-blue-700 text-blue-300' : 'bg-white border border-blue-400 text-blue-800'
-                                    }`}
-                                  />
-                                  <span className="text-[10px] absolute right-1.5 top-1/2 -translate-y-1/2 text-blue-500 font-bold">%</span>
+                          {/* 1. Main Collapsed Summary Header (Always visible - Click to Expand) */}
+                          <div
+                            onClick={() => toggleItemExpand(idx)}
+                            className={`p-3 cursor-pointer select-none flex items-center justify-between gap-2.5 transition-colors ${
+                              isItemExpanded
+                                ? (isDark ? 'bg-slate-800/50 border-b border-slate-800' : 'bg-blue-50/40 border-b border-blue-100')
+                                : (isDark ? 'hover:bg-slate-800/30' : 'hover:bg-slate-50')
+                            }`}
+                            title="Click to expand/collapse item fields"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <span className="w-6 h-6 rounded-md bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400 font-bold font-mono text-xs flex items-center justify-center shrink-0">
+                                #{idx + 1}
+                              </span>
+                              <div className="min-w-0">
+                                <p className={`text-xs font-bold truncate ${it.itemName.trim() ? (isDark ? 'text-white' : 'text-slate-900') : 'text-slate-400 italic'}`}>
+                                  {it.itemName.trim() || 'Click to enter item description...'}
+                                </p>
+                                <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                                  {it.hsnCode && <span className="font-mono">HSN: {it.hsnCode}</span>}
+                                  {it.matchedInventoryId ? (
+                                    <span className="text-emerald-500 font-semibold flex items-center gap-0.5">
+                                      ✓ Linked to Stock
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400">New Item</span>
+                                  )}
                                 </div>
                               </div>
-                              {/* Quick GST % Presets */}
-                              <div className="flex items-center gap-1 mt-1">
-                                {[0, 5, 12, 18, 28].map(ratePct => (
-                                  <button
-                                    key={ratePct}
-                                    type="button"
-                                    onClick={() => handleItemChange(idx, 'gstPercent', ratePct)}
-                                    className={`text-[9px] font-bold px-1 py-0.5 rounded transition-colors cursor-pointer ${
-                                      (it.gstPercent ?? 18) === ratePct
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-blue-100'
-                                    }`}
-                                  >
-                                    {ratePct}%
-                                  </button>
-                                ))}
-                              </div>
                             </div>
 
-                            {/* 3. Base Unit Cost (Reduced from rate) */}
-                            <div>
-                              <div className="flex items-center justify-between mb-0.5">
-                                <label className={`text-[10px] font-bold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                                  Base Cost (Excl GST)
-                                </label>
-                                <span className="text-[9px] text-slate-400 font-mono">Reduced</span>
-                              </div>
-                              <div className="relative">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={it.unitCost || 0}
-                                  onChange={(e) => handleItemChange(idx, 'unitCost', e.target.value)}
-                                  placeholder="Base Cost"
-                                  className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono focus:outline-none ${
-                                    isDark ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-300 text-slate-900'
-                                  }`}
-                                />
-                                <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400">₹</span>
-                              </div>
-                              <span className="text-[9px] text-slate-500 block truncate mt-0.5">
-                                {it.gstPercent && it.gstPercent > 0 ? `-${it.gstPercent}% reduced` : 'Zero Tax'}
-                              </span>
-                            </div>
-
-                            {/* 4. GST Tax Amount */}
-                            <div>
-                              <div className="flex items-center justify-between mb-0.5">
-                                <label className={`text-[10px] font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
-                                  Input GST (₹)
-                                </label>
-                                <span className="text-[9px] text-amber-500 font-mono">Tax Amount</span>
-                              </div>
-                              <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold border ${
-                                isDark ? 'bg-slate-900 border-amber-900/60 text-amber-300' : 'bg-white border-amber-200 text-amber-800'
-                              }`}>
-                                +₹{(it.gstAmount ?? Math.round(((it.total || 0) * (it.gstPercent || 0)) / 100)).toLocaleString('en-IN')}
-                              </div>
-                              <span className="text-[9px] text-slate-400 block truncate mt-0.5 font-mono">
-                                CGST: ₹{Math.round(((it.gstAmount || 0) / 2) * 10) / 10} | SGST: ₹{Math.round(((it.gstAmount || 0) / 2) * 10) / 10}
-                              </span>
-                            </div>
-
-                            {/* 5. Item Total with GST */}
-                            <div className="text-right">
-                              <label className={`block text-[10px] font-bold mb-0.5 ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
-                                Total with GST (₹)
-                              </label>
-                              <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold text-right border ${
-                                isDark ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                              }`}>
-                                ₹{(it.totalWithGst ?? ((it.total || 0) + (it.gstAmount || 0))).toLocaleString('en-IN')}
-                              </div>
-                              <span className="text-[9px] text-slate-400 block truncate mt-0.5 font-mono">
-                                Base: ₹{(it.total || 0).toLocaleString('en-IN')}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Similar Stock Item Resolution Prompt */}
-                          {similarStock && (
-                            <div className={`mt-2 p-2 rounded-lg text-xs space-y-1.5 border ${
-                              it.syncMode === 'merge_existing'
-                                ? (isDark ? 'bg-emerald-950/20 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800')
-                                : (isDark ? 'bg-blue-950/30 border-blue-900/60 text-slate-300' : 'bg-blue-50/70 border-blue-200 text-slate-800')
-                            }`}>
-                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-[11px]">
-                                <div className="flex items-center gap-1.5">
-                                  <Boxes className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                                  <span>
-                                    Similar item in stock: <strong className="font-semibold">{similarStock.name}</strong> 
-                                    {' '}(Current: <span className="font-mono">{similarStock.currentStock}</span> units · HSN: <span className="font-mono">{similarStock.hsnCode || 'N/A'}</span> · Cost: ₹{similarStock.unitCost})
-                                  </span>
-                                </div>
-                                <span className="text-[10px] text-slate-500 italic">
-                                  It's similar! Add into one stock item or keep separate?
+                            <div className="flex items-center gap-3 shrink-0">
+                              <div className="text-right font-mono">
+                                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 block">
+                                  ₹{itemTotalGst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </span>
+                                <span className="text-[10px] text-slate-400 block">
+                                  {it.quantity} Qty · {it.gstPercent ?? 18}% GST
                                 </span>
                               </div>
 
-                              <div className="flex items-center flex-wrap gap-2 pt-0.5">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleItemExpand(idx);
+                                }}
+                                className={`flex items-center gap-1 px-2 py-1 text-[11px] font-semibold rounded-md border transition-colors cursor-pointer ${
+                                  isItemExpanded 
+                                    ? 'bg-blue-600 text-white border-blue-600' 
+                                    : (isDark ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-600 hover:bg-slate-100')
+                                }`}
+                              >
+                                <span>{isItemExpanded ? 'Less' : 'Edit'}</span>
+                                {isItemExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                              </button>
+
+                              {items.length > 1 && (
                                 <button
                                   type="button"
-                                  onClick={() => {
-                                    handleItemChange(idx, 'matchedInventoryId', similarStock.id);
-                                    handleItemChange(idx, 'syncMode', 'merge_existing');
-                                    if (!it.hsnCode && similarStock.hsnCode) {
-                                      handleItemChange(idx, 'hsnCode', similarStock.hsnCode);
-                                    }
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveItem(idx);
                                   }}
-                                  className={`px-2.5 py-1 rounded text-[11px] font-bold cursor-pointer transition-all ${
-                                    it.syncMode === 'merge_existing'
-                                      ? 'bg-emerald-600 text-white shadow-xs'
-                                      : 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 border border-blue-300 dark:border-slate-700 hover:bg-blue-50'
-                                  }`}
+                                  className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg cursor-pointer transition-colors"
+                                  title="Remove Item"
                                 >
-                                  ✓ Add to Existing Stock ({similarStock.name})
+                                  <Trash2 className="w-3.5 h-3.5" />
                                 </button>
+                              )}
+                            </div>
+                          </div>
 
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    handleItemChange(idx, 'matchedInventoryId', undefined);
-                                    handleItemChange(idx, 'syncMode', 'create_separate');
-                                  }}
-                                  className={`px-2.5 py-1 rounded text-[11px] font-bold cursor-pointer transition-all ${
-                                    it.syncMode === 'create_separate'
-                                      ? 'bg-slate-700 text-white'
-                                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-300 dark:border-slate-700 hover:bg-slate-100'
-                                  }`}
-                                >
-                                  ➕ Keep Separate as New Item
-                                </button>
+                          {/* 2. Expanded Inputs (Shown only when clicked) */}
+                          {isItemExpanded && (
+                            <div className="p-3.5 space-y-2.5 animate-in fade-in duration-150">
+                              {/* Top: Item Name, HSN No, Quantity */}
+                              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                                {/* Part Name */}
+                                <div className="flex-1 w-full">
+                                  <label className={`block text-[10px] font-bold uppercase mb-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                    Part / Item Name *
+                                  </label>
+                                  <input
+                                    type="text"
+                                    required
+                                    list="vendor-bill-stock-datalist"
+                                    value={it.itemName}
+                                    onChange={(e) => handleItemChange(idx, 'itemName', e.target.value)}
+                                    placeholder="Part Name (e.g. HP 12A Toner, Kingston 240GB SSD)"
+                                    className={`w-full rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${
+                                      isDark ? 'bg-slate-950 border border-slate-700 text-slate-200' : 'bg-slate-50 border border-slate-300 text-slate-900'
+                                    }`}
+                                  />
+                                </div>
 
-                                {/* Manual pick another stock item dropdown */}
-                                <select
-                                  value={it.matchedInventoryId || ''}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    if (val) {
-                                      const chosen = inventory.find(inv => inv.id === val);
-                                      handleItemChange(idx, 'matchedInventoryId', val);
-                                      handleItemChange(idx, 'syncMode', 'merge_existing');
-                                      if (chosen?.hsnCode && !it.hsnCode) handleItemChange(idx, 'hsnCode', chosen.hsnCode);
-                                    } else {
-                                      handleItemChange(idx, 'matchedInventoryId', undefined);
-                                    }
-                                  }}
-                                  className={`text-[10px] rounded px-2 py-0.5 border ${
-                                    isDark ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700'
-                                  }`}
-                                >
-                                  <option value="">Or choose different stock item...</option>
-                                  {inventory.map(inv => (
-                                    <option key={inv.id} value={inv.id}>
-                                      {inv.name} (Stock: {inv.currentStock}, HSN: {inv.hsnCode || '—'})
-                                    </option>
-                                  ))}
-                                </select>
+                                {/* HSN No */}
+                                <div className="w-full sm:w-28">
+                                  <label className={`block text-[10px] font-bold uppercase mb-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                    HSN Code
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={it.hsnCode || ''}
+                                    onChange={(e) => handleItemChange(idx, 'hsnCode', e.target.value)}
+                                    placeholder="HSN No"
+                                    className={`w-full rounded-lg px-2 py-1.5 text-xs font-mono text-center focus:outline-none ${
+                                      isDark ? 'bg-slate-950 border border-slate-700 text-blue-400' : 'bg-slate-50 border border-slate-300 text-blue-700 font-semibold'
+                                    }`}
+                                  />
+                                </div>
+
+                                {/* Quantity */}
+                                <div className="w-full sm:w-20">
+                                  <label className={`block text-[10px] font-bold uppercase mb-0.5 text-center ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                    Quantity
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={it.quantity}
+                                    onChange={(e) => handleItemChange(idx, 'quantity', e.target.value)}
+                                    placeholder="Qty"
+                                    className={`w-full rounded-lg px-2 py-1.5 text-xs font-mono text-center focus:outline-none ${
+                                      isDark ? 'bg-slate-950 border border-slate-700 text-slate-200' : 'bg-slate-50 border border-slate-300 text-slate-900 font-bold'
+                                    }`}
+                                  />
+                                </div>
                               </div>
+
+                              {/* Stock Connection & Link Bar */}
+                              <div className={`px-2.5 py-1.5 rounded-lg text-[11px] flex flex-wrap items-center justify-between gap-1.5 border ${
+                                it.matchedInventoryId
+                                  ? (isDark ? 'bg-emerald-950/30 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800')
+                                  : (isDark ? 'bg-slate-950/40 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600')
+                              }`}>
+                                <div className="flex items-center gap-1.5">
+                                  <Boxes className="w-3.5 h-3.5 shrink-0 text-blue-500" />
+                                  {it.matchedInventoryId ? (
+                                    <span>
+                                      ✓ Linked to Stock: <strong className="font-semibold text-emerald-600 dark:text-emerald-400">{inventory.find(i => i.id === it.matchedInventoryId)?.name || it.itemName}</strong>
+                                      {' '}(Stock: <span className="font-mono font-bold">{inventory.find(i => i.id === it.matchedInventoryId)?.currentStock ?? 0}</span> units)
+                                    </span>
+                                  ) : (
+                                    <span>Stock Link: Item will be added as new unless matched to existing stock</span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <select
+                                    value={it.matchedInventoryId || ''}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      if (val) {
+                                        const chosen = inventory.find(inv => inv.id === val);
+                                        handleItemChange(idx, 'matchedInventoryId', val);
+                                        handleItemChange(idx, 'syncMode', 'merge_existing');
+                                        if (chosen?.name && !it.itemName.trim()) handleItemChange(idx, 'itemName', chosen.name);
+                                        if (chosen?.hsnCode && !it.hsnCode) handleItemChange(idx, 'hsnCode', chosen.hsnCode);
+                                      } else {
+                                        handleItemChange(idx, 'matchedInventoryId', undefined);
+                                        handleItemChange(idx, 'syncMode', 'create_separate');
+                                      }
+                                    }}
+                                    className={`text-[10px] rounded px-2 py-0.5 border ${
+                                      isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
+                                    }`}
+                                  >
+                                    <option value="">{it.matchedInventoryId ? 'Change stock link...' : 'Search / link to stock item...'}</option>
+                                    {inventory.map((inv, iidx) => (
+                                      <option key={`${inv.id}-${iidx}`} value={inv.id}>
+                                        {inv.name} (Stock: {inv.currentStock}, Cost: ₹{inv.unitCost})
+                                      </option>
+                                    ))}
+                                  </select>
+                                  {it.matchedInventoryId && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        handleItemChange(idx, 'matchedInventoryId', undefined);
+                                        handleItemChange(idx, 'syncMode', 'create_separate');
+                                      }}
+                                      className="text-[10px] text-rose-500 hover:underline px-1 cursor-pointer font-bold"
+                                    >
+                                      Unlink
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Bottom Row: Calculation Grid */}
+                              <div className={`p-2.5 rounded-lg border grid grid-cols-2 sm:grid-cols-4 gap-2.5 items-end text-xs ${
+                                isDark ? 'bg-slate-950/60 border-slate-800/80' : 'bg-slate-50 border-slate-200'
+                              }`}>
+                                {/* 1. Rate with GST (Gross / Inclusive) */}
+                                <div>
+                                  <div className="flex items-center justify-between mb-0.5">
+                                    <label className={`text-[10px] font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                                      Rate with GST (₹)
+                                    </label>
+                                    <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-950/80 px-1 rounded">Gross</span>
+                                  </div>
+                                  <div className="relative">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={it.grossUnitCost !== undefined ? it.grossUnitCost : Number(((it.unitCost * (1 + (it.gstPercent || 0)/100))).toFixed(2))}
+                                      onChange={(e) => handleItemChange(idx, 'grossUnitCost', e.target.value)}
+                                      placeholder="Rate with GST"
+                                      className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono font-bold focus:outline-none ${
+                                        isDark ? 'bg-slate-900 border border-emerald-800 text-emerald-300' : 'bg-white border border-emerald-300 text-emerald-800'
+                                      }`}
+                                    />
+                                    <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-emerald-500 font-bold">₹</span>
+                                  </div>
+                                </div>
+
+                                {/* 2. Individual GST % Input Box */}
+                                <div>
+                                  <div className="flex items-center justify-between mb-0.5">
+                                    <label className={`text-[10px] font-bold ${isDark ? 'text-blue-400' : 'text-blue-700'}`}>
+                                      GST % Box
+                                    </label>
+                                    <span className="text-[9px] text-blue-500 font-mono">Tax %</span>
+                                  </div>
+                                  <div className="flex items-center gap-1">
+                                    <div className="relative flex-1">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        step="0.5"
+                                        value={it.gstPercent !== undefined ? it.gstPercent : 18}
+                                        onChange={(e) => handleItemChange(idx, 'gstPercent', e.target.value)}
+                                        placeholder="GST %"
+                                        className={`w-full rounded-md pl-2 pr-4 py-1 text-xs font-mono font-bold text-center focus:outline-none ${
+                                          isDark ? 'bg-slate-900 border border-blue-700 text-blue-300' : 'bg-white border border-blue-400 text-blue-800'
+                                        }`}
+                                      />
+                                      <span className="text-[10px] absolute right-1.5 top-1/2 -translate-y-1/2 text-blue-500 font-bold">%</span>
+                                    </div>
+                                  </div>
+                                  {/* Quick GST % Presets */}
+                                  <div className="flex items-center gap-1 mt-1">
+                                    {[0, 5, 12, 18, 28].map(ratePct => (
+                                      <button
+                                        key={ratePct}
+                                        type="button"
+                                        onClick={() => handleItemChange(idx, 'gstPercent', ratePct)}
+                                        className={`text-[9px] font-bold px-1 py-0.5 rounded transition-colors cursor-pointer ${
+                                          (it.gstPercent ?? 18) === ratePct
+                                            ? 'bg-blue-600 text-white'
+                                            : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-blue-100'
+                                        }`}
+                                      >
+                                        {ratePct}%
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                {/* 3. GST Tax Amount */}
+                                <div>
+                                  <div className="flex items-center justify-between mb-0.5">
+                                    <label className={`text-[10px] font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+                                      Input GST (₹)
+                                    </label>
+                                    <span className="text-[9px] text-amber-500 font-mono">Tax Amount</span>
+                                  </div>
+                                  <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold border ${
+                                    isDark ? 'bg-slate-900 border-amber-900/60 text-amber-300' : 'bg-white border-amber-200 text-amber-800'
+                                  }`}>
+                                    +₹{(it.gstAmount ?? (((it.total || 0) * (it.gstPercent || 0)) / 100)).toFixed(2)}
+                                  </div>
+                                  <span className="text-[9px] text-slate-400 block truncate mt-0.5 font-mono">
+                                    CGST: ₹{(((it.gstAmount || 0) / 2)).toFixed(2)} | SGST: ₹{(((it.gstAmount || 0) / 2)).toFixed(2)}
+                                  </span>
+                                </div>
+
+                                {/* 4. Item Total with GST */}
+                                <div className="text-right">
+                                  <label className={`block text-[10px] font-bold mb-0.5 ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                                    Total with GST (₹)
+                                  </label>
+                                  <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold text-right border ${
+                                    isDark ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                  }`}>
+                                    ₹{itemTotalGst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </div>
+                                  <span className="text-[9px] text-slate-400 block truncate mt-0.5 font-mono">
+                                    Base: ₹{(it.total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Similar Stock Item Resolution Prompt */}
+                              {similarStock && !it.matchedInventoryId && (
+                                <div className={`mt-2 p-2 rounded-lg text-xs space-y-1.5 border ${
+                                  it.syncMode === 'merge_existing'
+                                    ? (isDark ? 'bg-emerald-950/20 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800')
+                                    : (isDark ? 'bg-blue-950/30 border-blue-900/60 text-slate-300' : 'bg-blue-50/70 border-blue-200 text-slate-800')
+                                }`}>
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-[11px]">
+                                    <div className="flex items-center gap-1.5">
+                                      <Boxes className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                      <span>
+                                        Detected existing stock: <strong className="font-semibold">{similarStock.name}</strong> 
+                                        {' '}(Current: <span className="font-mono">{similarStock.currentStock}</span> units · HSN: <span className="font-mono">{similarStock.hsnCode || 'N/A'}</span> · Cost: ₹{similarStock.unitCost})
+                                      </span>
+                                    </div>
+                                    <span className="text-[10px] text-slate-500 italic">
+                                      Add into existing stock or create separate?
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center flex-wrap gap-2 pt-0.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        handleItemChange(idx, 'matchedInventoryId', similarStock.id);
+                                        handleItemChange(idx, 'syncMode', 'merge_existing');
+                                        if (!it.hsnCode && similarStock.hsnCode) {
+                                          handleItemChange(idx, 'hsnCode', similarStock.hsnCode);
+                                        }
+                                      }}
+                                      className="px-2.5 py-1 rounded text-[11px] font-bold cursor-pointer transition-all bg-emerald-600 text-white shadow-xs"
+                                    >
+                                      ✓ Add to Existing Stock ({similarStock.name})
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        handleItemChange(idx, 'matchedInventoryId', undefined);
+                                        handleItemChange(idx, 'syncMode', 'create_separate');
+                                      }}
+                                      className="px-2.5 py-1 rounded text-[11px] font-bold cursor-pointer transition-all bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300"
+                                    >
+                                      ➕ Keep Separate as New Item
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
                       );
                     })}
+
+                    <div className="pt-1 flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={handleAddItem}
+                        className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex items-center gap-1.5 cursor-pointer bg-blue-50 dark:bg-blue-950/40 px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 transition-colors"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>+ Add Blank Item</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsStockPickerOpen(true)}
+                        className="text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1.5 cursor-pointer bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 transition-colors"
+                      >
+                        <Boxes className="w-3.5 h-3.5" />
+                        <span>Search & Add From Stock</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
 
-                {/* Totals & Payment Section */}
+                {/* Financial Totals: Subtotal, Total GST Amount, Discount, Round Off, Total Bill Amount & Payment */}
                 <div className={`p-4 rounded-xl border space-y-3 ${
                   isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
                 }`}>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {/* 1. Subtotal / Base Amount */}
                     <div>
-                      <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>GST / Tax (₹)</label>
+                      <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                        Subtotal (Taxable)
+                      </label>
+                      <div className={`rounded-lg px-3 py-1.5 text-xs font-mono font-bold border ${
+                        isDark ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800'
+                      }`}>
+                        ₹{Number(items.reduce((acc, it) => acc + (it.total || 0), 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    </div>
+
+                    {/* 2. Total GST Tax Amount */}
+                    <div>
+                      <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                        Total GST / Tax (₹)
+                      </label>
                       <input
                         type="number"
                         min="0"
+                        step="any"
                         value={taxAmount}
                         onChange={(e) => {
-                          const val = Number(e.target.value);
+                          const val = Number(e.target.value) || 0;
                           setTaxAmount(val);
                           const sum = items.reduce((acc, it) => acc + (it.total || 0), 0);
-                          setTotalAmount(sum + val);
+                          setTotalAmount(Number(Math.max(0, sum + val - (discount || 0) + (roundOff || 0)).toFixed(2)));
                         }}
-                        className={`w-full rounded-lg px-3 py-1.5 text-xs font-mono ${
-                          isDark ? 'bg-slate-900 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
+                        className={`w-full rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-blue-600 focus:outline-none ${
+                          isDark ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-300'
                         }`}
                       />
                     </div>
 
+                    {/* 3. Discount (₹) */}
                     <div>
-                      <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Total Bill Amount (₹)</label>
+                      <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                        Discount (₹)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={discount === 0 ? '' : discount}
+                          onChange={(e) => {
+                            const val = Math.max(0, Number(e.target.value) || 0);
+                            setDiscount(val);
+                            const sum = items.reduce((acc, it) => acc + (it.total || 0), 0);
+                            setTotalAmount(Number(Math.max(0, sum + taxAmount - val + (roundOff || 0)).toFixed(2)));
+                          }}
+                          placeholder="0.00"
+                          className={`w-full rounded-lg pl-6 pr-3 py-1.5 text-xs font-mono focus:outline-none ${
+                            isDark ? 'bg-slate-900 border border-slate-800 text-rose-300' : 'bg-white border border-slate-300 text-rose-700'
+                          }`}
+                        />
+                        <span className="text-xs absolute left-2.5 top-1/2 -translate-y-1/2 text-rose-400 font-bold">-₹</span>
+                      </div>
+                    </div>
+
+                    {/* 4. Manual Round Off (₹) with Auto Round button */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className={`text-xs font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                          Round Off (₹)
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const sum = items.reduce((acc, it) => acc + (it.total || 0), 0);
+                            const base = sum + taxAmount - discount;
+                            const rounded = Math.round(base);
+                            const diff = Number((rounded - base).toFixed(2));
+                            setRoundOff(diff);
+                            setTotalAmount(Number(Math.max(0, base + diff).toFixed(2)));
+                          }}
+                          className="text-[10px] text-blue-600 hover:underline cursor-pointer font-bold"
+                          title="Auto-calculate round off to nearest rupee"
+                        >
+                          Auto Round
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="any"
+                          value={roundOff === 0 ? '' : roundOff}
+                          onChange={(e) => {
+                            const val = Number(e.target.value) || 0;
+                            setRoundOff(val);
+                            const sum = items.reduce((acc, it) => acc + (it.total || 0), 0);
+                            setTotalAmount(Number(Math.max(0, sum + taxAmount - discount + val).toFixed(2)));
+                          }}
+                          placeholder="0.00"
+                          className={`w-full rounded-lg pl-6 pr-3 py-1.5 text-xs font-mono focus:outline-none ${
+                            isDark ? 'bg-slate-900 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
+                          }`}
+                        />
+                        <span className="text-xs absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">±₹</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200 dark:border-slate-800 items-end">
+                    {/* Total Bill Amount */}
+                    <div>
+                      <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                        Total Bill Amount (₹)
+                      </label>
                       <input
                         type="number"
                         value={totalAmount}
-                        onChange={(e) => setTotalAmount(Number(e.target.value))}
+                        onChange={(e) => setTotalAmount(Number(e.target.value) || 0)}
                         className={`w-full rounded-lg px-3 py-1.5 text-xs font-mono font-bold ${
-                          isDark ? 'bg-slate-900 border border-slate-800 text-white' : 'bg-white border border-slate-300 text-slate-900'
+                          isDark ? 'bg-slate-900 border border-emerald-900 text-emerald-400' : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
                         }`}
                       />
                     </div>
 
+                    {/* Paid Amount */}
                     <div>
-                      <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Paid Amount (₹)</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className={`text-xs font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                          Paid Amount (₹)
+                        </label>
+                        {paymentStatus === 'paid' && (
+                          <span className="text-[10px] text-emerald-600 font-bold">Auto-matched</span>
+                        )}
+                      </div>
                       <input
                         type="number"
                         value={paidAmount}
@@ -1680,14 +2211,20 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                         }`}
                       />
                     </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200 dark:border-slate-800">
+                    {/* Payment Status */}
                     <div>
-                      <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Payment Status</label>
+                      <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                        Payment Status
+                      </label>
                       <select
                         value={paymentStatus}
-                        onChange={(e) => setPaymentStatus(e.target.value as any)}
+                        onChange={(e) => {
+                          const newStatus = e.target.value as any;
+                          setPaymentStatus(newStatus);
+                          if (newStatus === 'paid') setPaidAmount(totalAmount);
+                          else if (newStatus === 'pending') setPaidAmount(0);
+                        }}
                         className={`w-full rounded-lg px-3 py-1.5 text-xs ${
                           isDark ? 'bg-slate-900 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
                         }`}
@@ -1697,7 +2234,9 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                         <option value="pending">Payment Pending</option>
                       </select>
                     </div>
+                  </div>
 
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Payment Mode</label>
                       <select
@@ -2110,7 +2649,6 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                         <th className="py-2 px-3">Item Description</th>
                         <th className="py-2 px-2">HSN</th>
                         <th className="py-2 px-2 text-center">Qty</th>
-                        <th className="py-2 px-2 text-right">Base Cost</th>
                         <th className="py-2 px-2 text-center">GST %</th>
                         <th className="py-2 px-2 text-right">Input GST</th>
                         <th className="py-2 px-3 text-right">Total</th>
@@ -2119,17 +2657,16 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                       {viewingBill.items.map((it, idx) => {
                         const itGst = it.gstPercent !== undefined ? it.gstPercent : 18;
-                        const itTax = it.gstAmount ?? Math.round(((it.total || (it.unitCost * it.quantity)) * itGst) / 100);
-                        const itTotal = it.totalWithGst ?? (it.total + itTax);
+                        const itTax = it.gstAmount ?? Number((((it.total || (it.unitCost * it.quantity)) * itGst) / 100).toFixed(2));
+                        const itTotal = it.totalWithGst ?? Number(((it.total || 0) + itTax).toFixed(2));
                         return (
                           <tr key={idx}>
                             <td className="py-2 px-3 font-medium">{it.itemName}</td>
                             <td className="py-2 px-2 font-mono text-[11px] text-blue-500">{it.hsnCode || '—'}</td>
                             <td className="py-2 px-2 text-center font-mono">{it.quantity}</td>
-                            <td className="py-2 px-2 text-right font-mono">₹{it.unitCost.toLocaleString('en-IN')}</td>
                             <td className="py-2 px-2 text-center font-mono font-bold text-blue-600">{itGst}%</td>
-                            <td className="py-2 px-2 text-right font-mono text-amber-600">₹{itTax.toLocaleString('en-IN')}</td>
-                            <td className="py-2 px-3 text-right font-mono font-bold">₹{itTotal.toLocaleString('en-IN')}</td>
+                            <td className="py-2 px-2 text-right font-mono text-amber-600">₹{itTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td className="py-2 px-3 text-right font-mono font-bold">₹{itTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                           </tr>
                         );
                       })}

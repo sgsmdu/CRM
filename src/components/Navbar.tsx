@@ -15,13 +15,15 @@ import {
   Sun,
   Moon,
   ShieldCheck,
-  Share2
+  Share2,
+  UserCheck,
+  ListOrdered
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 
 import { PWAInstallButton } from './PWAInstallButton';
 
-export type NavTab = 'dashboard' | 'customers' | 'leads' | 'jobs' | 'inventory' | 'vendors' | 'billing' | 'admin';
+export type NavTab = 'dashboard' | 'customers' | 'leads' | 'jobs' | 'allocation' | 'inventory' | 'vendors' | 'billing' | 'reports' | 'employees' | 'admin';
 
 interface NavbarProps {
   activeTab: NavTab;
@@ -40,9 +42,12 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const { customers, jobCards, leadSources, exportDataJson, importDataJson, resetToDefaultData, theme, toggleTheme } = useSgs();
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
+  const [resetToast, setResetToast] = useState<string | null>(null);
   const isDark = theme === 'dark';
 
-  const activeJobsCount = jobCards.filter(j => j.status !== 'delivered').length;
+  const activeJobsCount = jobCards.filter(j => j.status !== 'delivered' && j.status !== 'billed' && j.status !== 'work_completed' && j.status !== 'completed').length;
+  const pendingTasksCount = jobCards.filter(j => j.status !== 'work_completed' && j.status !== 'completed' && j.status !== 'delivered' && j.status !== 'billed').length;
 
   const handleExport = () => {
     const jsonStr = exportDataJson();
@@ -64,30 +69,36 @@ export const Navbar: React.FC<NavbarProps> = ({
       const content = event.target?.result as string;
       const success = importDataJson(content);
       if (success) {
-        alert('Data backup successfully restored!');
+        setResetToast('Data backup successfully restored!');
+        setTimeout(() => setResetToast(null), 3500);
       } else {
-        alert('Failed to parse backup JSON. Please check file format.');
+        setResetToast('Failed to parse backup JSON. Please check file format.');
+        setTimeout(() => setResetToast(null), 3500);
       }
     };
     reader.readAsText(file);
     setShowSettingsMenu(false);
   };
 
-  const handleReset = () => {
-    if (window.confirm('Reset all databases back to default Spider Grid Solutions 31 Golden Customers and seed records?')) {
-      resetToDefaultData();
-      setShowSettingsMenu(false);
-    }
+  const handleConfirmReset = () => {
+    resetToDefaultData();
+    setShowResetConfirmModal(false);
+    setShowSettingsMenu(false);
+    setResetToast('Factory Defaults Restored! All 31 Customer records and clean data reloaded.');
+    setTimeout(() => setResetToast(null), 4000);
   };
 
   const navItems = [
     { id: 'dashboard', label: 'Command Center', icon: LayoutDashboard },
-    { id: 'customers', label: `Golden Customers (${customers.length})`, icon: Users },
-    { id: 'leads', label: `Lead Sources (${leadSources.length})`, icon: Share2 },
     { id: 'jobs', label: `Job Cards (${activeJobsCount})`, icon: Wrench },
+    { id: 'allocation', label: `Task Assign & Priority (${pendingTasksCount})`, icon: ListOrdered },
+    { id: 'billing', label: 'Billing & Quotations', icon: CreditCard },
+    { id: 'reports', label: 'GST Reports & Filing', icon: FileSpreadsheet },
+    { id: 'employees', label: 'Staff & Allocation', icon: UserCheck },
     { id: 'inventory', label: 'Stock & Parts', icon: Boxes },
     { id: 'vendors', label: 'Vendor Hub & Ledger', icon: Receipt },
-    { id: 'billing', label: 'Billing & Cash Flow', icon: CreditCard },
+    { id: 'customers', label: `Customers (${customers.length})`, icon: Users },
+    { id: 'leads', label: `Lead Sources (${leadSources.length})`, icon: Share2 },
     { id: 'admin', label: 'Admin Hub', icon: ShieldCheck },
   ];
 
@@ -272,11 +283,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </label>
                 <div className={`border-t my-1 ${isDark ? 'border-slate-800' : 'border-slate-100'}`} />
                 <button
-                  onClick={handleReset}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-rose-500 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer text-left"
+                  type="button"
+                  onClick={() => setShowResetConfirmModal(true)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-rose-500 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer text-left font-medium"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
-                  <span>Reset to 31 Golden Records</span>
+                  <span>Reset to Factory Defaults</span>
                 </button>
               </div>
             )}
@@ -307,6 +319,60 @@ export const Navbar: React.FC<NavbarProps> = ({
           );
         })}
       </div>
+
+      {/* Toast Feedback */}
+      {resetToast && (
+        <div className="fixed top-6 right-6 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in fade-in slide-in-from-top-2">
+          <Sparkles className="w-4 h-4" />
+          <span>{resetToast}</span>
+        </div>
+      )}
+
+      {/* Safe Reset Confirmation Modal */}
+      {showResetConfirmModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+            isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+          }`}>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center shrink-0">
+                <RotateCcw className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-rose-600">
+                  Reset to Factory Defaults?
+                </h3>
+                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Restore clean Spider Grid Solutions database
+                </p>
+              </div>
+            </div>
+
+            <p className={`text-xs leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+              This will restore all <strong>31 verified customer accounts</strong>, default inventory stock items, seed job cards, staff records, and cash flow entries to fresh factory defaults.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowResetConfirmModal(false)}
+                className={`px-4 py-2 text-xs rounded-xl font-medium cursor-pointer ${
+                  isDark ? 'bg-slate-800 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmReset}
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md shadow-rose-600/20 cursor-pointer"
+              >
+                Yes, Restore Defaults
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

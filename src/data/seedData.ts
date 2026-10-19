@@ -1,4 +1,4 @@
-import { Customer, JobCard, InventoryItem, VendorBill, StockTransaction, Invoice, CashFlowEntry, AdminSettings, LeadSource, Vendor } from '../types';
+import { Customer, JobCard, InventoryItem, VendorBill, StockTransaction, Invoice, CashFlowEntry, AdminSettings, LeadSource, Vendor, Employee, AttendanceRecord, SalaryPayment, WorkAllocation } from '../types';
 import { 
   DEFAULT_SGS_LOGO_DATA_URL, 
   DEFAULT_SGS_STAMP_DATA_URL, 
@@ -1118,3 +1118,157 @@ export const SEED_VENDORS: Vendor[] = [
     createdAt: '2026-01-20T10:00:00Z',
   },
 ];
+
+export const SEED_EMPLOYEES: Employee[] = [
+  {
+    id: 'emp-1',
+    name: 'Suresh Kumar',
+    phone: '9842100001',
+    role: 'Senior Chip-Level Technician',
+    dailySalary: 750,
+    monthlySalary: 19500,
+    joiningDate: '2025-06-15',
+    status: 'active',
+    upiId: 'sureshkumar@oksbi',
+    notes: 'Expert in laptop motherboard schematics, BGA reflow, and power rail diagnostics',
+  },
+  {
+    id: 'emp-2',
+    name: 'Karthik Raja',
+    phone: '9789100002',
+    role: 'Desktop & Hardware Tech',
+    dailySalary: 650,
+    monthlySalary: 16900,
+    joiningDate: '2025-08-01',
+    status: 'active',
+    upiId: 'karthikraja@okaxis',
+    notes: 'Custom gaming PC builds, SMPS repairs, Windows 11 optimization and data recovery',
+  },
+  {
+    id: 'emp-3',
+    name: 'Vigneshwaran',
+    phone: '9677700003',
+    role: 'CCTV & Network Specialist',
+    dailySalary: 700,
+    monthlySalary: 18200,
+    joiningDate: '2025-10-10',
+    status: 'active',
+    upiId: 'vigneshcctv@paytm',
+    notes: 'Outdoor cabling, Hikvision IP DVR setup, port forwarding, and switch maintenance',
+  },
+  {
+    id: 'emp-4',
+    name: 'Murugan P',
+    phone: '9443200004',
+    role: 'Printer Specialist & Toner Tech',
+    dailySalary: 600,
+    monthlySalary: 15600,
+    joiningDate: '2026-01-05',
+    status: 'active',
+    upiId: 'muruganprinter@ybl',
+    notes: 'LaserJet Teflon replacement, Canon/Epson head unclogging, pickup roller repairs',
+  },
+];
+
+const todayStr = '2026-10-13';
+
+export const SEED_ATTENDANCE: AttendanceRecord[] = [
+  { id: 'att-1', employeeId: 'emp-1', date: todayStr, status: 'present', checkInTime: '09:15 AM' },
+  { id: 'att-2', employeeId: 'emp-2', date: todayStr, status: 'present', checkInTime: '09:30 AM' },
+  { id: 'att-3', employeeId: 'emp-3', date: todayStr, status: 'present', checkInTime: '09:00 AM' },
+  { id: 'att-4', employeeId: 'emp-4', date: todayStr, status: 'half_day', checkInTime: '09:45 AM', notes: 'Field call in afternoon' },
+  // Yesterday
+  { id: 'att-5', employeeId: 'emp-1', date: '2026-10-12', status: 'present', checkInTime: '09:10 AM' },
+  { id: 'att-6', employeeId: 'emp-2', date: '2026-10-12', status: 'present', checkInTime: '09:25 AM' },
+  { id: 'att-7', employeeId: 'emp-3', date: '2026-10-12', status: 'present', checkInTime: '09:05 AM' },
+  { id: 'att-8', employeeId: 'emp-4', date: '2026-10-12', status: 'present', checkInTime: '09:30 AM' },
+];
+
+export const SEED_SALARIES: SalaryPayment[] = [
+  {
+    id: 'sal-1',
+    employeeId: 'emp-1',
+    month: '2026-09',
+    baseSalary: 19500,
+    daysPresent: 26,
+    halfDays: 0,
+    absentDays: 0,
+    calculatedSalary: 19500,
+    advanceDeduction: 1000,
+    bonus: 500,
+    netPaid: 19000,
+    paymentDate: '2026-10-02',
+    paymentMode: 'upi',
+    referenceNumber: 'UPI-9842100001-SEP',
+    status: 'paid',
+    notes: 'September 2026 full salary with festive bonus',
+  },
+  {
+    id: 'sal-2',
+    employeeId: 'emp-2',
+    month: '2026-09',
+    baseSalary: 16900,
+    daysPresent: 25,
+    halfDays: 1,
+    absentDays: 0,
+    calculatedSalary: 16575,
+    advanceDeduction: 500,
+    bonus: 250,
+    netPaid: 16325,
+    paymentDate: '2026-10-02',
+    paymentMode: 'upi',
+    referenceNumber: 'UPI-9789100002-SEP',
+    status: 'paid',
+  },
+];
+
+export const SEED_WORK_ALLOCATIONS: WorkAllocation[] = [
+  {
+    id: 'alloc-1',
+    employeeId: 'emp-1',
+    jobCardId: 'job-1',
+    allocatedDate: todayStr,
+    priorityOrder: 1,
+    notes: 'Check display 3.3V rail on motherboard and re-paste heatsink',
+    status: 'in_progress',
+  },
+  {
+    id: 'alloc-2',
+    employeeId: 'emp-3',
+    jobCardId: 'job-2',
+    allocatedDate: todayStr,
+    priorityOrder: 1,
+    notes: 'Replace 8-way CCTV SMPS and inspect BNC terminations',
+    status: 'assigned',
+  },
+];
+
+export const SEED_SALARY_ADVANCES: import('../types').SalaryAdvance[] = [
+  {
+    id: 'adv-1',
+    employeeId: 'emp-1',
+    date: '2026-10-05',
+    amount: 2000,
+    reason: 'Family medical expense emergency',
+    approvedBy: 'Admin (Sathesh)',
+    repaidAmount: 1000,
+    status: 'active',
+    repayments: [
+      { date: '2026-10-10', amount: 1000, note: 'Adjusted from festival advance' }
+    ]
+  },
+  {
+    id: 'adv-2',
+    employeeId: 'emp-2',
+    date: '2026-10-08',
+    amount: 1500,
+    reason: 'Bike repair and fuel allowance advance',
+    approvedBy: 'Office Staff',
+    repaidAmount: 500,
+    status: 'active',
+    repayments: [
+      { date: '2026-10-12', amount: 500, note: 'Direct cash return' }
+    ]
+  }
+];
+
