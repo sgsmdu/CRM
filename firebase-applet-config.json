@@ -3,6 +3,7 @@
   "appId": "1:276241524340:web:1c568f06dd84a628ea1321",
   "apiKey": "AIzaSyCiUpg7PUNSt3s9CsT4zLCTfwayIU-bLuM",
   "authDomain": "gen-lang-client-0252988844.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-spidergridsoluti-d62913d3-cb5f-4d98-8944-7dc7b322fdd0",
   "storageBucket": "gen-lang-client-0252988844.firebasestorage.app",
   "messagingSenderId": "276241524340",
   "measurementId": "",

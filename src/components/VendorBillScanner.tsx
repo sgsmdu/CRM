@@ -183,12 +183,9 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
         }),
       });
 
-      if (!response.ok) {
-        throw new Error(`Server responded with ${response.status}`);
-      }
+      const result = await response.json().catch(() => null);
 
-      const result = await response.json();
-      if (result.success && result.data) {
+      if (response.ok && result?.success && result?.data) {
         const d = result.data;
         if (d.vendorName) {
           setVendorName(d.vendorName);
@@ -227,11 +224,14 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
         setScanSuccess(true);
         setExpandedItemIndices([0]);
       } else {
-        setScanError(result.error || 'Failed to extract text from bill. Please enter details manually.');
+        const serverError = result?.error || (response.status === 402 
+          ? 'Google Gemini API prepayment credits are depleted. Please check your project billing or attach an active API key.' 
+          : `Server responded with status ${response.status}. Please enter details manually.`);
+        setScanError(serverError);
       }
     } catch (err: any) {
-      console.warn('OCR fallback triggered:', err);
-      setScanError('Direct OCR service currently unavailable. Please enter invoice numbers and amounts below.');
+      console.warn('OCR fetch error:', err);
+      setScanError(err.message || 'Network error connecting to OCR service. Please enter details manually below.');
     } finally {
       setIsScanning(false);
     }
@@ -1441,9 +1441,69 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                 )}
 
                 {scanError && (
-                  <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-600 text-xs flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                    <span>{scanError}</span>
+                  <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs space-y-2">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                      <div className="space-y-1 flex-1">
+                        <p className="font-bold leading-snug">{scanError}</p>
+                        {(scanError.toLowerCase().includes('depleted') || scanError.toLowerCase().includes('credit') || scanError.toLowerCase().includes('billing') || scanError.toLowerCase().includes('402')) && (
+                          <div className="pt-1 space-y-2">
+                            <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                              Your Google AI Studio project's prepayment balance is exhausted. You can manage or add credits in the <a href="https://ai.studio/projects" target="_blank" rel="noreferrer" className="underline font-bold text-blue-600 dark:text-blue-400 hover:text-blue-500">Google AI Studio Console</a> or select another API key.
+                            </p>
+                            <div className="flex items-center gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  // Pre-fill realistic IT Hardware Bill Sample
+                                  setVendorName('Siva Printer Spares & IT Hub');
+                                  setInvoiceNumber(`INV-${Math.floor(1000 + Math.random() * 9000)}`);
+                                  setInvoiceDate(new Date().toISOString().split('T')[0]);
+                                  const item1Gross = 750;
+                                  const item1Calc = calculateFromInclusiveRate(item1Gross, 18, 2);
+                                  const item2Gross = 2450;
+                                  const item2Calc = calculateFromInclusiveRate(item2Gross, 18, 1);
+                                  setItems([
+                                    {
+                                      itemName: 'HP 12A Laser Toner Cartridge (Compatible)',
+                                      hsnCode: '8443',
+                                      quantity: 2,
+                                      grossUnitCost: item1Gross,
+                                      gstPercent: 18,
+                                      unitCost: item1Calc.baseRate,
+                                      total: item1Calc.baseAmount,
+                                      gstAmount: item1Calc.totalGst,
+                                      totalWithGst: item1Calc.totalWithGst,
+                                    },
+                                    {
+                                      itemName: 'Kingston A400 240GB 2.5" SATA SSD',
+                                      hsnCode: '8471',
+                                      quantity: 1,
+                                      grossUnitCost: item2Gross,
+                                      gstPercent: 18,
+                                      unitCost: item2Calc.baseRate,
+                                      total: item2Calc.baseAmount,
+                                      gstAmount: item2Calc.totalGst,
+                                      totalWithGst: item2Calc.totalWithGst,
+                                    }
+                                  ]);
+                                  const total = item1Calc.totalWithGst + item2Calc.totalWithGst;
+                                  setTaxAmount(item1Calc.totalGst + item2Calc.totalGst);
+                                  setTotalAmount(total);
+                                  setPaidAmount(total);
+                                  setScanError(null);
+                                  setScanSuccess(true);
+                                  setExpandedItemIndices([0]);
+                                }}
+                                className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-100 dark:bg-blue-900/40 dark:text-blue-300 rounded-lg hover:bg-blue-200 cursor-pointer transition-colors"
+                              >
+                                ⚡ Pre-fill Sample Hardware Spares
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
 

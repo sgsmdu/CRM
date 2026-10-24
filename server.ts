@@ -125,9 +125,28 @@ Return clean JSON with:
     });
   } catch (error: any) {
     console.error('Error scanning vendor bill:', error);
-    res.status(500).json({
+
+    let rawMsg = error.message || String(error) || 'Failed to process vendor bill with Gemini AI';
+    try {
+      const parsed = JSON.parse(rawMsg);
+      if (parsed.error?.message) {
+        rawMsg = parsed.error.message;
+      }
+    } catch {}
+
+    const isCreditDepleted = rawMsg.includes('402') || 
+      rawMsg.toLowerCase().includes('prepayment credits are depleted') || 
+      rawMsg.toLowerCase().includes('resource_exhausted') ||
+      rawMsg.toLowerCase().includes('billing');
+
+    const cleanError = isCreditDepleted
+      ? 'Google Gemini API prepayment credits are depleted. Please check your project billing at https://ai.studio/projects or select an active API key.'
+      : rawMsg;
+
+    res.status(isCreditDepleted ? 402 : 500).json({
       success: false,
-      error: error.message || 'Failed to process vendor bill with Gemini AI',
+      isCreditDepleted,
+      error: cleanError,
     });
   }
 });
@@ -145,9 +164,12 @@ async function startServer() {
       res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
     });
   } else {
-    // Development mode with Vite middleware
+    // Development mode with Vite middleware (HMR disabled in AI Studio cloud environment)
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { 
+        middlewareMode: true,
+        hmr: false,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
