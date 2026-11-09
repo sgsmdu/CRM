@@ -1,3 +1,4 @@
+import { todayLocal } from '../utils/accounting';
 import React, { useState, useMemo } from 'react';
 import { 
   Search, 
@@ -288,7 +289,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
       updateCustomer(cust.id, { phoneBook: 'Yes', syncedToGoogleContacts: true });
     });
 
-    downloadVCard(`SGS-All-Customers-GoogleContacts-${new Date().toISOString().split('T')[0]}`, masterVcf);
+    downloadVCard(`SGS-All-Customers-GoogleContacts-${todayLocal()}`, masterVcf);
     setCustomerToast(`Successfully exported Google Contacts file (.vcf) with all ${customers.length} Customers!`);
     setTimeout(() => setCustomerToast(null), 4000);
   };

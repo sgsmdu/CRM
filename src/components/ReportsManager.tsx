@@ -24,6 +24,8 @@ import {
   IndianRupee
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
+import * as Acc from '../utils/accounting';
+import { buildGstr1 } from '../utils/gstr1';
 import { Invoice, VendorBill, CashFlowEntry } from '../types';
 
 export const ReportsManager: React.FC = () => {
@@ -37,10 +39,10 @@ export const ReportsManager: React.FC = () => {
   
   const isDark = theme === 'dark';
 
-  const [activeReportTab, setActiveReportTab] = useState<'pnl_tax' | 'gstr1' | 'gstr2' | 'all'>('pnl_tax');
+  const [activeReportTab, setActiveReportTab] = useState<'pnl_tax' | 'gstr1' | 'gstr2' | 'outstanding' | 'all'>('pnl_tax');
   
   // Period filter for GSTR (YYYY-MM)
-  const currentMonth = new Date().toISOString().substring(0, 7); // e.g. "2026-10"
+  const currentMonth = Acc.todayLocal().substring(0, 7); // e.g. "2026-10"
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonth);
   const [copySuccess, setCopySuccess] = useState(false);
 
@@ -76,7 +78,8 @@ export const ReportsManager: React.FC = () => {
   const gstr2Bills = useMemo(() => {
     return vendorBills.filter(bill => {
       const billDate = bill.invoiceDate || bill.createdAt;
-      return billDate.startsWith(selectedMonth);
+      // only purchases that carry GST give input tax credit
+      return billDate.startsWith(selectedMonth) && (bill.taxAmount || 0) > 0;
     });
   }, [vendorBills, selectedMonth]);
 
@@ -86,13 +89,17 @@ export const ReportsManager: React.FC = () => {
     let totalTax = 0;
     let totalCgst = 0;
     let totalSgst = 0;
+    let totalIgst = 0;
     let totalInvoiceValue = 0;
 
+    // Discount is spread over taxable value and GST, so GST payable is not over-reported
     gstr1Invoices.forEach(inv => {
-      totalTaxable += inv.subtotal || 0;
-      totalTax += inv.taxAmount || 0;
-      totalCgst += (inv.taxAmount || 0) / 2;
-      totalSgst += (inv.taxAmount || 0) / 2;
+      const net = Acc.netOfDiscount(inv);
+      totalTaxable += net.taxable;
+      totalTax += net.tax;
+      totalCgst += net.cgst;
+      totalSgst += net.sgst;
+      totalIgst += net.igst;
       totalInvoiceValue += inv.grandTotal || 0;
     });
 
@@ -102,6 +109,7 @@ export const ReportsManager: React.FC = () => {
       totalTax: Number(totalTax.toFixed(2)),
       totalCgst: Number(totalCgst.toFixed(2)),
       totalSgst: Number(totalSgst.toFixed(2)),
+      totalIgst: Number(totalIgst.toFixed(2)),
       totalInvoiceValue: Number(totalInvoiceValue.toFixed(2)),
     };
   }, [gstr1Invoices]);
@@ -132,7 +140,7 @@ export const ReportsManager: React.FC = () => {
   // Comprehensive P&L and GST Settlement (GSTR-3B) stats
   const pnlStats = useMemo(() => {
     const periodInvoices = invoices.filter(inv => {
-      if (inv.status === 'cancelled') return false;
+      if (inv.status === 'cancelled' || inv.type !== 'invoice') return false; // quotations are not sales
       return !selectedMonth || inv.date.startsWith(selectedMonth);
     });
 
@@ -152,21 +160,16 @@ export const ReportsManager: React.FC = () => {
     let totalInvoiceProfit = 0;
 
     periodInvoices.forEach(inv => {
-      const netTaxable = Math.max(0, (inv.subtotal || 0) - (inv.discount || 0));
+      const net = Acc.netOfDiscount(inv);
       totalBilledRevenue += inv.grandTotal || 0;
-      totalTaxableSales += netTaxable;
-      totalOutputGst += inv.taxAmount || 0;
-      if (inv.isInterState) {
-        totalIgst += inv.taxAmount || 0;
-      } else {
-        totalCgst += (inv.taxAmount || 0) / 2;
-        totalSgst += (inv.taxAmount || 0) / 2;
-      }
-      totalSparesCost += inv.totalPurchaseCostWithGst ?? inv.purchaseCostTotal ?? 0;
+      totalTaxableSales += net.taxable;
+      totalOutputGst += net.tax;
+      totalCgst += net.cgst;
+      totalSgst += net.sgst;
+      totalIgst += net.igst;
+      totalSparesCost += inv.purchaseCostTotal || 0;
       totalManualExtra += inv.manualExtraCost || 0;
-      totalInvoiceProfit += inv.profitAmount !== undefined 
-        ? inv.profitAmount 
-        : ((inv.grandTotal || inv.subtotal || 0) - (inv.totalPurchaseCostWithGst ?? inv.purchaseCostTotal ?? 0) - (inv.manualExtraCost || 0));
+      totalInvoiceProfit += Acc.invoiceProfit(inv);
     });
 
     let totalVendorPurchases = 0;
@@ -215,109 +218,15 @@ export const ReportsManager: React.FC = () => {
   }, [invoices, vendorBills, selectedMonth]);
 
   // Generate Official GSTR-1 JSON (as per GST Portal Offline Tool Schema)
-  const generateGstr1Json = () => {
-    const gstin = adminSettings.workshopGstin || '33AANCS7890Q1Z8';
+  // Who owes us money, oldest first (uses bill due date, else bill date)
+  const outstandingRows = useMemo(() => Acc.customerOutstanding(invoices), [invoices]);
 
-    // B2B: Invoices with customer GSTIN (or if not present, dummy for demonstration)
-    const b2bInvoices: any[] = [];
-    const b2csInvoices: any[] = [];
-    const hsnMap: { [code: string]: { desc: string; qty: number; val: number; txval: number; camt: number; samt: number; rt: number } } = {};
-
-    gstr1Invoices.forEach(inv => {
-      const rate = inv.gstPercent || 18;
-      const camt = Number(((inv.taxAmount || 0) / 2).toFixed(2));
-      const samt = Number(((inv.taxAmount || 0) / 2).toFixed(2));
-      const dateParts = inv.date.split('-');
-      const formattedDate = dateParts.length === 3 ? `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}` : inv.date;
-
-      // Group into B2CS (Consumer Unregistered)
-      b2csInvoices.push({
-        sply_ty: 'INTRA',
-        pos: '33', // Tamil Nadu
-        typ: 'OE',
-        rt: rate,
-        txval: Number(inv.subtotal.toFixed(2)),
-        camt,
-        samt,
-        csamt: 0
-      });
-
-      // HSN aggregation
-      (inv.items || []).forEach(item => {
-        const hsn = item.hsnCode || adminSettings.defaultHsnCode || '998713';
-        const itmTaxable = item.amount || 0;
-        const itmRate = item.gstPercent !== undefined ? item.gstPercent : rate;
-        const itmGst = item.gstAmount || ((itmTaxable * itmRate) / 100);
-        const itmCamt = Number((itmGst / 2).toFixed(2));
-        const itmSamt = Number((itmGst / 2).toFixed(2));
-
-        if (!hsnMap[hsn]) {
-          hsnMap[hsn] = {
-            desc: item.description.split('\n')[0].substring(0, 30),
-            qty: 0,
-            val: 0,
-            txval: 0,
-            camt: 0,
-            samt: 0,
-            rt: itmRate
-          };
-        }
-        hsnMap[hsn].qty += (item.quantity || 1);
-        hsnMap[hsn].val += Number(((item.totalWithGst || (itmTaxable + itmGst))).toFixed(2));
-        hsnMap[hsn].txval += Number(itmTaxable.toFixed(2));
-        hsnMap[hsn].camt += itmCamt;
-        hsnMap[hsn].samt += itmSamt;
-      });
+  const generateGstr1Json = () =>
+    buildGstr1(invoices, {
+      sellerGstin: adminSettings.workshopGstin || '33AANCS7890Q1Z8',
+      period: selectedMonth,
+      defaultHsn: adminSettings.defaultHsnCode,
     });
-
-    const hsnData = Object.keys(hsnMap).map((code, idx) => ({
-      num: idx + 1,
-      hsn_sc: code,
-      desc: hsnMap[code].desc,
-      uqc: 'NOS',
-      qty: hsnMap[code].qty,
-      val: Number(hsnMap[code].val.toFixed(2)),
-      txval: Number(hsnMap[code].txval.toFixed(2)),
-      iamt: 0,
-      camt: Number(hsnMap[code].camt.toFixed(2)),
-      samt: Number(hsnMap[code].samt.toFixed(2)),
-      csamt: 0
-    }));
-
-    // Document Summary (Table 13)
-    const sortedNums = gstr1Invoices.map(i => i.invoiceNumber).filter(Boolean);
-    const docSummary = {
-      doc_det: [
-        {
-          doc_num: 1,
-          doc_typ: 'Invoices for outward supply',
-          docs: [
-            {
-              num: 1,
-              from: sortedNums[0] || `${adminSettings.invoicePrefix || 'SGS-INV-'}0001`,
-              to: sortedNums[sortedNums.length - 1] || `${adminSettings.invoicePrefix || 'SGS-INV-'}0001`,
-              totnum: gstr1Invoices.length,
-              canc: 0,
-              net_issue: gstr1Invoices.length
-            }
-          ]
-        }
-      ]
-    };
-
-    const gstr1Payload = {
-      gstin,
-      fp: fpMonth,
-      gt: 0,
-      cur_gt: gstr1Stats.totalInvoiceValue,
-      b2b: b2bInvoices,
-      b2cs: b2csInvoices,
-      hsn: { data: hsnData },
-      doc_issue: docSummary
-    };
-
-    return gstr1Payload;
-  };
 
   // Download GSTR-1 JSON
   const handleDownloadGstr1Json = () => {
@@ -642,9 +551,9 @@ export const ReportsManager: React.FC = () => {
 
     // Date Filtering
     const now = new Date();
-    const thisMonthStr = now.toISOString().substring(0, 7);
+    const thisMonthStr = Acc.todayLocal(now).substring(0, 7);
     const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const lastMonthStr = lastMonthDate.toISOString().substring(0, 7);
+    const lastMonthStr = Acc.todayLocal(lastMonthDate).substring(0, 7);
 
     let filtered = results.filter(r => {
       if (dateRange === 'this_month') {
@@ -726,7 +635,7 @@ export const ReportsManager: React.FC = () => {
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `Master_Report_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `Master_Report_${Acc.todayLocal()}.csv`);
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -835,6 +744,23 @@ export const ReportsManager: React.FC = () => {
               activeReportTab === 'gstr2' ? 'bg-blue-700 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
             }`}>
               {gstr2Bills.length} Bills
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveReportTab('outstanding')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeReportTab === 'outstanding'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                : (isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100')
+            }`}
+          >
+            <IndianRupee className="w-4 h-4 text-rose-400" />
+            <span>Customer Dues & Aging</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+              activeReportTab === 'outstanding' ? 'bg-blue-700 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+            }`}>
+              ₹{outstandingRows.reduce((a, r) => a + r.due, 0).toLocaleString('en-IN')}
             </span>
           </button>
 
@@ -978,9 +904,10 @@ export const ReportsManager: React.FC = () => {
                 </thead>
                 <tbody className={`divide-y font-mono ${isDark ? 'divide-slate-800 text-slate-300' : 'divide-slate-100 text-slate-800'}`}>
                   {pnlStats.periodInvoices.map(inv => {
-                    const taxable = Math.max(0, (inv.subtotal || 0) - (inv.discount || 0));
+                    const netInv = Acc.netOfDiscount(inv);
+                    const taxable = netInv.taxable;
                     const cost = inv.purchaseCostTotal || 0;
-                    const profit = inv.profitAmount !== undefined ? inv.profitAmount : (taxable - cost - (inv.manualExtraCost || 0));
+                    const profit = Acc.invoiceProfit(inv);
                     const margin = taxable > 0 ? ((profit / taxable) * 100).toFixed(1) : '0';
                     return (
                       <tr key={inv.id} className={isDark ? 'hover:bg-slate-850/50' : 'hover:bg-slate-50'}>
@@ -997,7 +924,7 @@ export const ReportsManager: React.FC = () => {
                             {margin}%
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 text-right text-purple-500">₹{(inv.taxAmount || 0).toLocaleString('en-IN')}</td>
+                        <td className="py-2.5 px-3 text-right text-purple-500">₹{netInv.tax.toLocaleString('en-IN')}</td>
                         <td className="py-2.5 px-3 font-sans text-[11px]">
                           {inv.isInterState ? (
                             <span className="px-1.5 py-0.5 rounded text-[10px] bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-semibold">
@@ -1346,6 +1273,67 @@ export const ReportsManager: React.FC = () => {
       )}
 
       {/* TAB 3: MASTER ALL DETAILS REPORT */}
+      {/* TAB: Customer dues & aging */}
+      {activeReportTab === 'outstanding' && (
+        <div className={`rounded-2xl border overflow-hidden ${isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200 shadow-xs'}`}>
+          <div className="p-4 border-b border-slate-200 dark:border-slate-800">
+            <h4 className="font-bold text-sm">Customer Dues & Aging</h4>
+            <p className="text-xs text-slate-500">Unpaid balance on tax invoices and shop bills, grouped by how many days past the due date. Cancelled bills and quotations are not counted.</p>
+          </div>
+          {outstandingRows.length === 0 ? (
+            <p className="p-8 text-center text-xs text-emerald-600 font-semibold">🎉 No pending dues. Every bill is fully paid.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className={`border-b uppercase text-[10px] font-bold ${isDark ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                  <tr>
+                    <th className="py-2.5 px-3">Customer</th>
+                    <th className="py-2.5 px-3 text-right">Bills</th>
+                    <th className="py-2.5 px-3 text-right">Not due</th>
+                    <th className="py-2.5 px-3 text-right">1-30 d</th>
+                    <th className="py-2.5 px-3 text-right">31-60 d</th>
+                    <th className="py-2.5 px-3 text-right">61-90 d</th>
+                    <th className="py-2.5 px-3 text-right">90+ d</th>
+                    <th className="py-2.5 px-3 text-right">Total due</th>
+                    <th className="py-2.5 px-3 text-center">Remind</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800 font-mono">
+                  {outstandingRows.map(r => {
+                    const money = (n: number) => (n > 0 ? `₹${n.toLocaleString('en-IN')}` : '–');
+                    const phone = r.customerPhone.replace(/\D/g, '').slice(-10);
+                    const msg = encodeURIComponent(`Hello ${r.customerName}, a gentle reminder from ${adminSettings.workshopName || 'Spider Grid Solutions'}: ₹${r.due.toLocaleString('en-IN')} is pending on your bill. Kindly pay at your convenience. Thank you!`);
+                    return (
+                      <tr key={r.key}>
+                        <td className="py-2.5 px-3 font-sans font-semibold">
+                          {r.customerName}
+                          <span className="block text-[10px] text-slate-500 font-mono">{r.customerPhone}</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right">{r.bills}</td>
+                        <td className="py-2.5 px-3 text-right">{money(r.buckets.current)}</td>
+                        <td className="py-2.5 px-3 text-right text-amber-600">{money(r.buckets.d1_30)}</td>
+                        <td className="py-2.5 px-3 text-right text-orange-600">{money(r.buckets.d31_60)}</td>
+                        <td className="py-2.5 px-3 text-right text-rose-600">{money(r.buckets.d61_90)}</td>
+                        <td className="py-2.5 px-3 text-right text-rose-700 font-bold">{money(r.buckets.d90plus)}</td>
+                        <td className="py-2.5 px-3 text-right font-bold">₹{r.due.toLocaleString('en-IN')}</td>
+                        <td className="py-2.5 px-3 text-center">
+                          {phone.length === 10 ? (
+                            <a href={`https://wa.me/91${phone}?text=${msg}`} target="_blank" rel="noreferrer"
+                               className="inline-block px-2 py-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white font-sans font-bold text-[10px]">
+                              WhatsApp
+                            </a>
+                          ) : <span className="text-slate-400 font-sans text-[10px]">no phone</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {activeReportTab === 'all' && (
         <div className="space-y-4">
           

@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { VendorBill, VendorBillItem, PaymentMode, Vendor } from '../types';
+import * as Acc from '../utils/accounting';
 import { calculateFromInclusiveRate, calculateFromBaseRate, GST_PRESET_RATES } from '../utils/gstUtils';
 
 interface VendorBillScannerProps {
@@ -51,6 +52,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     addVendorBill, 
     updateVendorBillPayment, 
     updateVendorBill,
+    deleteVendorBill,
     vendors, 
     addVendor, 
     updateVendor, 
@@ -92,7 +94,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
   const [isVendorDropdownOpen, setIsVendorDropdownOpen] = useState(false);
 
   const [invoiceNumber, setInvoiceNumber] = useState('');
-  const [invoiceDate, setInvoiceDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [invoiceDate, setInvoiceDate] = useState(() => Acc.todayLocal());
   const [items, setItems] = useState<VendorBillItem[]>([
     { itemName: '', quantity: 1, unitCost: 0, grossUnitCost: 0, gstPercent: 18, gstAmount: 0, total: 0, totalWithGst: 0 },
   ]);
@@ -315,6 +317,8 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
           setPaidAmount(d.totalAmount);
         }
         if (d.taxAmount) setTaxAmount(d.taxAmount);
+        setDiscount(0);
+        setRoundOff(0);
         if (d.items && Array.isArray(d.items) && d.items.length > 0) {
           setItems(d.items.map((it: any) => {
             const qty = Math.max(1, Number(it.quantity) || 1);
@@ -336,6 +340,22 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
               totalWithGst: calc.totalWithGst,
             };
           }));
+        }
+
+        // Keep the form totals in step with the item rows (tax = sum of item GST, small gap = round-off)
+        if (Array.isArray(d.items) && d.items.length > 0) {
+          const sBase = d.items.reduce((a: number, it: any) => a + (Number(it.total) || 0), 0);
+          const sGst = d.items.reduce((a: number, it: any) => a + (Number(it.gstAmount) || 0), 0);
+          const sGross = Number(d.items.reduce((a: number, it: any) => a + (Number(it.totalWithGst) || (Number(it.total) || 0) + (Number(it.gstAmount) || 0)), 0).toFixed(2));
+          if (sGst > 0) setTaxAmount(Number(sGst.toFixed(2)));
+          if (d.totalAmount) {
+            const gap = Number((d.totalAmount - sGross).toFixed(2));
+            if (Math.abs(gap) > 0 && Math.abs(gap) <= 1) setRoundOff(gap);
+          } else {
+            setTotalAmount(sGross);
+            setPaidAmount(sGross);
+          }
+          void sBase;
         }
 
         setScanSuccess(true);
@@ -457,16 +477,18 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
   };
 
   const handleSelectStockItem = (inv: any) => {
-    const grossCost = inv.unitCost || 0;
-    const calc = calculateFromInclusiveRate(grossCost, 18, 1);
+    // Inventory cost is the BASE cost (without GST), so add GST on top - never "reduce" it
+    const defaultPct = 18;
+    const calc = calculateFromBaseRate(inv.unitCost || 0, defaultPct, 1);
     const updated = [
-      ...items.filter(it => it.itemName.trim() !== '' || items.length === 1 && it.itemName === '' ? false : true),
+      // drop only the empty placeholder row(s); keep everything already typed
+      ...items.filter(it => it.itemName.trim() !== ''),
       {
         itemName: inv.name,
         hsnCode: inv.hsnCode || '8471',
         quantity: 1,
-        grossUnitCost: grossCost,
-        gstPercent: 18,
+        grossUnitCost: calc.grossRate,
+        gstPercent: defaultPct,
         unitCost: calc.baseRate,
         total: calc.baseAmount,
         gstAmount: calc.totalGst,
@@ -512,6 +534,18 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       alert('Please enter invoice / bill number');
       return;
     }
+    const namedItems = items.filter(it => it.itemName.trim() !== '');
+    if (namedItems.length === 0) {
+      alert('Please add at least one item with a name.');
+      return;
+    }
+    const dup = Acc.findDuplicateVendorBill(vendorBills, vendorName, invoiceNumber);
+    if (dup) {
+      const proceed = window.confirm(
+        `${dup.vendorName} bill #${dup.invoiceNumber} (₹${dup.totalAmount.toLocaleString('en-IN')}, ${dup.invoiceDate}) is already saved.\n\nSaving again will add the stock and payment a second time. Save anyway?`
+      );
+      if (!proceed) return;
+    }
 
     // Auto-register vendor if not yet existing
     let matchedVendorId = selectedVendorId;
@@ -542,7 +576,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       billImage: billPages[0]?.dataUrl || undefined,
       billImages: billPages.map(p => p.dataUrl),
       ocrEngine: selectedEngine,
-      items: items.filter(it => it.itemName.trim() !== ''),
+      items: namedItems,
       subtotal: sumBase,
       taxAmount: Number(taxAmount) || 0,
       discount: effectiveDiscount,
@@ -763,7 +797,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
               setVendorName('');
               setSelectedVendorId('');
               setInvoiceNumber('');
-              setInvoiceDate(new Date().toISOString().split('T')[0]);
+              setInvoiceDate(Acc.todayLocal());
               setItems([{ itemName: '', quantity: 1, unitCost: 0, grossUnitCost: 0, gstPercent: 18, gstAmount: 0, total: 0, totalWithGst: 0 }]);
               setTaxAmount(0);
               setDiscount(0);
@@ -1036,7 +1070,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                               setVendorName(vendor.name);
                               setSelectedVendorId(vendor.id);
                               setInvoiceNumber('');
-                              setInvoiceDate(new Date().toISOString().split('T')[0]);
+                              setInvoiceDate(Acc.todayLocal());
                               setItems([{ itemName: '', quantity: 1, unitCost: 0, grossUnitCost: 0, gstPercent: 18, gstAmount: 0, total: 0, totalWithGst: 0 }]);
                               setTaxAmount(0);
                               setDiscount(0);
@@ -1916,7 +1950,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                   // Pre-fill realistic IT Hardware Bill Sample
                                   setVendorName('Siva Printer Spares & IT Hub');
                                   setInvoiceNumber(`INV-${Math.floor(1000 + Math.random() * 9000)}`);
-                                  setInvoiceDate(new Date().toISOString().split('T')[0]);
+                                  setInvoiceDate(Acc.todayLocal());
                                   const item1Gross = 750;
                                   const item1Calc = calculateFromInclusiveRate(item1Gross, 18, 2);
                                   const item2Gross = 2450;
@@ -3273,9 +3307,20 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
               </div>
             </div>
 
-            <div className={`px-6 py-3 border-t flex justify-end ${
+            <div className={`px-6 py-3 border-t flex justify-between gap-2 ${
               isDark ? 'border-slate-800 bg-slate-950/40' : 'border-slate-200 bg-slate-50'
             }`}>
+              <button
+                onClick={() => {
+                  if (window.confirm(`Delete bill #${viewingBill.invoiceNumber} from ${viewingBill.vendorName}?\n\nThe stock it added will be taken back and its payment entries removed from the cash book.`)) {
+                    deleteVendorBill(viewingBill.id);
+                    setViewingBill(null);
+                  }
+                }}
+                className="px-4 py-1.5 text-xs font-semibold rounded-lg text-rose-600 border border-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+              >
+                Delete Bill
+              </button>
               <button
                 onClick={() => setViewingBill(null)}
                 className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 cursor-pointer"

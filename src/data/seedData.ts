@@ -3,8 +3,10 @@ import {
   DEFAULT_SGS_LOGO_DATA_URL, 
   DEFAULT_SGS_STAMP_DATA_URL, 
   DEFAULT_PANDIYAN_LOGO_DATA_URL, 
-  DEFAULT_PANDIYAN_STAMP_DATA_URL 
+  DEFAULT_PANDIYAN_STAMP_DATA_URL,
+  DEFAULT_SGS_QUOTATION_LETTERHEAD_BG
 } from '../utils/brandAssets';
+import { DEFAULT_QUOTATION_TERMS } from '../utils/quotationSeedData';
 
 export const SEED_CUSTOMERS: Customer[] = [
   {
@@ -943,6 +945,9 @@ Madurai | Phone: +91 9677776001`,
   paddleOcrApiUrl: 'http://localhost:8080/ocr',
   paddleOcrToken: '',
   defaultOcrEngine: 'paddleocr',
+  // Quotation Letterhead & Terms
+  quotationBackgroundUrl: DEFAULT_SGS_QUOTATION_LETTERHEAD_BG,
+  quotationTerms: DEFAULT_QUOTATION_TERMS,
 };
 
 export const SEED_LEAD_SOURCES: LeadSource[] = [

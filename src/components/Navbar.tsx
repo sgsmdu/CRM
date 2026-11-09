@@ -1,3 +1,4 @@
+import { todayLocal } from '../utils/accounting';
 import React, { useState } from 'react';
 import { 
   LayoutDashboard, 
@@ -23,7 +24,7 @@ import { useSgs } from '../context/SgsContext';
 
 import { PWAInstallButton } from './PWAInstallButton';
 
-export type NavTab = 'dashboard' | 'customers' | 'leads' | 'jobs' | 'allocation' | 'inventory' | 'vendors' | 'billing' | 'reports' | 'employees' | 'admin';
+export type NavTab = 'dashboard' | 'customers' | 'leads' | 'jobs' | 'allocation' | 'quotations' | 'price_calculator' | 'inventory' | 'vendors' | 'billing' | 'reports' | 'employees' | 'admin';
 
 interface NavbarProps {
   activeTab: NavTab;
@@ -55,7 +56,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `sgs-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `sgs-backup-${todayLocal()}.json`;
     a.click();
     URL.revokeObjectURL(url);
     setShowSettingsMenu(false);

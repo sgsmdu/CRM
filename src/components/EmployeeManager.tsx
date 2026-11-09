@@ -1,3 +1,4 @@
+import { todayLocal } from '../utils/accounting';
 import React, { useState, useMemo } from 'react';
 import { 
   Users, 
@@ -68,7 +69,7 @@ export const EmployeeManager: React.FC = () => {
 
   // Monthly Attendance Calendar Modal State (Module 3 - Requirement 3)
   const [selectedEmpForCalendar, setSelectedEmpForCalendar] = useState<Employee | null>(null);
-  const [calendarMonth, setCalendarMonth] = useState<string>(() => new Date().toISOString().substring(0, 7));
+  const [calendarMonth, setCalendarMonth] = useState<string>(() => todayLocal().substring(0, 7));
   const [editingDayRecord, setEditingDayRecord] = useState<{
     date: string;
     status: AttendanceStatus;
@@ -86,7 +87,7 @@ export const EmployeeManager: React.FC = () => {
     balanceDue: number;
   } | null>(null);
   const [installmentAmount, setInstallmentAmount] = useState<number>(0);
-  const [installmentDate, setInstallmentDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [installmentDate, setInstallmentDate] = useState<string>(() => todayLocal());
   const [installmentMode, setInstallmentMode] = useState<PaymentMode>('upi');
   const [installmentRef, setInstallmentRef] = useState<string>('');
   const [installmentNotes, setInstallmentNotes] = useState<string>('');
@@ -145,10 +146,10 @@ export const EmployeeManager: React.FC = () => {
   };
 
   // Attendance Date
-  const [attendanceDate, setAttendanceDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [attendanceDate, setAttendanceDate] = useState(() => todayLocal());
 
   // Salary Month (YYYY-MM)
-  const currentMonth = new Date().toISOString().substring(0, 7);
+  const currentMonth = todayLocal().substring(0, 7);
   const [salaryMonth, setSalaryMonth] = useState<string>(currentMonth);
 
   // Pay Salary Modal
@@ -227,7 +228,7 @@ export const EmployeeManager: React.FC = () => {
         role: empRole.trim(),
         dailySalary: empDailySalary || 700,
         monthlySalary: empMonthlySalary || (empDailySalary * 26),
-        joiningDate: new Date().toISOString().split('T')[0],
+        joiningDate: todayLocal(),
         status: 'active',
         upiId: empUpiId.trim(),
         notes: empNotes.trim()
@@ -353,7 +354,7 @@ export const EmployeeManager: React.FC = () => {
       advanceDeduction: payAdvanceDeduction,
       bonus: payBonus,
       netPaid: netPayable,
-      paymentDate: new Date().toISOString().split('T')[0],
+      paymentDate: todayLocal(),
       paymentMode: payMode,
       referenceNumber: payRef || `SAL-${payingEmp.name.substring(0, 3).toUpperCase()}-${salaryMonth}`,
       status: 'paid',
@@ -467,7 +468,7 @@ export const EmployeeManager: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {employees.map(emp => {
               const assignedJobs = jobCards.filter(j => j.assignedEmployeeId === emp.id && j.status !== 'work_completed' && j.status !== 'completed' && j.status !== 'delivered' && j.status !== 'billed');
-              const todayAtt = getEmpAttendance(emp.id, new Date().toISOString().split('T')[0]);
+              const todayAtt = getEmpAttendance(emp.id, todayLocal());
 
               return (
                 <div
@@ -847,7 +848,7 @@ export const EmployeeManager: React.FC = () => {
                                 balanceDue
                               });
                               setInstallmentAmount(balanceDue > 0 ? balanceDue : 1000);
-                              setInstallmentDate(new Date().toISOString().split('T')[0]);
+                              setInstallmentDate(todayLocal());
                               setInstallmentRef(`UPI-${emp.phone.substring(emp.phone.length - 4)}`);
                               setInstallmentNotes(balanceDue > 0 ? 'Salary payout / partial installment' : 'Bonus / incentive payout');
                             }}

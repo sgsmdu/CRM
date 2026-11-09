@@ -1,0 +1,14 @@
+import { extractOcrPages, parseInvoiceLayout } from '../src/utils/paddleLayoutParser.ts';
+const texts:string[]=[], polys:number[][][]=[];
+const put=(t:string,x:number,y:number,w=t.length*11,h=24)=>{texts.push(t);polys.push([[x,y],[x+w,y],[x+w,y+h],[x,y+h]]);};
+put('National Infotech',300,10,300,40); put('Bill No: 5521',600,60); put('Dt: 03/11/26',600,86);
+put('Sl',10,150); put('Item',100,150); put('Qty',400,150); put('MRP',480,150); put('Amount',600,150);
+put('1',10,190); put('Crucial 8GB DDR4 RAM',100,190); put('4',410,190); put('1850',480,190); put('7400',600,190);
+put('2',10,220); put('CP Plus CCTV Camera',100,220); put('2',410,220); put('1250',480,220); put('2500',600,220);
+put('Total',100,260); put('9900',600,260);
+put('Net Payable',400,300); put('9900.00',600,300);
+const r=parseInvoiceLayout(extractOcrPages({result:{ocrResults:[{prunedResult:{rec_texts:texts,rec_polys:polys}}]}})[0]);
+const items = r!.data.items.map(i => [i.itemName, i.quantity, i.grossUnitCost, i.unitCost, i.gstPercent]);
+const ok2 = JSON.stringify(items) === JSON.stringify([['Crucial 8GB DDR4 RAM', 4, 1850, 1567.8, 18], ['CP Plus CCTV Camera', 2, 1250, 1059.32, 18]]) && r!.data.totalAmount === 9900 && r!.data.invoiceNumber === '5521' && r!.data.invoiceDate === '2026-11-03';
+console.log(ok2 ? 'PASS ocr: GST-inclusive MRP bill, no GST column (rate kept, base derived)' : 'FAIL ocr inclusive bill ' + JSON.stringify(items));
+if (!ok2) process.exitCode = 1;

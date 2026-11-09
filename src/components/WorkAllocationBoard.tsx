@@ -1,3 +1,4 @@
+import { todayLocal } from '../utils/accounting';
 import React, { useState, useMemo } from 'react';
 import { 
   Wrench, 
@@ -69,7 +70,7 @@ export const WorkAllocationBoard: React.FC<WorkAllocationBoardProps> = ({ onOpen
   const [bulkDueDate, setBulkDueDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
-    return d.toISOString().split('T')[0];
+    return todayLocal(d);
   });
 
   // Priority Change Prompt Modal
@@ -98,7 +99,7 @@ export const WorkAllocationBoard: React.FC<WorkAllocationBoardProps> = ({ onOpen
     setTimeout(() => setFeedbackToast(null), 3500);
   };
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = todayLocal();
 
   // Helper to determine if a job is overdue
   const isJobOverdue = (job: JobCard): boolean => {

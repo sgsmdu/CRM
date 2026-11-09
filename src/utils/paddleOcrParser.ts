@@ -1,3 +1,4 @@
+import { todayLocal } from './accounting.ts';
 /**
  * PaddleOCR Invoice & Multi-Page Receipt Parser
  * Parses recognized text lines and bounding boxes from PaddleOCR / PaddleX / PaddleHub serving
@@ -124,7 +125,7 @@ export function parsePaddleOcrText(
   let vendorGstin = '';
   let vendorPhone = '';
   let invoiceNumber = '';
-  let invoiceDate = new Date().toISOString().split('T')[0];
+  let invoiceDate = todayLocal();
   let subtotal = 0;
   let taxAmount = 0;
   let totalAmount = 0;
@@ -443,7 +444,7 @@ export function generateSampleMultiPageInvoiceData(
 ): ParsedInvoiceData {
   const vendorName = knownVendors.length > 0 ? knownVendors[0].name : 'Siva Printer Spares & IT Hub';
   const invoiceNumber = `INV-${Math.floor(1000 + Math.random() * 9000)}`;
-  const invoiceDate = new Date().toISOString().split('T')[0];
+  const invoiceDate = todayLocal();
 
   const poolByPage = [
     // Page 1 Spares

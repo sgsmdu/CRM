@@ -1,3 +1,4 @@
+import { todayLocal } from '../utils/accounting';
 import React, { useState } from 'react';
 import { 
   LayoutDashboard, 
@@ -21,7 +22,9 @@ import {
   ChevronRight,
   Menu,
   X,
-  ListOrdered
+  ListOrdered,
+  FileText,
+  KeyRound
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -50,7 +53,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileOpen,
   setIsMobileOpen,
 }) => {
-  const { customers, jobCards, leadSources, exportDataJson, importDataJson, clearAllInputData, resetToDefaultData, theme, toggleTheme } = useSgs();
+  const { customers, jobCards, quotations = [], leadSources, exportDataJson, importDataJson, clearAllInputData, resetToDefaultData, theme, toggleTheme } = useSgs();
   const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
   const [showResetConfirmModal, setShowResetConfirmModal] = useState(false);
@@ -59,6 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const activeJobsCount = jobCards.filter(j => j.status !== 'delivered' && j.status !== 'completed').length;
   const pendingTasksCount = jobCards.filter(j => j.status !== 'work_completed' && j.status !== 'completed' && j.status !== 'delivered').length;
+  const pendingQuotesCount = quotations.filter(q => q.status === 'Pending Decision' || q.status === 'Draft').length;
 
   const handleExport = () => {
     const jsonStr = exportDataJson();
@@ -66,7 +70,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `sgs-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `sgs-backup-${todayLocal()}.json`;
     a.click();
     URL.revokeObjectURL(url);
     setShowSettingsMenu(false);
@@ -110,11 +114,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems = [
     { id: 'dashboard', label: 'Command Center', icon: LayoutDashboard },
     { id: 'jobs', label: 'Job Cards & Timeline', count: activeJobsCount, icon: Wrench },
+    { id: 'quotations', label: 'Manual Quotations', count: pendingQuotesCount, icon: FileText },
     { id: 'allocation', label: 'Task Assign & Priority', count: pendingTasksCount, icon: ListOrdered },
-    { id: 'billing', label: 'Billing & Quotations', icon: CreditCard },
+    { id: 'billing', label: 'Billing & Invoices', icon: CreditCard },
     { id: 'reports', label: 'GST Reports & Filing', icon: FileSpreadsheet },
     { id: 'employees', label: 'Staff & Attendance', icon: Users },
     { id: 'inventory', label: 'Stock & Parts Inventory', icon: Boxes },
+    { id: 'price_calculator', label: 'Price Code Calculator', icon: KeyRound },
     { id: 'vendors', label: 'Vendor Hub & Bill Scan', icon: Receipt },
     { id: 'customers', label: 'Customer Directory', count: customers.length, icon: Users },
     { id: 'leads', label: 'Lead Sources', count: leadSources.length, icon: Share2 },

@@ -17,8 +17,26 @@ import {
   AttendanceStatus,
   SalaryPayment,
   WorkAllocation,
-  SalaryAdvance
+  SalaryAdvance,
+  QuotationCategory,
+  QuotationSubcategory,
+  QuotationProduct,
+  QuotationItem,
+  QuotationProposalModel,
+  QuotationStatus,
+  CustomerModelSelection,
+  QuotationVersionSnapshot,
+  ManualQuotation,
+  DigitChar,
+  PriceCodeMapping,
+  PriceCodeMappingVersion
 } from '../types';
+import * as Acc from '../utils/accounting';
+import { 
+  DEFAULT_PRICE_CODE_MAPPING, 
+  INITIAL_PRICE_CODE_VERSION, 
+  validateMapping 
+} from '../utils/priceCode';
 import { 
   SEED_CUSTOMERS, 
   SEED_JOB_CARDS, 
@@ -36,6 +54,12 @@ import {
   SEED_WORK_ALLOCATIONS,
   SEED_SALARY_ADVANCES
 } from '../data/seedData';
+import {
+  INITIAL_QUOTATION_BRANDS,
+  INITIAL_QUOTATION_CATEGORIES,
+  INITIAL_QUOTATION_SUBCATEGORIES,
+  INITIAL_QUOTATION_PRODUCTS
+} from '../utils/quotationSeedData';
 
 interface SgsContextType {
   customers: Customer[];
@@ -177,6 +201,43 @@ interface SgsContextType {
   salaryAdvances: SalaryAdvance[];
   addSalaryAdvance: (adv: Omit<SalaryAdvance, 'id' | 'repaidAmount' | 'status' | 'repayments'>) => SalaryAdvance;
   recordAdvanceRepayment: (advanceId: string, amount: number, note?: string) => void;
+
+  // Dedicated Manual Quotation Module (Independent of Stock & Billing)
+  quotations: ManualQuotation[];
+  quotationCategories: QuotationCategory[];
+  quotationSubcategories: QuotationSubcategory[];
+  quotationProducts: QuotationProduct[];
+  quotationBrands: string[];
+
+  addManualQuotation: (q: Omit<ManualQuotation, 'id' | 'quotationNumber' | 'createdAt' | 'updatedAt' | 'version' | 'history'>) => ManualQuotation;
+  updateManualQuotation: (id: string, updates: Partial<ManualQuotation>, note?: string) => void;
+  deleteManualQuotation: (id: string) => void;
+  duplicateManualQuotation: (id: string) => ManualQuotation;
+  updateQuotationStatus: (id: string, status: QuotationStatus, selectedModel?: CustomerModelSelection) => void;
+  
+  // Catalogue Management
+  addQuotationCategory: (name: string) => QuotationCategory;
+  updateQuotationCategory: (id: string, name: string) => void;
+  deleteQuotationCategory: (id: string) => void;
+  
+  addQuotationSubcategory: (categoryId: string, name: string) => QuotationSubcategory;
+  updateQuotationSubcategory: (id: string, name: string) => void;
+  deleteQuotationSubcategory: (id: string) => void;
+  
+  addQuotationProduct: (prod: Omit<QuotationProduct, 'id' | 'createdAt' | 'updatedAt'>) => QuotationProduct;
+  updateQuotationProduct: (id: string, updates: Partial<QuotationProduct>) => void;
+  deleteQuotationProduct: (id: string) => void;
+  restoreQuotationProduct: (id: string) => void;
+  
+  addQuotationBrand: (brand: string) => void;
+  updateProductLatestPrice: (productId: string, newPrice: number) => void;
+  getNextQuotationNumber: () => string;
+
+  // Secret Price Code Calculator & Mapping
+  activePriceCodeMapping: PriceCodeMapping;
+  priceCodeMappingVersions: PriceCodeMappingVersion[];
+  updatePriceCodeMapping: (newMapping: PriceCodeMapping, notes?: string) => { success: boolean; error?: string };
+  resetPriceCodeMappingToDefault: () => void;
 }
 
 const STORAGE_KEY = 'spider_grid_solutions_db_v1';
@@ -383,6 +444,95 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   });
 
+  // Dedicated Manual Quotation States (Independent of Stock & Billing)
+  const [quotations, setQuotations] = useState<ManualQuotation[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_quotations`);
+      const raw: ManualQuotation[] = stored ? JSON.parse(stored) : [];
+      return deduplicateById(raw, 'qtn');
+    } catch {
+      return [];
+    }
+  });
+
+  const [quotationCategories, setQuotationCategories] = useState<QuotationCategory[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_q_categories`);
+      if (stored) {
+        const raw: QuotationCategory[] = JSON.parse(stored);
+        if (Array.isArray(raw) && raw.length > 0) return deduplicateById(raw, 'cat');
+      }
+      return INITIAL_QUOTATION_CATEGORIES;
+    } catch {
+      return INITIAL_QUOTATION_CATEGORIES;
+    }
+  });
+
+  const [quotationSubcategories, setQuotationSubcategories] = useState<QuotationSubcategory[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_q_subcategories`);
+      if (stored) {
+        const raw: QuotationSubcategory[] = JSON.parse(stored);
+        if (Array.isArray(raw) && raw.length > 0) return deduplicateById(raw, 'sub');
+      }
+      return INITIAL_QUOTATION_SUBCATEGORIES;
+    } catch {
+      return INITIAL_QUOTATION_SUBCATEGORIES;
+    }
+  });
+
+  const [quotationProducts, setQuotationProducts] = useState<QuotationProduct[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_q_products`);
+      if (stored) {
+        const raw: QuotationProduct[] = JSON.parse(stored);
+        if (Array.isArray(raw) && raw.length > 0) return deduplicateById(raw, 'prod');
+      }
+      return INITIAL_QUOTATION_PRODUCTS;
+    } catch {
+      return INITIAL_QUOTATION_PRODUCTS;
+    }
+  });
+
+  const [quotationBrands, setQuotationBrands] = useState<string[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_q_brands`);
+      if (stored) {
+        const raw: string[] = JSON.parse(stored);
+        if (Array.isArray(raw) && raw.length > 0) return Array.from(new Set([...INITIAL_QUOTATION_BRANDS, ...raw]));
+      }
+      return INITIAL_QUOTATION_BRANDS;
+    } catch {
+      return INITIAL_QUOTATION_BRANDS;
+    }
+  });
+
+  const [activePriceCodeMapping, setActivePriceCodeMapping] = useState<PriceCodeMapping>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_price_code_mapping`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+      return DEFAULT_PRICE_CODE_MAPPING;
+    } catch {
+      return DEFAULT_PRICE_CODE_MAPPING;
+    }
+  });
+
+  const [priceCodeMappingVersions, setPriceCodeMappingVersions] = useState<PriceCodeMappingVersion[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_price_code_versions`);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return [INITIAL_PRICE_CODE_VERSION];
+    } catch {
+      return [INITIAL_PRICE_CODE_VERSION];
+    }
+  });
+
   const [theme, setThemeState] = useState<'light' | 'dark'>(() => {
     try {
       const stored = localStorage.getItem('sgs_theme');
@@ -526,6 +676,62 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [salaryAdvances]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_quotations`, JSON.stringify(quotations));
+    } catch (e) {
+      console.warn('Failed to save quotations to localStorage', e);
+    }
+  }, [quotations]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_q_categories`, JSON.stringify(quotationCategories));
+    } catch (e) {
+      console.warn('Failed to save quotation categories to localStorage', e);
+    }
+  }, [quotationCategories]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_q_subcategories`, JSON.stringify(quotationSubcategories));
+    } catch (e) {
+      console.warn('Failed to save quotation subcategories to localStorage', e);
+    }
+  }, [quotationSubcategories]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_q_products`, JSON.stringify(quotationProducts));
+    } catch (e) {
+      console.warn('Failed to save quotation products to localStorage', e);
+    }
+  }, [quotationProducts]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_q_brands`, JSON.stringify(quotationBrands));
+    } catch (e) {
+      console.warn('Failed to save quotation brands to localStorage', e);
+    }
+  }, [quotationBrands]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_price_code_mapping`, JSON.stringify(activePriceCodeMapping));
+    } catch (e) {
+      console.warn('Failed to save price code mapping to localStorage', e);
+    }
+  }, [activePriceCodeMapping]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_price_code_versions`, JSON.stringify(priceCodeMappingVersions));
+    } catch (e) {
+      console.warn('Failed to save price code versions to localStorage', e);
+    }
+  }, [priceCodeMappingVersions]);
+
   // Customer handlers
   const addCustomer = (customerData: Omit<Customer, 'id' | 'createdAt' | 'slNo'>): Customer => {
     const nextSlNo = customers.length > 0 ? Math.max(...customers.map(c => c.slNo || 0)) + 1 : 1;
@@ -628,7 +834,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           referralCommissionAmount: amount,
           referralCommissionStatus: status,
           referralCommissionNotes: notes !== undefined ? notes : c.referralCommissionNotes,
-          referralCommissionPaidDate: status === 'paid' ? (c.referralCommissionPaidDate || new Date().toISOString().split('T')[0]) : undefined,
+          referralCommissionPaidDate: status === 'paid' ? (c.referralCommissionPaidDate || Acc.todayLocal()) : undefined,
         };
       }
       return c;
@@ -694,7 +900,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...jobData,
       id: `job-${Date.now()}`,
       jobId,
-      updatedAt: new Date().toISOString().split('T')[0],
+      updatedAt: Acc.todayLocal(),
       callCompleted: false,
     };
 
@@ -709,7 +915,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...job,
           status,
           technicianNotes: notes !== undefined ? notes : job.technicianNotes,
-          updatedAt: new Date().toISOString().split('T')[0],
+          updatedAt: Acc.todayLocal(),
         };
       }
       return job;
@@ -726,7 +932,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return {
           ...job,
           ...updates,
-          updatedAt: new Date().toISOString().split('T')[0],
+          updatedAt: Acc.todayLocal(),
         };
       }
       return job;
@@ -750,7 +956,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ...job,
           callCompleted: nextState,
           lastCalledAt: nextState ? new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : undefined,
-          updatedAt: new Date().toISOString().split('T')[0],
+          updatedAt: Acc.todayLocal(),
         };
       }
       return job;
@@ -770,133 +976,47 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return {
           ...job,
           timeline: [...existingTimeline, newEvent],
-          updatedAt: new Date().toISOString().split('T')[0],
+          updatedAt: Acc.todayLocal(),
         };
       }
       return job;
     }));
   };
 
+  // ---- Ledger helpers: all stock / cash / profit rules live in utils/accounting.ts (pure + tested)
+  const getLedger = (): Acc.LedgerState => ({
+    inventory,
+    stockTx: stockTransactions,
+    cashFlow,
+    invoices,
+    vendorBills,
+  });
+  const commitLedger = (next: Acc.LedgerState, prev: Acc.LedgerState) => {
+    if (next.inventory !== prev.inventory) setInventory(next.inventory);
+    if (next.stockTx !== prev.stockTx) setStockTransactions(next.stockTx);
+    if (next.cashFlow !== prev.cashFlow) setCashFlow(next.cashFlow);
+    if (next.invoices !== prev.invoices) setInvoices(next.invoices);
+    if (next.vendorBills !== prev.vendorBills) setVendorBills(next.vendorBills);
+  };
+
   // Vendor Bill handlers
   const addVendorBill = (billData: Omit<VendorBill, 'id' | 'createdAt'>, updateStock = true): VendorBill => {
-    const newBill: VendorBill = {
-      ...billData,
-      id: `bill-${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      paymentDate: billData.paymentDate || new Date().toISOString().split('T')[0],
-    };
-
-    setVendorBills(prev => [newBill, ...prev]);
-
-    // Update stock if requested
-    if (updateStock && billData.items && billData.items.length > 0) {
-      billData.items.forEach(item => {
-        const cleanBillItemName = item.itemName.trim().toLowerCase();
-        // Exact match check only (case-insensitive) - never loose substring includes!
-        // Prevents "HP" matching "HP 12A Toner Cartridge" or "Dell" matching "Dell OptiPlex Power Supply"
-        const targetExisting = item.matchedInventoryId 
-          ? inventory.find(i => i.id === item.matchedInventoryId)
-          : (item.syncMode !== 'create_separate'
-              ? inventory.find(i => i.name.trim().toLowerCase() === cleanBillItemName)
-              : undefined);
-
-        if (targetExisting && item.syncMode !== 'create_separate') {
-          // Merge into existing stock item
-          recordStockMovement(targetExisting.id, 'in', item.quantity, `Vendor Purchase (${newBill.vendorName} - Inv #${newBill.invoiceNumber})`, undefined);
-          updateInventoryItem(targetExisting.id, {
-            unitCost: item.unitCost > 0 ? item.unitCost : targetExisting.unitCost,
-            vendorBillId: newBill.id,
-            vendorName: newBill.vendorName,
-            vendorInvoiceNumber: newBill.invoiceNumber,
-            vendorBillDate: newBill.invoiceDate,
-            hsnCode: item.hsnCode || targetExisting.hsnCode,
-          });
-        } else {
-          // Add as separate new stock item
-          const created = addInventoryItem({
-            name: item.itemName,
-            category: 'general',
-            currentStock: item.quantity,
-            minStockAlert: 2,
-            unitCost: item.unitCost,
-            unitPrice: Math.round(item.unitCost * 1.35),
-            sku: `SP-${Date.now().toString().slice(-4)}`,
-            location: 'Main Shelf',
-            hsnCode: item.hsnCode || '8471',
-            vendorBillId: newBill.id,
-            vendorName: newBill.vendorName,
-            vendorInvoiceNumber: newBill.invoiceNumber,
-            vendorBillDate: newBill.invoiceDate,
-          });
-          const tx: StockTransaction = {
-            id: `st-${Date.now()}-${Math.random()}`,
-            itemId: created.id,
-            itemName: created.name,
-            type: 'in',
-            quantity: item.quantity,
-            date: newBill.invoiceDate,
-            reason: `Vendor Bill ${newBill.invoiceNumber}`,
-            referenceBillId: newBill.id,
-          };
-          setStockTransactions(prev => [tx, ...prev]);
-        }
-      });
-    }
-
-    // Record cashflow expense if payment made
-    if (newBill.paidAmount > 0) {
-      const cfEntry: CashFlowEntry = {
-        id: `cf-${Date.now()}`,
-        date: newBill.invoiceDate,
-        type: 'expense',
-        category: 'Vendor Spares',
-        description: `Vendor: ${newBill.vendorName} (Inv: ${newBill.invoiceNumber})`,
-        amount: newBill.paidAmount,
-        paymentMode: newBill.paymentMode || 'upi',
-        referenceId: newBill.id,
-        referenceNumber: newBill.paymentReference,
-      };
-      setCashFlow(prev => [cfEntry, ...prev]);
-    }
-
-    return newBill;
+    const prev = getLedger();
+    const { state, bill } = Acc.addVendorBillTx(prev, billData, updateStock);
+    commitLedger(state, prev);
+    return bill;
   };
 
   const updateVendorBillPayment = (
     id: string, 
     paidAmount: number, 
-    paymentStatus: 'paid' | 'pending' | 'partial',
+    _paymentStatus: 'paid' | 'pending' | 'partial',
     paymentMode?: PaymentMode,
     paymentReference?: string
   ) => {
-    setVendorBills(prev => prev.map(b => {
-      if (b.id === id) {
-        const delta = paidAmount - b.paidAmount;
-        if (delta > 0) {
-          const cfEntry: CashFlowEntry = {
-            id: `cf-${Date.now()}`,
-            date: new Date().toISOString().split('T')[0],
-            type: 'expense',
-            category: 'Vendor Spares',
-            description: `Payment to ${b.vendorName} (Inv: ${b.invoiceNumber})`,
-            amount: delta,
-            paymentMode: paymentMode || b.paymentMode || 'upi',
-            referenceId: b.id,
-            referenceNumber: paymentReference || b.paymentReference,
-          };
-          setCashFlow(cf => [cfEntry, ...cf]);
-        }
-        return { 
-          ...b, 
-          paidAmount, 
-          paymentStatus,
-          paymentMode: paymentMode || b.paymentMode,
-          paymentReference: paymentReference !== undefined ? paymentReference : b.paymentReference,
-          paymentDate: new Date().toISOString().split('T')[0]
-        };
-      }
-      return b;
-    }));
+    // status is always derived from the amount (paid / partial / pending)
+    const prev = getLedger();
+    commitLedger(Acc.payVendorBillTx(prev, id, paidAmount, paymentMode, paymentReference), prev);
   };
 
   const updateVendorBill = (id: string, updates: Partial<VendorBill>) => {
@@ -904,12 +1024,9 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteVendorBill = (id: string) => {
-    // 1. Remove associated cashflow entry so cash balance is restored
-    setCashFlow(prev => prev.filter(c => c.referenceId !== id));
-    // 2. Remove stock transactions referencing this bill
-    setStockTransactions(prev => prev.filter(st => st.referenceBillId !== id));
-    // 3. Remove bill
-    setVendorBills(prev => prev.filter(b => b.id !== id));
+    // also takes back the stock it added and removes its payment entries
+    const prev = getLedger();
+    commitLedger(Acc.deleteVendorBillTx(prev, id), prev);
   };
 
   // Inventory handlers
@@ -917,14 +1034,14 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const newItem: InventoryItem = {
       ...itemData,
       id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      updatedAt: new Date().toISOString().split('T')[0],
+      updatedAt: Acc.todayLocal(),
     };
     setInventory(prev => [newItem, ...prev]);
     return newItem;
   };
 
   const updateInventoryItem = (id: string, updates: Partial<InventoryItem>) => {
-    setInventory(prev => prev.map(item => item.id === id ? { ...item, ...updates, updatedAt: new Date().toISOString().split('T')[0] } : item));
+    setInventory(prev => prev.map(item => item.id === id ? { ...item, ...updates, updatedAt: Acc.todayLocal() } : item));
   };
 
   const deleteInventoryItem = (id: string) => {
@@ -942,7 +1059,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           vendorName: bill.vendorName,
           vendorInvoiceNumber: bill.invoiceNumber,
           vendorBillDate: bill.invoiceDate,
-          updatedAt: new Date().toISOString().split('T')[0],
+          updatedAt: Acc.todayLocal(),
         };
       }
       return item;
@@ -950,203 +1067,39 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const recordStockMovement = (itemId: string, type: 'in' | 'out', qty: number, reason: string, jobCardId?: string) => {
-    const targetItem = inventory.find(i => i.id === itemId);
-    if (!targetItem) return;
-
-    setInventory(prev => prev.map(item => {
-      if (item.id === itemId) {
-        const updatedStock = type === 'in' ? item.currentStock + qty : Math.max(0, item.currentStock - qty);
-        return { ...item, currentStock: updatedStock, updatedAt: new Date().toISOString().split('T')[0] };
-      }
-      return item;
-    }));
-
-    const tx: StockTransaction = {
-      id: `st-${Date.now()}`,
-      itemId,
-      itemName: targetItem.name,
-      type,
-      quantity: qty,
-      date: new Date().toISOString().split('T')[0],
-      reason,
-      jobCardId,
-    };
-    setStockTransactions(prev => [tx, ...prev]);
+    const prev = getLedger();
+    commitLedger(Acc.recordStockMovementTx(prev, itemId, type, qty, reason, jobCardId), prev);
   };
 
   // Invoices & Billing
   const addInvoice = (invoiceData: Omit<Invoice, 'id'>): Invoice => {
-    // Auto-compute spare costs with GST and profit: (Sale Amount with GST - Spares Buy Cost with GST - Extra Cost)
-    const totalPurchaseCostWithGst = invoiceData.totalPurchaseCostWithGst ?? 
-      (invoiceData.items || []).reduce((sum, it) => {
-        if (it.isService) return sum;
-        const gross = it.purchaseCostWithGst !== undefined 
-          ? it.purchaseCostWithGst 
-          : (it.purchaseCost ? (it.purchaseCost * (1 + (it.purchaseGstPercent ?? it.gstPercent ?? 18) / 100)) : 0);
-        return sum + (gross * (it.quantity || 1));
-      }, 0);
-
-    const purchaseCostTotal = invoiceData.purchaseCostTotal ?? 
-      (invoiceData.items || []).reduce((sum, it) => sum + ((it.purchaseCost || 0) * (it.quantity || 1)), 0);
-
-    const manualExtraCost = invoiceData.manualExtraCost ?? 0;
-    const effectiveSaleAmount = invoiceData.grandTotal ?? Math.max(0, (invoiceData.subtotal || 0) + (invoiceData.taxAmount || 0) - (invoiceData.discount || 0));
-    
-    // Profit = Sale Amount with GST - Total Spares Buy Cost with GST - Extra Manual Cost
-    const profitAmount = invoiceData.profitAmount !== undefined
-      ? invoiceData.profitAmount
-      : Math.round((effectiveSaleAmount - totalPurchaseCostWithGst - manualExtraCost) * 100) / 100;
-
-    const newInvoice: Invoice = {
-      ...invoiceData,
-      billingFirm: invoiceData.billingFirm || 'sgs',
-      id: `inv-doc-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      purchaseCostTotal,
-      totalPurchaseCostWithGst,
-      manualExtraCost,
-      profitAmount,
-      status: invoiceData.status || 'active',
-    };
-    setInvoices(prev => [newInvoice, ...prev]);
-
-    // Inventory Stock Reduction:
-    // SGS Invoices reduce stock for inventory items (services do not reduce stock)
-    // Pandiyan Computers does NOT reduce stock: "Pandiyan Computer has without GST - do not reduce stock only input item names"
-    if (newInvoice.billingFirm !== 'pandiyan' && newInvoice.type === 'invoice' && newInvoice.status !== 'cancelled') {
-      (newInvoice.items || []).forEach(it => {
-        if (!it.isService && it.quantity > 0) {
-          const cleanItemName = it.description.trim().toLowerCase();
-          const matchedItem = it.inventoryItemId 
-            ? inventory.find(i => i.id === it.inventoryItemId)
-            : inventory.find(i => i.name.trim().toLowerCase() === cleanItemName);
-          if (matchedItem) {
-            recordStockMovement(matchedItem.id, 'out', it.quantity, `Invoice Sale: ${newInvoice.invoiceNumber} (${newInvoice.customerName})`, newInvoice.jobCardId);
-          }
-        }
-      });
-    }
-
-    // If money received, log to cash flow
-    if (newInvoice.paidAmount > 0 && newInvoice.status !== 'cancelled') {
-      const cfEntry: CashFlowEntry = {
-        id: `cf-${Date.now()}`,
-        date: newInvoice.date,
-        type: 'income',
-        category: newInvoice.type === 'invoice' ? 'Service Charge' : 'Advance Payment',
-        description: `Customer: ${newInvoice.customerName} (${newInvoice.invoiceNumber}) [${newInvoice.billingFirm === 'pandiyan' ? 'Pandiyan Computers' : 'SGS'}]`,
-        amount: newInvoice.paidAmount,
-        paymentMode: newInvoice.paymentMode,
-        referenceId: newInvoice.id,
-        referenceNumber: newInvoice.paymentReference,
-      };
-      setCashFlow(prev => [cfEntry, ...prev]);
-    }
-
-    return newInvoice;
+    const prev = getLedger();
+    const { state, invoice } = Acc.addInvoiceTx(prev, invoiceData);
+    commitLedger(state, prev);
+    return invoice;
   };
 
   const updateInvoice = (id: string, updates: Partial<Invoice>) => {
-    setInvoices(prev => prev.map(inv => {
-      if (inv.id === id) {
-        const merged = { ...inv, ...updates };
-        // Recalculate profit if items, subtotal, discount, or extra costs changed
-        if (updates.profitAmount !== undefined) {
-          merged.profitAmount = updates.profitAmount;
-        } else if (updates.items || updates.subtotal !== undefined || updates.grandTotal !== undefined || updates.manualExtraCost !== undefined || updates.discount !== undefined) {
-          const totalPurchaseCostWithGst = updates.totalPurchaseCostWithGst !== undefined 
-            ? updates.totalPurchaseCostWithGst 
-            : (merged.items || []).reduce((sum, it) => {
-                if (it.isService) return sum;
-                const gross = it.purchaseCostWithGst !== undefined 
-                  ? it.purchaseCostWithGst 
-                  : (it.purchaseCost ? (it.purchaseCost * (1 + (it.purchaseGstPercent ?? it.gstPercent ?? 18) / 100)) : 0);
-                return sum + (gross * (it.quantity || 1));
-              }, 0);
-          const purchaseCostTotal = updates.purchaseCostTotal !== undefined 
-            ? updates.purchaseCostTotal 
-            : (merged.items || []).reduce((sum, it) => sum + ((it.purchaseCost || 0) * (it.quantity || 1)), 0);
-          const manualExtraCost = merged.manualExtraCost ?? 0;
-          const effectiveSaleAmount = merged.grandTotal ?? Math.max(0, (merged.subtotal || 0) + (merged.taxAmount || 0) - (merged.discount || 0));
-          merged.totalPurchaseCostWithGst = totalPurchaseCostWithGst;
-          merged.purchaseCostTotal = purchaseCostTotal;
-          merged.profitAmount = Math.round((effectiveSaleAmount - totalPurchaseCostWithGst - manualExtraCost) * 100) / 100;
-        }
-        return merged;
-      }
-      return inv;
-    }));
+    const prev = getLedger();
+    commitLedger(Acc.updateInvoiceTx(prev, id, updates), prev);
   };
 
   const updateInvoicePayment = (
     id: string, 
     paidAmount: number, 
-    status: 'paid' | 'partial' | 'unpaid', 
+    _status: 'paid' | 'partial' | 'unpaid', 
     mode: PaymentMode,
     paymentReference?: string
   ) => {
-    setInvoices(prev => prev.map(inv => {
-      if (inv.id === id) {
-        const addedAmount = paidAmount - inv.paidAmount;
-        if (addedAmount > 0) {
-          const cfEntry: CashFlowEntry = {
-            id: `cf-${Date.now()}`,
-            date: new Date().toISOString().split('T')[0],
-            type: 'income',
-            category: 'Service Charge',
-            description: `Payment from ${inv.customerName} (${inv.invoiceNumber})`,
-            amount: addedAmount,
-            paymentMode: mode,
-            referenceId: inv.id,
-            referenceNumber: paymentReference || inv.paymentReference,
-          };
-          setCashFlow(cf => [cfEntry, ...cf]);
-        }
-        return { 
-          ...inv, 
-          paidAmount, 
-          paymentStatus: status, 
-          paymentMode: mode,
-          paymentReference: paymentReference !== undefined ? paymentReference : inv.paymentReference 
-        };
-      }
-      return inv;
-    }));
+    // status is always derived from the amount; overpayment is capped at the bill total
+    const prev = getLedger();
+    commitLedger(Acc.payInvoiceTx(prev, id, paidAmount, mode, paymentReference), prev);
   };
 
   const cancelInvoice = (id: string, reason = 'Cancelled by Admin') => {
-    const target = invoices.find(inv => inv.id === id);
-    if (!target) return;
-
-    // 1. If active SGS sales invoice, restock items that were deducted
-    if (target.status === 'active' && target.billingFirm !== 'pandiyan' && target.type === 'invoice') {
-      (target.items || []).forEach(it => {
-        if (!it.isService && it.quantity > 0) {
-          const cleanItemName = it.description.trim().toLowerCase();
-          const matchedItem = it.inventoryItemId 
-            ? inventory.find(i => i.id === it.inventoryItemId)
-            : inventory.find(i => i.name.trim().toLowerCase() === cleanItemName);
-          if (matchedItem) {
-            recordStockMovement(matchedItem.id, 'in', it.quantity, `Restock (Cancelled ${target.invoiceNumber})`, target.jobCardId);
-          }
-        }
-      });
-    }
-
-    // 2. Remove associated cashflow entry so cash balance stays correct
-    setCashFlow(prev => prev.filter(c => c.referenceId !== id));
-
-    // 3. Mark invoice as cancelled
-    setInvoices(prev => prev.map(inv => {
-      if (inv.id === id) {
-        return {
-          ...inv,
-          status: 'cancelled',
-          paymentStatus: 'cancelled',
-          cancelledReason: reason,
-        };
-      }
-      return inv;
-    }));
+    // puts stock back and records a refund for money already received
+    const prev = getLedger();
+    commitLedger(Acc.cancelInvoiceTx(prev, id, reason), prev);
   };
 
   const duplicateInvoice = (id: string): Invoice => {
@@ -1155,45 +1108,34 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       throw new Error('Invoice not found for duplication');
     }
 
-    const nextNo = invoices.length + 1045;
-    const prefix = original.type === 'quotation' ? 'SGS-QUOT-' : (adminSettings.invoicePrefix || 'SGS-INV-');
-    const newInvoiceNumber = `${prefix}${nextNo}`;
+    const prefix = original.billingFirm === 'pandiyan'
+      ? (original.type === 'quotation' ? 'PC-QUOT-' : 'PC-EST-')
+      : (original.type === 'quotation' ? 'SGS-QUOT-' : (adminSettings.invoicePrefix || 'SGS-INV-'));
+    const newInvoiceNumber = Acc.nextDocNumber(invoices, prefix, original.billingFirm === 'pandiyan' ? 501 : 1043);
 
     const duplicateDoc: Invoice = {
       ...original,
       id: `inv-doc-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       invoiceNumber: newInvoiceNumber,
-      date: new Date().toISOString().split('T')[0],
+      date: Acc.todayLocal(),
       paymentStatus: 'unpaid',
       paidAmount: 0,
       paymentReference: '',
       status: 'active',
+      cancelledReason: undefined,
       notes: `${original.notes || ''} (Cloned from ${original.invoiceNumber})`.trim(),
     };
 
-    setInvoices(prev => [duplicateDoc, ...prev]);
-    return duplicateDoc;
+    // go through the ledger so stock is reduced for a duplicated SGS invoice too
+    const prev = getLedger();
+    const { state, invoice } = Acc.addInvoiceTx(prev, (({ id: _id, ...rest }) => rest)(duplicateDoc) as Omit<Invoice, 'id'>);
+    commitLedger(state, prev);
+    return invoice;
   };
 
   const deleteInvoice = (id: string) => {
-    const target = invoices.find(inv => inv.id === id);
-    if (target && target.status === 'active' && target.billingFirm !== 'pandiyan' && target.type === 'invoice') {
-      (target.items || []).forEach(it => {
-        if (!it.isService && it.quantity > 0) {
-          const cleanItemName = it.description.trim().toLowerCase();
-          const matchedItem = it.inventoryItemId 
-            ? inventory.find(i => i.id === it.inventoryItemId)
-            : inventory.find(i => i.name.trim().toLowerCase() === cleanItemName);
-          if (matchedItem) {
-            recordStockMovement(matchedItem.id, 'in', it.quantity, `Restock (Deleted ${target.invoiceNumber})`, target.jobCardId);
-          }
-        }
-      });
-    }
-    // Remove linked cash flow entry
-    setCashFlow(prev => prev.filter(c => c.referenceId !== id));
-    // Remove invoice
-    setInvoices(prev => prev.filter(inv => inv.id !== id));
+    const prev = getLedger();
+    commitLedger(Acc.deleteInvoiceTx(prev, id), prev);
   };
 
   // Admin Settings
@@ -1209,7 +1151,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const addCashFlowEntry = (entryData: Omit<CashFlowEntry, 'id'>) => {
     const newEntry: CashFlowEntry = {
       ...entryData,
-      id: `cf-${Date.now()}`,
+      id: Acc.uid('cf'),
     };
     setCashFlow(prev => [newEntry, ...prev]);
   };
@@ -1220,29 +1162,13 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!quot) throw new Error('Quotation not found');
 
     const isPandiyan = quot.billingFirm === 'pandiyan';
-    const allNumbers = invoices
-      .filter(i => (isPandiyan ? i.billingFirm === 'pandiyan' : i.billingFirm !== 'pandiyan'))
-      .map(i => {
-        const match = i.invoiceNumber.match(/\d+$/);
-        return match ? parseInt(match[0], 10) : 0;
-      });
-    const quotMatch = quot.invoiceNumber.match(/\d+$/);
-    if (quotMatch) allNumbers.push(parseInt(quotMatch[0], 10));
-    const maxNum = allNumbers.length > 0 ? Math.max(...allNumbers) : (isPandiyan ? 500 : 1042);
-    const nextNum = Math.max(maxNum + 1, 1043);
     const prefix = isPandiyan ? 'PC-EST-' : (adminSettings.invoicePrefix || 'SGS-INV-');
-    const invNum = `${prefix}${nextNum}`;
+    const invNum = Acc.nextDocNumber(invoices, prefix, isPandiyan ? 501 : 1043);
+    const note = quot.notes || (isPandiyan ? 'Converted from Quotation' : 'Converted from Quotation - Spares carry 1-year warranty.');
 
-    const converted: Invoice = {
-      ...quot,
-      id: quot.id,
-      invoiceNumber: invNum,
-      type: 'invoice',
-      date: new Date().toISOString().split('T')[0],
-      notes: quot.notes || (isPandiyan ? 'Converted from Quotation' : 'Converted from Quotation - Spares carry 1-year warranty.'),
-    };
-
-    setInvoices(prev => prev.map(i => i.id === quotationId ? converted : i));
+    const prev = getLedger();
+    const { state, invoice: converted } = Acc.convertQuotationTx(prev, quotationId, invNum, Acc.todayLocal(), note);
+    commitLedger(state, prev);
 
     if (quot.jobCardId) {
       updateJobCard(quot.jobCardId, { invoiceId: converted.id, status: 'billed' as any });
@@ -1254,20 +1180,6 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         performedBy: 'Admin',
       });
     }
-
-    if (converted.paidAmount > 0) {
-      addCashFlowEntry({
-        date: converted.date,
-        type: 'income',
-        category: 'Service Charge',
-        description: `Invoice ${converted.invoiceNumber} - ${converted.customerName}`,
-        amount: converted.paidAmount,
-        paymentMode: converted.paymentMode || 'upi',
-        referenceId: converted.id,
-        referenceNumber: converted.paymentReference || '',
-      });
-    }
-
     return converted;
   };
 
@@ -1513,7 +1425,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           id: `alloc-${Date.now()}`,
           employeeId: emp.id,
           jobCardId,
-          allocatedDate: new Date().toISOString().split('T')[0],
+          allocatedDate: Acc.todayLocal(),
           priorityOrder: priority,
           notes,
           sharedViaWhatsAppAt: new Date().toISOString(),
@@ -1590,7 +1502,7 @@ Please update your diagnostic notes and call status upon inspection.
           priorityChangeReason: reason || job.priorityChangeReason,
           priorityChangedBy: changedBy,
           priorityChangedAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString().split('T')[0],
+          updatedAt: Acc.todayLocal(),
         };
         const timelineEvent = {
           id: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -1633,7 +1545,7 @@ Please update your diagnostic notes and call status upon inspection.
           estimatedDurationHours: expectedDurationHours !== undefined ? expectedDurationHours : job.estimatedDurationHours,
           status: job.status === 'received' ? 'in_process' : job.status,
           reassignReason: wasReassigned ? reason : job.reassignReason,
-          updatedAt: new Date().toISOString().split('T')[0],
+          updatedAt: Acc.todayLocal(),
         };
 
         const timelineEvent = {
@@ -1667,7 +1579,7 @@ Please update your diagnostic notes and call status upon inspection.
           id: `alloc-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
           employeeId,
           jobCardId: jobId,
-          allocatedDate: new Date().toISOString().split('T')[0],
+          allocatedDate: Acc.todayLocal(),
           priorityOrder: 1,
           notes: instructions,
           status: 'assigned',
@@ -1702,7 +1614,7 @@ Please update your diagnostic notes and call status upon inspection.
             ...completionNotes,
             completedAt: new Date().toISOString(),
           },
-          updatedAt: new Date().toISOString().split('T')[0],
+          updatedAt: Acc.todayLocal(),
         };
         const timelineEvent = {
           id: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -1736,7 +1648,7 @@ Please update your diagnostic notes and call status upon inspection.
             verifiedBy: closedBy,
             verifiedAt: new Date().toISOString(),
           },
-          updatedAt: new Date().toISOString().split('T')[0],
+          updatedAt: Acc.todayLocal(),
         };
         const timelineEvent = {
           id: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -1768,7 +1680,7 @@ Please update your diagnostic notes and call status upon inspection.
             reopenedReason: reason,
             reopenedBy,
           },
-          updatedAt: new Date().toISOString().split('T')[0],
+          updatedAt: Acc.todayLocal(),
         };
         const timelineEvent = {
           id: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -1804,7 +1716,7 @@ Please update your diagnostic notes and call status upon inspection.
         const nextRepaid = (adv.repaidAmount || 0) + amount;
         const isFullyRepaid = nextRepaid >= adv.amount;
         const newRepayment = {
-          date: new Date().toISOString().split('T')[0],
+          date: Acc.todayLocal(),
           amount,
           note: note || 'Salary deduction / settlement',
         };
@@ -1817,6 +1729,248 @@ Please update your diagnostic notes and call status upon inspection.
       }
       return adv;
     }));
+  };
+
+  // ==========================================================================
+  // DEDICATED MANUAL QUOTATION MODULE HANDLERS
+  // ==========================================================================
+
+  const getNextQuotationNumber = (): string => {
+    const currentYear = new Date().getFullYear();
+    const regex = new RegExp(`^SGS/QTN/${currentYear}/(\\d+)$`, 'i');
+    let maxSeq = 0;
+    quotations.forEach(q => {
+      const match = q.quotationNumber?.match(regex);
+      if (match && match[1]) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxSeq) {
+          maxSeq = num;
+        }
+      }
+    });
+    const nextSeq = String(maxSeq + 1).padStart(3, '0');
+    return `SGS/QTN/${currentYear}/${nextSeq}`;
+  };
+
+  const addManualQuotation = (qData: Omit<ManualQuotation, 'id' | 'quotationNumber' | 'createdAt' | 'updatedAt' | 'version' | 'history'>): ManualQuotation => {
+    const quotationNumber = getNextQuotationNumber();
+    const newQuote: ManualQuotation = {
+      ...qData,
+      id: `qtn-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      quotationNumber,
+      version: 1,
+      history: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setQuotations(prev => [newQuote, ...prev]);
+    return newQuote;
+  };
+
+  const updateManualQuotation = (id: string, updates: Partial<ManualQuotation>, note?: string) => {
+    setQuotations(prev => prev.map(existing => {
+      if (existing.id !== id) return existing;
+
+      // Create immutable version snapshot of the existing state
+      const snapshot: QuotationVersionSnapshot = {
+        version: existing.version,
+        updatedAt: existing.updatedAt || new Date().toISOString(),
+        notes: note || `Archived Version ${existing.version}`,
+        model1: JSON.parse(JSON.stringify(existing.model1)),
+        model2: JSON.parse(JSON.stringify(existing.model2)),
+        termsAndConditions: existing.termsAndConditions,
+        validityDays: existing.validityDays,
+        validUntil: existing.validUntil,
+        paymentDetails: existing.paymentDetails,
+        advanceAmount: existing.advanceAmount,
+        customerNotes: existing.customerNotes,
+        installationNotes: existing.installationNotes,
+      };
+
+      const newVersion = (existing.version || 1) + 1;
+      return {
+        ...existing,
+        ...updates,
+        version: newVersion,
+        history: [snapshot, ...(existing.history || [])],
+        updatedAt: new Date().toISOString(),
+      };
+    }));
+  };
+
+  const deleteManualQuotation = (id: string) => {
+    setQuotations(prev => prev.map(q => q.id === id ? { ...q, isArchived: true, updatedAt: new Date().toISOString() } : q));
+  };
+
+  const duplicateManualQuotation = (id: string): ManualQuotation => {
+    const source = quotations.find(q => q.id === id);
+    if (!source) throw new Error('Quotation not found');
+    const quotationNumber = getNextQuotationNumber();
+    const duplicated: ManualQuotation = {
+      ...JSON.parse(JSON.stringify(source)),
+      id: `qtn-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      quotationNumber,
+      status: 'Draft',
+      selectedModel: 'Not Decided',
+      confirmationDate: undefined,
+      version: 1,
+      history: [],
+      isArchived: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setQuotations(prev => [duplicated, ...prev]);
+    return duplicated;
+  };
+
+  const updateQuotationStatus = (id: string, status: QuotationStatus, selectedModel?: CustomerModelSelection) => {
+    setQuotations(prev => prev.map(q => {
+      if (q.id !== id) return q;
+      const isConfirming = status === 'Confirmed';
+      return {
+        ...q,
+        status,
+        selectedModel: selectedModel !== undefined ? selectedModel : q.selectedModel,
+        confirmationDate: isConfirming ? (q.confirmationDate || new Date().toISOString().split('T')[0]) : q.confirmationDate,
+        updatedAt: new Date().toISOString(),
+      };
+    }));
+  };
+
+  // Catalogue Management
+  const addQuotationCategory = (name: string): QuotationCategory => {
+    const newCat: QuotationCategory = {
+      id: `cat-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      name: name.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    setQuotationCategories(prev => [...prev, newCat]);
+    return newCat;
+  };
+
+  const updateQuotationCategory = (id: string, name: string) => {
+    setQuotationCategories(prev => prev.map(c => c.id === id ? { ...c, name: name.trim() } : c));
+  };
+
+  const deleteQuotationCategory = (id: string) => {
+    setQuotationCategories(prev => prev.map(c => c.id === id ? { ...c, isDeleted: true } : c));
+  };
+
+  const addQuotationSubcategory = (categoryId: string, name: string): QuotationSubcategory => {
+    const newSub: QuotationSubcategory = {
+      id: `sub-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      categoryId,
+      name: name.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    setQuotationSubcategories(prev => [...prev, newSub]);
+    return newSub;
+  };
+
+  const updateQuotationSubcategory = (id: string, name: string) => {
+    setQuotationSubcategories(prev => prev.map(s => s.id === id ? { ...s, name: name.trim() } : s));
+  };
+
+  const deleteQuotationSubcategory = (id: string) => {
+    setQuotationSubcategories(prev => prev.map(s => s.id === id ? { ...s, isDeleted: true } : s));
+  };
+
+  const addQuotationProduct = (prod: Omit<QuotationProduct, 'id' | 'createdAt' | 'updatedAt'>): QuotationProduct => {
+    const newProd: QuotationProduct = {
+      ...prod,
+      id: `prod-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setQuotationProducts(prev => [newProd, ...prev]);
+    if (prod.brand && !quotationBrands.includes(prod.brand)) {
+      addQuotationBrand(prod.brand);
+    }
+    return newProd;
+  };
+
+  const updateQuotationProduct = (id: string, updates: Partial<QuotationProduct>) => {
+    setQuotationProducts(prev => prev.map(p => {
+      if (p.id !== id) return p;
+      return { ...p, ...updates, updatedAt: new Date().toISOString() };
+    }));
+    if (updates.brand && !quotationBrands.includes(updates.brand)) {
+      addQuotationBrand(updates.brand);
+    }
+  };
+
+  const deleteQuotationProduct = (id: string) => {
+    setQuotationProducts(prev => prev.map(p => p.id === id ? { ...p, isDeleted: true, updatedAt: new Date().toISOString() } : p));
+  };
+
+  const restoreQuotationProduct = (id: string) => {
+    setQuotationProducts(prev => prev.map(p => p.id === id ? { ...p, isDeleted: false, updatedAt: new Date().toISOString() } : p));
+  };
+
+  const addQuotationBrand = (brand: string) => {
+    const trimmed = brand.trim();
+    if (!trimmed) return;
+    setQuotationBrands(prev => {
+      if (prev.some(b => b.toLowerCase() === trimmed.toLowerCase())) return prev;
+      return [...prev, trimmed];
+    });
+  };
+
+  const updateProductLatestPrice = (productId: string, newPrice: number) => {
+    if (!productId || isNaN(newPrice)) return;
+    setQuotationProducts(prev => prev.map(p => {
+      if (p.id === productId) {
+        return { ...p, latestQuotationPrice: newPrice, updatedAt: new Date().toISOString() };
+      }
+      return p;
+    }));
+  };
+
+  // Price Code Mapping Handlers
+  const updatePriceCodeMapping = (newMapping: PriceCodeMapping, notes?: string): { success: boolean; error?: string } => {
+    const val = validateMapping(newMapping);
+    if (!val.isValid) {
+      return { success: false, error: val.error || 'Invalid mapping' };
+    }
+
+    const normalized: PriceCodeMapping = {
+      '0': newMapping['0'].trim().toUpperCase(),
+      '1': newMapping['1'].trim().toUpperCase(),
+      '2': newMapping['2'].trim().toUpperCase(),
+      '3': newMapping['3'].trim().toUpperCase(),
+      '4': newMapping['4'].trim().toUpperCase(),
+      '5': newMapping['5'].trim().toUpperCase(),
+      '6': newMapping['6'].trim().toUpperCase(),
+      '7': newMapping['7'].trim().toUpperCase(),
+      '8': newMapping['8'].trim().toUpperCase(),
+      '9': newMapping['9'].trim().toUpperCase(),
+    };
+
+    const nextVer = (priceCodeMappingVersions[0]?.version || 1) + 1;
+    const newVersionObj: PriceCodeMappingVersion = {
+      version: nextVer,
+      mapping: normalized,
+      createdAt: new Date().toISOString(),
+      changedBy: 'CRM User',
+      notes: notes || `Custom Price Code Mapping v${nextVer}`,
+    };
+
+    setPriceCodeMappingVersions(prev => [newVersionObj, ...prev]);
+    setActivePriceCodeMapping(normalized);
+    return { success: true };
+  };
+
+  const resetPriceCodeMappingToDefault = () => {
+    const nextVer = (priceCodeMappingVersions[0]?.version || 1) + 1;
+    const defaultVersionObj: PriceCodeMappingVersion = {
+      version: nextVer,
+      mapping: DEFAULT_PRICE_CODE_MAPPING,
+      createdAt: new Date().toISOString(),
+      changedBy: 'CRM User',
+      notes: `Reset to Default SGS Mapping (v${nextVer})`,
+    };
+    setPriceCodeMappingVersions(prev => [defaultVersionObj, ...prev]);
+    setActivePriceCodeMapping(DEFAULT_PRICE_CODE_MAPPING);
   };
 
   // System Tools - Clear All Input Data (Start 100% Fresh with 0 records)
@@ -1835,6 +1989,7 @@ Please update your diagnostic notes and call status upon inspection.
     setSalaryPayments([]);
     setWorkAllocations([]);
     setSalaryAdvances([]);
+    setQuotations([]);
 
     try {
       localStorage.setItem(`${STORAGE_KEY}_customers`, JSON.stringify([]));
@@ -1851,6 +2006,7 @@ Please update your diagnostic notes and call status upon inspection.
       localStorage.setItem(`${STORAGE_KEY}_salaries`, JSON.stringify([]));
       localStorage.setItem(`${STORAGE_KEY}_work_allocations`, JSON.stringify([]));
       localStorage.setItem(`${STORAGE_KEY}_salary_advances`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_quotations`, JSON.stringify([]));
       localStorage.setItem(FRESH_CLEARED_KEY, 'true');
 
       try {
@@ -1895,6 +2051,11 @@ Please update your diagnostic notes and call status upon inspection.
     setSalaryPayments(freshSalaries);
     setWorkAllocations(freshWorkAllocations);
     setSalaryAdvances(freshSalaryAdvances);
+    setQuotations([]);
+    setQuotationCategories(INITIAL_QUOTATION_CATEGORIES);
+    setQuotationSubcategories(INITIAL_QUOTATION_SUBCATEGORIES);
+    setQuotationProducts(INITIAL_QUOTATION_PRODUCTS);
+    setQuotationBrands(INITIAL_QUOTATION_BRANDS);
 
     try {
       localStorage.clear();
@@ -1914,6 +2075,13 @@ Please update your diagnostic notes and call status upon inspection.
       localStorage.setItem(`${STORAGE_KEY}_salaries`, JSON.stringify(freshSalaries));
       localStorage.setItem(`${STORAGE_KEY}_work_allocations`, JSON.stringify(freshWorkAllocations));
       localStorage.setItem(`${STORAGE_KEY}_salary_advances`, JSON.stringify(freshSalaryAdvances));
+      localStorage.setItem(`${STORAGE_KEY}_quotations`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_q_categories`, JSON.stringify(INITIAL_QUOTATION_CATEGORIES));
+      localStorage.setItem(`${STORAGE_KEY}_q_subcategories`, JSON.stringify(INITIAL_QUOTATION_SUBCATEGORIES));
+      localStorage.setItem(`${STORAGE_KEY}_q_products`, JSON.stringify(INITIAL_QUOTATION_PRODUCTS));
+      localStorage.setItem(`${STORAGE_KEY}_q_brands`, JSON.stringify(INITIAL_QUOTATION_BRANDS));
+      localStorage.setItem(`${STORAGE_KEY}_price_code_mapping`, JSON.stringify(DEFAULT_PRICE_CODE_MAPPING));
+      localStorage.setItem(`${STORAGE_KEY}_price_code_versions`, JSON.stringify([INITIAL_PRICE_CODE_VERSION]));
       localStorage.setItem(FRESH_CLEARED_KEY, 'demo_loaded');
 
       // Clear any pending billing drafts or temporary caches
@@ -1943,6 +2111,14 @@ Please update your diagnostic notes and call status upon inspection.
       attendanceRecords,
       salaryPayments,
       workAllocations,
+      salaryAdvances,
+      quotations,
+      quotationCategories,
+      quotationSubcategories,
+      quotationProducts,
+      quotationBrands,
+      activePriceCodeMapping,
+      priceCodeMappingVersions,
     };
     return JSON.stringify(fullBackup, null, 2);
   };
@@ -1964,6 +2140,18 @@ Please update your diagnostic notes and call status upon inspection.
       if (parsed.attendanceRecords && Array.isArray(parsed.attendanceRecords)) setAttendanceRecords(parsed.attendanceRecords);
       if (parsed.salaryPayments && Array.isArray(parsed.salaryPayments)) setSalaryPayments(parsed.salaryPayments);
       if (parsed.workAllocations && Array.isArray(parsed.workAllocations)) setWorkAllocations(parsed.workAllocations);
+      if (parsed.salaryAdvances && Array.isArray(parsed.salaryAdvances)) setSalaryAdvances(parsed.salaryAdvances);
+      if (parsed.quotations && Array.isArray(parsed.quotations)) setQuotations(parsed.quotations);
+      if (parsed.quotationCategories && Array.isArray(parsed.quotationCategories)) setQuotationCategories(parsed.quotationCategories);
+      if (parsed.quotationSubcategories && Array.isArray(parsed.quotationSubcategories)) setQuotationSubcategories(parsed.quotationSubcategories);
+      if (parsed.quotationProducts && Array.isArray(parsed.quotationProducts)) setQuotationProducts(parsed.quotationProducts);
+      if (parsed.quotationBrands && Array.isArray(parsed.quotationBrands)) setQuotationBrands(parsed.quotationBrands);
+      if (parsed.activePriceCodeMapping && typeof parsed.activePriceCodeMapping === 'object') {
+        setActivePriceCodeMapping(parsed.activePriceCodeMapping);
+      }
+      if (parsed.priceCodeMappingVersions && Array.isArray(parsed.priceCodeMappingVersions)) {
+        setPriceCodeMappingVersions(parsed.priceCodeMappingVersions);
+      }
       return true;
     } catch (e) {
       console.error('Invalid JSON file format for import:', e);
@@ -2046,6 +2234,33 @@ Please update your diagnostic notes and call status upon inspection.
         salaryPayments,
         workAllocations,
         salaryAdvances,
+        quotations,
+        quotationCategories,
+        quotationSubcategories,
+        quotationProducts,
+        quotationBrands,
+        activePriceCodeMapping,
+        priceCodeMappingVersions,
+        updatePriceCodeMapping,
+        resetPriceCodeMappingToDefault,
+        addManualQuotation,
+        updateManualQuotation,
+        deleteManualQuotation,
+        duplicateManualQuotation,
+        updateQuotationStatus,
+        addQuotationCategory,
+        updateQuotationCategory,
+        deleteQuotationCategory,
+        addQuotationSubcategory,
+        updateQuotationSubcategory,
+        deleteQuotationSubcategory,
+        addQuotationProduct,
+        updateQuotationProduct,
+        deleteQuotationProduct,
+        restoreQuotationProduct,
+        addQuotationBrand,
+        updateProductLatestPrice,
+        getNextQuotationNumber,
         addCustomer,
         updateCustomer,
         deleteCustomer,

@@ -29,6 +29,7 @@ import {
   Layers,
   RefreshCw
 } from 'lucide-react';
+import * as Acc from '../utils/accounting';
 import { useSgs } from '../context/SgsContext';
 import { AdminSettings, QuickServicePreset, DeviceCategory, BillingTheme, PandiyanBillingTheme } from '../types';
 import { 
@@ -36,6 +37,7 @@ import {
   DEFAULT_SGS_STAMP_DATA_URL, 
   DEFAULT_PANDIYAN_LOGO_DATA_URL, 
   DEFAULT_PANDIYAN_STAMP_DATA_URL,
+  DEFAULT_SGS_QUOTATION_LETTERHEAD_BG,
   SgsLogo,
   SgsStamp,
   PandiyanLogo,
@@ -158,10 +160,11 @@ export const AdminDashboard: React.FC = () => {
 
   // Profit & Loss Calculations
   const activeInvoices = invoices.filter(inv => inv.status !== 'cancelled' && inv.type === 'invoice');
-  const totalBilled = activeInvoices.reduce((sum, inv) => sum + (inv.grandTotal || inv.subtotal || 0), 0);
-  const totalSpareCosts = activeInvoices.reduce((sum, inv) => sum + (inv.totalPurchaseCostWithGst ?? inv.purchaseCostTotal ?? 0), 0);
+  // Billed (taxable) value AFTER discount, so margin and profit match each other
+  const totalBilled = Acc.round2(activeInvoices.reduce((sum, inv) => sum + Acc.netOfDiscount(inv).taxable + (inv.roundOff || 0), 0));
+  const totalSpareCosts = activeInvoices.reduce((sum, inv) => sum + (inv.purchaseCostTotal || 0), 0);
   const totalManualCosts = activeInvoices.reduce((sum, inv) => sum + (inv.manualExtraCost || 0), 0);
-  const totalInvoiceProfit = activeInvoices.reduce((sum, inv) => sum + (inv.profitAmount ?? ((inv.grandTotal || inv.subtotal) - (inv.totalPurchaseCostWithGst ?? inv.purchaseCostTotal ?? 0) - (inv.manualExtraCost || 0))), 0);
+  const totalInvoiceProfit = totalBilled - totalSpareCosts - totalManualCosts;
   const overallMargin = totalBilled > 0 ? Math.round((totalInvoiceProfit / totalBilled) * 100) : 0;
 
   const totalVendorPurchases = vendorBills.reduce((sum, vb) => sum + (vb.totalAmount || 0), 0);
@@ -213,7 +216,7 @@ export const AdminDashboard: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `sgs-backup-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `sgs-backup-${Acc.todayLocal()}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -883,8 +886,8 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* SGS Logo & Stamp Attachments */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+              {/* SGS Logo, Stamp & Quotation Letterhead Attachments */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
                 
                 {/* SGS Logo Attachment */}
                 <div className={`p-4 rounded-xl border space-y-3 ${
@@ -990,6 +993,66 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
 
+                {/* SGS Quotation Letterhead Background */}
+                <div className={`p-4 rounded-xl border space-y-3 ${
+                  isDark ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+                      <FileText className="w-4 h-4" />
+                      Quotation Letterhead A4
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleFieldChange('quotationBackgroundUrl', DEFAULT_SGS_QUOTATION_LETTERHEAD_BG)}
+                      className="text-[10px] font-semibold text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
+                      title="Reset to default high-res SVG letterhead"
+                    >
+                      <RefreshCw className="w-2.5 h-2.5" /> Reset Default
+                    </button>
+                  </div>
+                  
+                  <div className="p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center min-h-[70px] overflow-hidden">
+                    {formData.quotationBackgroundUrl ? (
+                      <img 
+                        src={formData.quotationBackgroundUrl} 
+                        alt="Letterhead Preview" 
+                        className="max-h-16 w-auto object-contain rounded border border-slate-200 dark:border-slate-700 shadow-2xs" 
+                      />
+                    ) : (
+                      <span className="text-[11px] text-slate-400">Default SVG Vector Active</span>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={formData.quotationBackgroundUrl || ''}
+                      onChange={(e) => handleFieldChange('quotationBackgroundUrl', e.target.value)}
+                      placeholder="Image URL or Base64 data..."
+                      className={`w-full rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${
+                        isDark ? 'bg-slate-900 border border-slate-800 text-white' : 'bg-white border border-slate-300 text-slate-900'
+                      }`}
+                    />
+                    <label className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold rounded bg-blue-100 hover:bg-blue-200 text-blue-800 dark:bg-blue-900 dark:text-blue-200 cursor-pointer">
+                      <Upload className="w-3 h-3" /> Upload Letterhead (PNG/JPG)
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const reader = new FileReader();
+                            reader.onload = () => handleFieldChange('quotationBackgroundUrl', reader.result as string);
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
               </div>
 
               {/* SGS Bank Account Details */}
@@ -1051,6 +1114,22 @@ export const AdminDashboard: React.FC = () => {
                   value={formData.termsAndConditions || ''}
                   onChange={(e) => handleFieldChange('termsAndConditions', e.target.value)}
                   placeholder="Terms and conditions..."
+                  className={`w-full rounded-xl p-2.5 text-xs focus:outline-none ${
+                    isDark ? 'bg-slate-950 border border-slate-800 text-white' : 'bg-slate-50 border border-slate-300 text-slate-900'
+                  }`}
+                />
+              </div>
+
+              {/* SGS Quotation Terms */}
+              <div className="border-t pt-4 space-y-2">
+                <label className={`block text-xs font-bold uppercase tracking-wider ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                  Manual Quotation Standard Terms & Conditions
+                </label>
+                <textarea
+                  rows={3}
+                  value={formData.quotationTerms || ''}
+                  onChange={(e) => handleFieldChange('quotationTerms', e.target.value)}
+                  placeholder="Quotation proposal terms & conditions..."
                   className={`w-full rounded-xl p-2.5 text-xs focus:outline-none ${
                     isDark ? 'bg-slate-950 border border-slate-800 text-white' : 'bg-slate-50 border border-slate-300 text-slate-900'
                   }`}
@@ -1618,8 +1697,8 @@ export const AdminDashboard: React.FC = () => {
                       <th className="py-3 px-4">Invoice #</th>
                       <th className="py-3 px-4">Customer</th>
                       <th className="py-3 px-4">Date</th>
-                      <th className="py-3 px-4 font-mono text-right">Sale Total (₹)</th>
-                      <th className="py-3 px-4 font-mono text-right">Spares Cost (with GST)</th>
+                      <th className="py-3 px-4 font-mono text-right">Billed Subtotal</th>
+                      <th className="py-3 px-4 font-mono text-right">Spares Cost</th>
                       <th className="py-3 px-4 font-mono text-right">Extra Costs</th>
                       <th className="py-3 px-4 font-mono text-right">Net Profit</th>
                       <th className="py-3 px-4 text-center">Margin</th>
@@ -1628,11 +1707,10 @@ export const AdminDashboard: React.FC = () => {
                   </thead>
                   <tbody className={`divide-y ${isDark ? 'divide-slate-800/70' : 'divide-slate-100'}`}>
                     {activeInvoices.map((inv, idx) => {
-                      const saleAmount = inv.grandTotal || inv.subtotal || 0;
-                      const cost = inv.totalPurchaseCostWithGst ?? inv.purchaseCostTotal ?? 0;
+                      const cost = inv.purchaseCostTotal || 0;
                       const manual = inv.manualExtraCost || 0;
-                      const profit = inv.profitAmount ?? (saleAmount - cost - manual);
-                      const margin = saleAmount > 0 ? Math.round((profit / saleAmount) * 100) : 0;
+                      const profit = (inv.subtotal || 0) - cost - manual;
+                      const margin = inv.subtotal > 0 ? Math.round((profit / inv.subtotal) * 100) : 0;
 
                       return (
                         <tr key={`${inv.id}-${idx}`} className={isDark ? 'hover:bg-slate-900/60' : 'hover:bg-slate-50'}>
@@ -1646,16 +1724,16 @@ export const AdminDashboard: React.FC = () => {
                             {inv.date}
                           </td>
                           <td className={`py-3 px-4 font-mono font-bold text-right ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                            ₹{saleAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ₹{inv.subtotal.toLocaleString('en-IN')}
                           </td>
                           <td className={`py-3 px-4 font-mono text-right ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
-                            ₹{cost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ₹{cost.toLocaleString('en-IN')}
                           </td>
                           <td className={`py-3 px-4 font-mono text-right ${isDark ? 'text-rose-400' : 'text-rose-700'}`}>
                             ₹{manual.toLocaleString('en-IN')}
                           </td>
                           <td className="py-3 px-4 font-mono font-bold text-right text-emerald-600">
-                            +₹{profit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            +₹{profit.toLocaleString('en-IN')}
                           </td>
                           <td className="py-3 px-4 text-center">
                             <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">

@@ -262,23 +262,19 @@ export interface StockTransaction {
   date: string;
   reason: string;
   jobCardId?: string;
-  referenceBillId?: string;
+  referenceBillId?: string; // Vendor bill that brought this stock in
+  referenceInvoiceId?: string; // Customer invoice that took this stock out
 }
 
 export interface InvoiceItem {
   description: string;
+  unit?: string; // UQC for GST (NOS, PCS, MTR, SET...)
   hsnCode?: string; // HSN / SAC code (e.g. 998713, 8471, etc.)
   quantity: number;
-  unit?: string; // e.g. Nos, Pcs, Set, Unit, Mtr
   rate: number; // Base rate (without GST / net selling rate)
   amount: number; // Base amount (quantity * rate)
-  purchaseCost?: number; // Cost price per unit without GST
-  purchaseCostWithGst?: number; // Cost price per unit WITH GST (Gross spare cost)
-  purchaseGstPercent?: number; // GST % paid on spare purchase (default 18 or item gstPercent)
-  totalPurchaseCost?: number; // Total spare purchase cost (base)
-  totalPurchaseCostWithGst?: number; // Total spare purchase cost WITH GST (quantity * purchaseCostWithGst)
-  itemProfit?: number; // Profit on this item: (totalWithGst - totalPurchaseCostWithGst)
-  isService?: boolean; // If true, full profit (spare cost = 0)
+  purchaseCost?: number; // Cost price per unit for profit calculation
+  isService?: boolean; // If true, full profit
   inventoryItemId?: string; // If selected from stock
   grossRate?: number; // Rate with GST (Rate inclusive of GST)
   gstPercent?: number; // GST % for this specific item (e.g. 0, 5, 12, 18, 28)
@@ -305,6 +301,10 @@ export interface Invoice {
   customerName: string;
   customerPhone: string;
   customerArea?: string;
+  customerGstin?: string; // Buyer GSTIN (B2B) - makes the bill a B2B supply in GSTR-1
+  placeOfSupply?: string; // 2-digit GST state code (33 = Tamil Nadu)
+  dueDate?: string; // Payment due date (YYYY-MM-DD); drives overdue / aging
+  appliedStock?: { itemId: string; qty: number }[]; // exact stock this bill took out (used to put it back)
   jobCardId?: string;
   date: string;
   items: InvoiceItem[];
@@ -324,13 +324,9 @@ export interface Invoice {
   paidAmount: number;
   notes?: string;
   // Profit & Loss Tracking
-  purchaseCostTotal?: number; // Total purchase cost of spare parts (base without GST)
-  totalPurchaseCostWithGst?: number; // Total purchase cost of spare parts WITH GST
-  totalSaleWithGst?: number; // Total sale amount inclusive of GST
+  purchaseCostTotal?: number; // Total purchase cost of spare parts
   manualExtraCost?: number; // Additional manual input expenses (travel, outside repair, etc.)
-  profitAmount?: number; // Calculated profit: (Sale Amount with GST - Total Spares Cost with GST - Extra Expenses)
-  taxableProfit?: number; // Book profit: (subtotal - purchaseCostTotal - manualExtraCost)
-  profitMarginPercent?: number; // Margin %
+  profitAmount?: number; // Calculated profit: (subtotal - purchaseCostTotal - manualExtraCost)
   status?: 'active' | 'cancelled';
   cancelledReason?: string;
   attachedBillImage?: string; // Scanned invoice / receipt photo
@@ -395,6 +391,9 @@ export interface AdminSettings {
   paddleOcrApiUrl?: string; // e.g. "http://localhost:8080/ocr" or "http://127.0.0.1:8000/ocr"
   paddleOcrToken?: string; // Optional bearer/auth token
   defaultOcrEngine?: 'paddleocr' | 'gemini'; // Default engine: paddleocr vs gemini
+  // Manual Quotation Module Settings
+  quotationBackgroundUrl?: string; // A4 Letterhead background image with SGS logo/header/footer
+  quotationTerms?: string; // Default terms for manual quotations
 }
 
 export interface Employee {
@@ -479,4 +478,149 @@ export interface WorkAllocation {
   notes?: string; // Work order instructions
   sharedViaWhatsAppAt?: string;
   status: 'assigned' | 'in_progress' | 'completed';
+}
+
+// ============================================================================
+// DEDICATED MANUAL QUOTATION MODULE (Independent of Stock & Billing)
+// ============================================================================
+
+export interface QuotationCategory {
+  id: string;
+  name: string;
+  isDeleted?: boolean;
+  createdAt: string;
+}
+
+export interface QuotationSubcategory {
+  id: string;
+  categoryId: string;
+  name: string;
+  isDeleted?: boolean;
+  createdAt: string;
+}
+
+export interface QuotationProduct {
+  id: string;
+  categoryId: string;
+  subcategoryId: string;
+  name: string;
+  brand: string; // custom-entry only, allow any brand name
+  modelNumber?: string;
+  description?: string;
+  warranty?: string;
+  unit: 'Nos'; // Nos only
+  latestQuotationPrice: number; // Manual entry, remembered across quotations
+  isDeleted?: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface QuotationItem {
+  id: string;
+  productId?: string;
+  description: string;
+  brand?: string;
+  modelNumber?: string;
+  warranty?: string;
+  quantity: number;
+  unit: string; // default "Nos"
+  unitPrice: number; // unit price
+  itemTotal: number; // Quantity * Unit Price
+  isService?: boolean; // for manual service rows like Installation
+}
+
+export interface QuotationModelInternalCharges {
+  installation: number;
+  helperFees: number;
+  commission: number;
+  margin: number;
+  petrolVisit: number;
+  customerReduction: number; // Optional manual negotiation deduction
+}
+
+export interface QuotationProposalModel {
+  name: string; // e.g. "Model 1" or custom title e.g. "4CH DVR + 2MP Camera Package"
+  subtitle?: string;
+  items: QuotationItem[];
+  internalCharges: QuotationModelInternalCharges;
+  totalItemRate: number; // Sum of all item totals (Quantity * Unit Price)
+  totalDisplayAmount: number; // Total Item Rate + Margin + Internal Charges
+  finalModelTotal: number; // Total Display Amount - Customer Reduction
+}
+
+export type QuotationStatus = 'Draft' | 'Sent' | 'Pending Decision' | 'Confirmed' | 'Rejected';
+export type CustomerModelSelection = 'Not Decided' | 'Model 1' | 'Model 2';
+
+export interface QuotationVersionSnapshot {
+  version: number;
+  updatedAt: string;
+  updatedBy?: string;
+  notes?: string;
+  model1: QuotationProposalModel;
+  model2: QuotationProposalModel;
+  termsAndConditions: string;
+  validityDays: number;
+  validUntil: string;
+  paymentDetails?: string;
+  advanceAmount?: number;
+  customerNotes?: string;
+  installationNotes?: string;
+}
+
+export interface ManualQuotation {
+  id: string;
+  quotationNumber: string; // Format: SGS/QTN/YYYY/001
+  date: string; // YYYY-MM-DD local
+  validityDays: number; // default: 7 days
+  validUntil: string; // date + 7 days
+  
+  // Originating reference
+  jobCardId?: string; // Reference to originating Job Card if launched from Job Card
+  
+  // Customer details (reusing existing Customer database)
+  customerId?: string;
+  customerName: string;
+  customerPhone: string;
+  customerAddress?: string;
+  customerEmail?: string;
+  
+  // Two Proposal Models in One Quotation
+  model1: QuotationProposalModel;
+  model2: QuotationProposalModel;
+  
+  // Status and Confirmation
+  status: QuotationStatus;
+  selectedModel: CustomerModelSelection;
+  confirmationDate?: string;
+  
+  // Terms & Notes
+  termsAndConditions: string;
+  paymentDetails?: string;
+  advanceAmount?: number;
+  customerNotes?: string;
+  installationNotes?: string;
+  
+  // Version History
+  version: number; // 1, 2, ...
+  history: QuotationVersionSnapshot[];
+  
+  isArchived?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ==========================================
+// PRICE CODE CALCULATOR (SECRET MAPPING)
+// ==========================================
+
+export type DigitChar = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9';
+
+export type PriceCodeMapping = Record<DigitChar, string>;
+
+export interface PriceCodeMappingVersion {
+  version: number;
+  mapping: PriceCodeMapping;
+  createdAt: string; // ISO date string
+  changedBy?: string;
+  notes?: string;
 }

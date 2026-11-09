@@ -21,10 +21,15 @@ import {
   FileText,
   Check,
   Layers,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Download,
+  Upload
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { InventoryItem, DeviceCategory, VendorBill } from '../types';
+import { inventoryToCsv, parseInventoryCsv } from '../utils/csv';
+import { todayLocal } from '../utils/accounting';
+import { encodeAmountToCode } from '../utils/priceCode';
 
 export const InventoryManager: React.FC = () => {
   const { 
@@ -37,6 +42,7 @@ export const InventoryManager: React.FC = () => {
     deleteInventoryItem,
     linkInventoryToVendorBill,
     recordStockMovement, 
+    activePriceCodeMapping,
     theme 
   } = useSgs();
   const isDark = theme === 'dark';
@@ -143,11 +149,21 @@ export const InventoryManager: React.FC = () => {
   const handleMoveSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!moveItemId) return;
+    const moveItem = inventory.find(i => i.id === moveItemId);
+    const qtyToMove = Number(moveQty) || 0;
+    if (qtyToMove <= 0) {
+      alert('Please enter a quantity greater than 0.');
+      return;
+    }
+    if (moveType === 'out' && moveItem && qtyToMove > moveItem.currentStock) {
+      alert(`Only ${moveItem.currentStock} in stock for "${moveItem.name}". You cannot take out ${qtyToMove}.`);
+      return;
+    }
 
     recordStockMovement(
       moveItemId, 
       moveType, 
-      Number(moveQty) || 1, 
+      qtyToMove, 
       moveReason || (moveType === 'in' ? 'Stock Inward' : 'Stock Outward'),
       moveJobId || undefined
     );
@@ -173,6 +189,46 @@ export const InventoryManager: React.FC = () => {
     setIsAddItemModalOpen(false);
     setNewItemName('');
     setNewItemSku('');
+  };
+
+  // ---- CSV export / import (bulk add parts, or keep a spreadsheet backup)
+  const csvInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleExportCsv = () => {
+    const blob = new Blob(['\uFEFF' + inventoryToCsv(inventory)], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `stock_${todayLocal()}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  const handleImportCsv = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const { rows, errors } = parseInventoryCsv(String(reader.result || ''));
+      const known = new Set(inventory.map(i => i.name.trim().toLowerCase()));
+      const fresh = rows.filter(r => !known.has(r.name.toLowerCase()));
+      const skipped = rows.length - fresh.length;
+      if (fresh.length === 0) {
+        alert(`Nothing new to add.${skipped ? `\n${skipped} item(s) already exist in stock.` : ''}${errors.length ? `\n\nProblems:\n${errors.slice(0, 8).join('\n')}` : ''}`);
+        return;
+      }
+      const msg = `Add ${fresh.length} new item(s) to stock?` +
+        (skipped ? `\n${skipped} already exist and will be skipped.` : '') +
+        (errors.length ? `\n\n${errors.length} row(s) have problems and are skipped:\n${errors.slice(0, 8).join('\n')}` : '');
+      if (!window.confirm(msg)) return;
+      fresh.forEach(r => addInventoryItem({
+        name: r.name, category: r.category as any, currentStock: r.currentStock, minStockAlert: r.minStockAlert,
+        unitCost: r.unitCost, unitPrice: r.unitPrice, hsnCode: r.hsnCode || undefined,
+        sku: r.sku || `SKU-${Date.now().toString().slice(-5)}${Math.floor(Math.random() * 90 + 10)}`,
+        location: r.location,
+      } as any));
+    };
+    reader.readAsText(file);
   };
 
   // Open Edit Item & Vendor Bill Origin Modal
@@ -351,6 +407,29 @@ export const InventoryManager: React.FC = () => {
           >
             <ArrowUpRight className="w-4 h-4" />
             <span>Stock Outward</span>
+          </button>
+          <input ref={csvInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleImportCsv} />
+          <button
+            type="button"
+            onClick={() => csvInputRef.current?.click()}
+            title="Add many parts at once from a CSV file (columns: Name, Category, HSN, Stock, Min Stock, Cost, Selling Price, SKU, Location)"
+            className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+              isDark ? 'text-slate-300 bg-slate-900 hover:bg-slate-800 border border-slate-700' : 'text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 shadow-xs'
+            }`}
+          >
+            <Upload className="w-4 h-4" />
+            <span>Import CSV</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleExportCsv}
+            title="Download the whole stock list as a spreadsheet"
+            className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
+              isDark ? 'text-slate-300 bg-slate-900 hover:bg-slate-800 border border-slate-700' : 'text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 shadow-xs'
+            }`}
+          >
+            <Download className="w-4 h-4" />
+            <span>Export CSV</span>
           </button>
           <button
             onClick={() => setIsAddItemModalOpen(true)}
@@ -756,8 +835,8 @@ export const InventoryManager: React.FC = () => {
                     <th className="py-3 px-4 font-mono">SKU / Code</th>
                     <th className="py-3 px-4">Location</th>
                     <th className="py-3 px-4 font-mono text-center">In Stock</th>
-                    <th className="py-3 px-4 font-mono">Unit Cost</th>
-                    <th className="py-3 px-4 font-mono">Selling Price</th>
+                    <th className="py-3 px-4 font-mono">Unit Cost <span className="font-sans font-normal text-[9px]">(no GST)</span></th>
+                    <th className="py-3 px-4 font-mono">Selling Price <span className="font-sans font-normal text-[9px]">(incl. GST & Code)</span></th>
                     <th className="py-3 px-4 text-right">Quick Action</th>
                   </tr>
                 </thead>
@@ -840,7 +919,17 @@ export const InventoryManager: React.FC = () => {
                         </td>
 
                         <td className={`py-3 px-4 font-mono font-semibold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                          ₹{item.unitPrice.toLocaleString('en-IN')}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span>₹{item.unitPrice.toLocaleString('en-IN')}</span>
+                            {item.unitPrice > 0 && (
+                              <span 
+                                className="font-mono text-[10px] font-extrabold px-1.5 py-0.2 rounded bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border border-blue-200 dark:border-blue-900 tracking-wider"
+                                title={`Secret Price Code: ${encodeAmountToCode(item.unitPrice, activePriceCodeMapping).code}`}
+                              >
+                                {encodeAmountToCode(item.unitPrice, activePriceCodeMapping).code}
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         <td className="py-3 px-4 text-right" onClick={(e) => e.stopPropagation()}>
@@ -1171,9 +1260,9 @@ export const InventoryManager: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Cost Price (₹)</label>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Cost Price (₹) - without GST</label>
                   <input
                     type="number"
                     value={newItemCost}
@@ -1184,7 +1273,7 @@ export const InventoryManager: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Selling Price (₹)</label>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Sale Rate (₹) - including GST</label>
                   <input
                     type="number"
                     value={newItemPrice}
@@ -1193,6 +1282,23 @@ export const InventoryManager: React.FC = () => {
                       isDark ? 'bg-slate-950 border border-slate-800 text-emerald-400' : 'bg-white border border-slate-300 text-emerald-700'
                     }`}
                   />
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Sticker Code (Secret)</label>
+                  <div className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs font-mono font-extrabold border min-h-[34px] ${
+                    newItemPrice > 0
+                      ? 'bg-blue-50/80 border-blue-200 text-blue-700 dark:bg-blue-950/40 dark:border-blue-900 dark:text-blue-300'
+                      : 'bg-slate-100 border-slate-200 text-slate-400 dark:bg-slate-950 dark:border-slate-800'
+                  }`}>
+                    <span className="tracking-widest text-sm">
+                      {newItemPrice > 0 ? (encodeAmountToCode(newItemPrice, activePriceCodeMapping).code || '—') : '—'}
+                    </span>
+                    {newItemPrice > 0 && encodeAmountToCode(newItemPrice, activePriceCodeMapping).code && (
+                      <span className="text-[10px] font-normal text-slate-400 font-sans">
+                        Pen on item
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1404,7 +1510,7 @@ export const InventoryManager: React.FC = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                        Unit Cost Price (₹) [Purchase Rate]
+                        Unit Cost Price (₹) [Purchase Rate, without GST]
                       </label>
                       <input
                         type="number"
@@ -1419,7 +1525,7 @@ export const InventoryManager: React.FC = () => {
 
                     <div>
                       <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                        Unit Selling Price (₹) [Customer Rate]
+                        Sale Rate / Unit Price (₹) [including GST]
                       </label>
                       <input
                         type="number"
@@ -1431,17 +1537,40 @@ export const InventoryManager: React.FC = () => {
                         }`}
                       />
                     </div>
+
+                    <div>
+                      <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                        Sticker Code (Secret)
+                      </label>
+                      <div className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs font-mono font-extrabold border min-h-[34px] ${
+                        editForm.unitPrice > 0
+                          ? 'bg-blue-50/80 border-blue-200 text-blue-700 dark:bg-blue-950/40 dark:border-blue-900 dark:text-blue-300'
+                          : 'bg-slate-100 border-slate-200 text-slate-400 dark:bg-slate-950 dark:border-slate-800'
+                      }`}>
+                        <span className="tracking-widest text-sm">
+                          {editForm.unitPrice > 0 ? (encodeAmountToCode(editForm.unitPrice, activePriceCodeMapping).code || '—') : '—'}
+                        </span>
+                        {editForm.unitPrice > 0 && encodeAmountToCode(editForm.unitPrice, activePriceCodeMapping).code && (
+                          <span className="text-[10px] font-normal text-slate-400 font-sans">
+                            Pen on item
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   {/* Margin calculation card */}
                   {(() => {
-                    const margin = editForm.unitPrice - editForm.unitCost;
+                    // selling price includes GST, cost does not -> compare like with like
+                    const gstForMargin = 18;
+                    const priceExGst = editForm.unitPrice / (1 + gstForMargin / 100);
+                    const margin = Number((priceExGst - editForm.unitCost).toFixed(2));
                     const markupPct = editForm.unitCost > 0 ? Math.round((margin / editForm.unitCost) * 100) : 0;
                     return (
                       <div className={`p-3 rounded-xl border flex items-center justify-between text-xs font-mono ${
                         isDark ? 'bg-slate-950/50 border-slate-800' : 'bg-emerald-50/50 border-emerald-200'
                       }`}>
-                        <span className="text-slate-400 font-sans">Gross Profit Margin per Unit:</span>
+                        <span className="text-slate-400 font-sans">Profit per Unit (after removing 18% GST from price):</span>
                         <div className="flex items-center gap-3">
                           <span className={`font-bold ${margin >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
                             ₹{margin.toLocaleString('en-IN')} Profit

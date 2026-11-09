@@ -1,3 +1,4 @@
+import { todayLocal } from '../utils/accounting';
 import React, { useState, useMemo } from 'react';
 import { 
   Users, 
@@ -254,7 +255,7 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
     giftStatus: 'planned' | 'handed_over' | 'none';
     commissionRatePercent: number;
   }>({
-    lastMeetingDate: new Date().toISOString().split('T')[0],
+    lastMeetingDate: todayLocal(),
     nextMeetingPlan: '',
     meetingNotes: '',
     giftDetails: '',
@@ -466,7 +467,7 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
   const handleOpenMeetingModal = (lead: LeadSource) => {
     setMeetingModalLead(lead);
     setMeetingForm({
-      lastMeetingDate: lead.lastMeetingDate || new Date().toISOString().split('T')[0],
+      lastMeetingDate: lead.lastMeetingDate || todayLocal(),
       nextMeetingPlan: lead.nextMeetingPlan || '',
       meetingNotes: lead.meetingNotes || '',
       giftDetails: lead.giftDetails || '',
@@ -557,7 +558,7 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
       toggleLeadSyncedContacts(lead.id, true);
     });
 
-    downloadVCard(`SGS-All-Leads-GoogleContacts-${new Date().toISOString().split('T')[0]}`, masterVcf);
+    downloadVCard(`SGS-All-Leads-GoogleContacts-${todayLocal()}`, masterVcf);
     showLeadToast(`Master Google Contacts file (.vcf) generated for ${leadSources.length} lead persons!`);
   };
 

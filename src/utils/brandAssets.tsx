@@ -349,3 +349,88 @@ export const PandiyanStamp: React.FC<{ url?: string; className?: string }> = ({ 
     />
   );
 };
+
+/**
+ * Default SGS Quotation A4 Letterhead Background (Vector SVG Data URL)
+ * Contains Company Name, Logo, Address, and Contact Details as requested.
+ * Can be overridden in CRM Admin Settings with user-uploaded image.
+ */
+export const DEFAULT_SGS_QUOTATION_LETTERHEAD_BG = `data:image/svg+xml;utf8,${encodeURIComponent(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 794 1123" width="794" height="1123">
+  <defs>
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0b1b3d" />
+      <stop offset="60%" stop-color="#1e3a8a" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="goldAccent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="50%" stop-color="#60a5fa" />
+      <stop offset="100%" stop-color="#38bdf8" />
+    </linearGradient>
+    <linearGradient id="footerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0b1b3d" />
+      <stop offset="100%" stop-color="#1e3a8a" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background Base Paper -->
+  <rect width="794" height="1123" fill="#ffffff" />
+
+  <!-- Outer Double Framing Border -->
+  <rect x="20" y="20" width="754" height="1083" fill="none" stroke="#e2e8f0" stroke-width="2" rx="6" />
+  <rect x="25" y="25" width="744" height="1073" fill="none" stroke="#f1f5f9" stroke-width="1" rx="4" />
+
+  <!-- Top Geometric Header Wave & Banner -->
+  <path d="M 20,20 L 774,20 L 774,135 L 560,135 L 510,148 L 20,148 Z" fill="url(#headerGrad)" />
+  <rect x="20" y="148" width="754" height="4" fill="url(#goldAccent)" />
+  
+  <!-- Subtle Header Tech Accent Lines -->
+  <line x1="20" y1="35" x2="480" y2="35" stroke="#38bdf8" stroke-width="0.8" opacity="0.35" />
+  <line x1="560" y1="120" x2="774" y2="120" stroke="#60a5fa" stroke-width="0.8" opacity="0.4" />
+
+  <!-- SGS Logo Icon & Monogram inside Header -->
+  <g transform="translate(48, 38)">
+    <polygon points="35,3 63,19 63,51 35,67 7,51 7,19" fill="#0284c7" stroke="#38bdf8" stroke-width="2.5" />
+    <polygon points="35,10 56,22 56,48 35,59 14,48 14,22" fill="#0b1b3d" opacity="0.5" />
+    <circle cx="35" cy="35" r="10" fill="#ffffff" />
+    <text x="35" y="39" font-family="system-ui, -apple-system, sans-serif" font-size="9" font-weight="900" fill="#0b1b3d" text-anchor="middle">SGS</text>
+  </g>
+
+  <!-- Header Text: Company Name & Brand Identity -->
+  <g transform="translate(132, 42)">
+    <text x="0" y="26" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="900" fill="#ffffff" letter-spacing="1.5">SPIDER GRID SOLUTIONS</text>
+    <text x="0" y="44" font-family="system-ui, -apple-system, sans-serif" font-size="9.5" font-weight="700" fill="#38bdf8" letter-spacing="2.2">CCTV SURVEILLANCE · IT NETWORKING · LAPTOP &amp; CHIP-LEVEL SERVICE</text>
+    <text x="0" y="58" font-family="system-ui, -apple-system, sans-serif" font-size="8.5" font-weight="600" fill="#93c5fd" letter-spacing="0.8">Sales, Design, Installation, Commissioning &amp; Annual Maintenance</text>
+  </g>
+
+  <!-- Right Header: Location & Contact -->
+  <g transform="translate(565, 42)" text-anchor="start">
+    <rect x="0" y="0" width="185" height="74" rx="4" fill="#0b1b3d" fill-opacity="0.45" stroke="#38bdf8" stroke-width="1" />
+    <text x="12" y="19" font-family="system-ui, -apple-system, sans-serif" font-size="9" font-weight="700" fill="#ffffff">📍 MADURAI, TAMIL NADU</text>
+    <text x="12" y="34" font-family="system-ui, -apple-system, sans-serif" font-size="8.5" font-weight="500" fill="#e0f2fe">Shop No. 14, Simmakkal Main Rd</text>
+    <text x="12" y="48" font-family="system-ui, -apple-system, sans-serif" font-size="8.5" font-weight="700" fill="#38bdf8">📞 Ph: +91 9677776001</text>
+    <text x="12" y="62" font-family="system-ui, -apple-system, sans-serif" font-size="7.5" font-weight="500" fill="#bae6fd">✉ spidergridsolutions@gmail.com</text>
+  </g>
+
+  <!-- Central Watermark Emblem (Super-light opacity so all text is 100% readable) -->
+  <g transform="translate(397, 600)" opacity="0.045" text-anchor="middle">
+    <polygon points="0,-160 138,-80 138,80 0,160 -138,80 -138,-80" fill="none" stroke="#0284c7" stroke-width="16" />
+    <circle cx="0" cy="0" r="70" fill="none" stroke="#1e3a8a" stroke-width="12" />
+    <text x="0" y="24" font-family="system-ui, -apple-system, sans-serif" font-size="64" font-weight="900" fill="#0f172a">SGS</text>
+  </g>
+
+  <!-- Bottom Tech Footer Bar -->
+  <rect x="20" y="1065" width="754" height="3" fill="url(#goldAccent)" />
+  <path d="M 20,1068 L 774,1068 L 774,1103 L 20,1103 Z" fill="url(#footerGrad)" />
+
+  <!-- Footer Contact & Certification -->
+  <g transform="translate(48, 1088)">
+    <text x="0" y="0" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="700" fill="#ffffff" letter-spacing="1">SPIDER GRID SOLUTIONS · MADURAI</text>
+    <text x="210" y="0" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="500" fill="#93c5fd">·</text>
+    <text x="225" y="0" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="500" fill="#e0f2fe">Authorized Security &amp; Surveillance Systems Provider</text>
+    <text x="698" y="0" font-family="system-ui, -apple-system, sans-serif" font-size="8" font-weight="700" fill="#38bdf8" text-anchor="end">Page 1</text>
+  </g>
+</svg>
+`)}`;
+

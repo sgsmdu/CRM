@@ -1,3 +1,4 @@
+import { todayLocal } from '../utils/accounting';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   Laptop, 
@@ -63,6 +64,7 @@ interface JobCardManagerProps {
   selectedJobForWhatsApp: JobCard | null;
   setSelectedJobForWhatsApp: (job: JobCard | null) => void;
   onNavigateToBilling?: (jobId?: string) => void;
+  onNavigateToQuotation?: (job: JobCard) => void;
   onNavigateToAllocation?: () => void;
   initialJobForDetails?: JobCard | null;
   onClearInitialJobForDetails?: () => void;
@@ -76,6 +78,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
   selectedJobForWhatsApp,
   setSelectedJobForWhatsApp,
   onNavigateToBilling,
+  onNavigateToQuotation,
   onNavigateToAllocation,
   initialJobForDetails,
   onClearInitialJobForDetails,
@@ -237,7 +240,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
   const [deviceBrand, setDeviceBrand] = useState('');
   const [serialNumber, setSerialNumber] = useState('');
   const [issueDescription, setIssueDescription] = useState('');
-  const [intakeDate, setIntakeDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [intakeDate, setIntakeDate] = useState(() => todayLocal());
   const [estimatedDelivery, setEstimatedDelivery] = useState('');
   const [estimatedCost, setEstimatedCost] = useState<number>(0);
   const [technicianNotes, setTechnicianNotes] = useState('');
@@ -347,7 +350,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
     setWhatsAppTab('welcome');
   };
 
-  const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const todayStr = useMemo(() => todayLocal(), []);
 
   // Filtered and Sorted Job Cards
   const filteredJobs = useMemo(() => {
@@ -1372,6 +1375,23 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                         <FileText className="w-3 h-3" />
                         <span>🧾 Bill Now</span>
                       </button>
+
+                      {/* Manual Quote */}
+                      {onNavigateToQuotation && (
+                        <button
+                          type="button"
+                          onClick={() => onNavigateToQuotation(job)}
+                          className={`px-2.5 py-0.5 text-[11px] font-bold rounded-md border transition-all cursor-pointer flex items-center gap-1 ${
+                            isDark 
+                              ? 'bg-amber-950/50 border-amber-800 text-amber-300 hover:bg-amber-700 hover:text-white' 
+                              : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-600 hover:text-white'
+                          }`}
+                          title="Generate Comparative Manual Quotation (Model 1 & 2) for this Job Card"
+                        >
+                          <FileText className="w-3 h-3 text-amber-500" />
+                          <span>📋 Manual Quote</span>
+                        </button>
+                      )}
 
                       {/* Pickup Note */}
                       <button
@@ -2685,6 +2705,24 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                   >
                     <FileText className="w-3.5 h-3.5" />
                     <span>Open in Billing</span>
+                  </button>
+                )}
+
+                {/* Link to Manual Quotation */}
+                {onNavigateToQuotation && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDetailedJob(null);
+                      onNavigateToQuotation(job);
+                    }}
+                    className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer flex items-center gap-1 shrink-0 ${
+                      isDark ? 'bg-amber-950/50 border-amber-800 text-amber-300 hover:bg-amber-700 hover:text-white' : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-600 hover:text-white'
+                    }`}
+                    title="Generate comparative quotation proposal (Model 1 & 2) for this job"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Manual Quote</span>
                   </button>
                 )}
               </div>

@@ -14,6 +14,8 @@ import { BillingCashFlow } from './components/BillingCashFlow';
 import { ReportsManager } from './components/ReportsManager';
 import { EmployeeManager } from './components/EmployeeManager';
 import { AdminDashboard } from './components/AdminDashboard';
+import { ManualQuotationManager } from './components/ManualQuotationManager';
+import { PriceCodeCalculator } from './components/PriceCodeCalculator';
 import { GoogleSheetsModal } from './components/GoogleSheetsModal';
 import { GoogleContactsModal } from './components/GoogleContactsModal';
 import { useSgs } from './context/SgsContext';
@@ -38,6 +40,7 @@ function SgsAppContent() {
   const [selectedJobForWhatsApp, setSelectedJobForWhatsApp] = useState<JobCard | null>(null);
   const [selectedJobForDetails, setSelectedJobForDetails] = useState<JobCard | null>(null);
   const [billingInitialJobId, setBillingInitialJobId] = useState<string | null>(null);
+  const [quotationInitialJob, setQuotationInitialJob] = useState<JobCard | null>(null);
 
   const handleOpenNewJobWithCustomer = (customer: Customer) => {
     setPreselectedCustomer(customer);
@@ -138,9 +141,20 @@ function SgsAppContent() {
               setBillingInitialJobId(jobId || null);
               setActiveTab('billing');
             }}
+            onNavigateToQuotation={(job) => {
+              setQuotationInitialJob(job);
+              setActiveTab('quotations');
+            }}
             onNavigateToAllocation={() => setActiveTab('allocation')}
             initialJobForDetails={selectedJobForDetails}
             onClearInitialJobForDetails={() => setSelectedJobForDetails(null)}
+          />
+        )}
+
+        {activeTab === 'quotations' && (
+          <ManualQuotationManager
+            initialJobCard={quotationInitialJob}
+            onClearInitialJobCard={() => setQuotationInitialJob(null)}
           />
         )}
 
@@ -155,6 +169,10 @@ function SgsAppContent() {
 
         {activeTab === 'inventory' && (
           <InventoryManager />
+        )}
+
+        {activeTab === 'price_calculator' && (
+          <PriceCodeCalculator />
         )}
 
         {activeTab === 'vendors' && (

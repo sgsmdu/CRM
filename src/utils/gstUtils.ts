@@ -49,7 +49,7 @@ export function calculateFromInclusiveRate(
   discount = 0,
   isInterState = false
 ): ItemGstCalculation {
-  const q = Math.max(1, Number(quantity) || 1);
+  const q = Number(quantity) > 0 ? Number(quantity) : 1;
   const gross = Math.max(0, Number(grossRate) || 0);
   const pct = Math.max(0, Number(gstPercent) || 0);
   const disc = Math.max(0, Number(discount) || 0);
@@ -85,6 +85,7 @@ export function calculateFromInclusiveRate(
   const totalGst = Math.round((totalWithGst - taxableAmount) * 100) / 100;
 
   const halfGst = isInterState ? 0 : Math.round((totalGst / 2) * 100) / 100;
+  const otherHalf = isInterState ? 0 : Math.round((totalGst - halfGst) * 100) / 100; // CGST + SGST always equals total GST
   const igst = isInterState ? totalGst : 0;
 
   return {
@@ -97,7 +98,7 @@ export function calculateFromInclusiveRate(
     totalGst,
     totalWithGst,
     cgst: halfGst,
-    sgst: halfGst,
+    sgst: otherHalf,
     igst,
     isInterState,
   };
@@ -114,7 +115,7 @@ export function calculateFromBaseRate(
   discount = 0,
   isInterState = false
 ): ItemGstCalculation {
-  const q = Math.max(1, Number(quantity) || 1);
+  const q = Number(quantity) > 0 ? Number(quantity) : 1;
   const base = Math.max(0, Number(baseRate) || 0);
   const pct = Math.max(0, Number(gstPercent) || 0);
   const disc = Math.max(0, Number(discount) || 0);
@@ -148,6 +149,7 @@ export function calculateFromBaseRate(
   const totalWithGst = Math.round((taxableAmount + totalGst) * 100) / 100;
 
   const halfGst = isInterState ? 0 : Math.round((totalGst / 2) * 100) / 100;
+  const otherHalf = isInterState ? 0 : Math.round((totalGst - halfGst) * 100) / 100; // CGST + SGST always equals total GST
   const igst = isInterState ? totalGst : 0;
 
   return {
@@ -160,7 +162,7 @@ export function calculateFromBaseRate(
     totalGst,
     totalWithGst,
     cgst: halfGst,
-    sgst: halfGst,
+    sgst: otherHalf,
     igst,
     isInterState,
   };
@@ -169,116 +171,37 @@ export function calculateFromBaseRate(
 export interface InvoiceLineItemInput {
   description: string;
   quantity: number;
-  rate: number;                 // Base rate (without GST)
-  grossRate?: number;           // Inclusive rate (with GST)
-  gstPercent: number;           // 0, 5, 12, 18, 28
-  purchaseCost?: number;        // Unit base cost without GST
-  purchaseCostWithGst?: number; // Unit cost WITH GST
-  purchaseGstPercent?: number;  // GST % paid on purchase (defaults to 18 or gstPercent)
-  isService?: boolean;          // True if service labor (100% profit)
-  discount?: number;            // Line discount in ₹
+  rate: number;             // Base rate (without GST)
+  grossRate?: number;       // Inclusive rate (with GST)
+  gstPercent: number;       // 0, 5, 12, 18, 28
+  purchaseCost?: number;    // Unit cost for profit calculation
+  isService?: boolean;      // True if service labor (100% profit)
+  discount?: number;        // Line discount in ₹
 }
 
 export interface InvoiceCalculationSummary {
-  subtotal: number;                 // Total taxable value of all items
-  totalItemDiscount: number;        // Sum of line item discounts
-  invoiceDiscount: number;          // Additional invoice-level discount
-  netTaxableAmount: number;         // Final taxable value
-  totalCgst: number;                // Central GST
-  totalSgst: number;                // State GST
-  totalIgst: number;                // Integrated GST
-  totalTax: number;                 // Total GST (CGST + SGST + IGST)
-  totalCostOfGoods: number;         // Total purchase cost of items (base)
-  totalCostOfGoodsWithGst: number;  // Total item cost WITH GST (spares cost)
-  manualExtraCost: number;          // Extra outside expenses
-  grossProfit: number;              // Total Sale with GST - Total COGS with GST
-  netProfit: number;                // (Sale with GST - Buy with GST - manualExtraCost)
-  taxableProfit: number;            // Taxable Revenue - Taxable COGS - manualExtraCost
-  profitMarginPercent: number;      // (Net profit / Grand Total) * 100
-  totalLinesWithGst: number;        // Sum of line item totals with GST
-  unroundedTotal: number;           // totalLinesWithGst - invoiceDiscount
-  roundOff: number;                 // Difference to round to nearest ₹
-  grandTotal: number;               // Final payable amount
+  subtotal: number;              // Total taxable value of all items
+  totalItemDiscount: number;     // Sum of line item discounts
+  invoiceDiscount: number;       // Additional invoice-level discount
+  netTaxableAmount: number;      // Final taxable value
+  totalCgst: number;             // Central GST
+  totalSgst: number;             // State GST
+  totalIgst: number;             // Integrated GST
+  totalTax: number;              // Total GST (CGST + SGST + IGST)
+  totalCostOfGoods: number;      // Total purchase cost of items
+  manualExtraCost: number;       // Extra outside expenses
+  grossProfit: number;           // Net taxable - Total COGS
+  netProfit: number;             // Gross profit - manualExtraCost
+  profitMarginPercent: number;   // (Net profit / Net taxable) * 100
+  unroundedTotal: number;        // Net taxable + Total tax
+  roundOff: number;              // Difference to round to nearest ₹
+  grandTotal: number;            // Final payable amount
   isInterState: boolean;
 }
 
 /**
- * Suggests standard GST rate for a given HSN or SAC code.
- */
-export function suggestGstRate(hsnCode?: string): number | null {
-  if (!hsnCode) return null;
-  const clean = hsnCode.trim().replace(/\D/g, '');
-  if (clean.length < 4) return null;
-  
-  const map: Record<string, number> = {
-    '9987': 18,
-    '998713': 18,
-    '9983': 18,
-    '8471': 18,
-    '8473': 18,
-    '8504': 18,
-    '8528': 18, // IT Monitors are 18% (Consumer TVs > 32" are 28%)
-    '8443': 18,
-    '8525': 18,
-    '8544': 18,
-    '8517': 18,
-    '8523': 18,
-    '8536': 18,
-  };
-
-  if (map[clean] !== undefined) return map[clean];
-  const prefix4 = clean.substring(0, 4);
-  if (map[prefix4] !== undefined) return map[prefix4];
-  return null;
-}
-
-/**
- * Converts numeric amount to Indian English words (Rupees & Paise).
- */
-export function numberToWordsIndian(num: number): string {
-  if (!num || isNaN(num) || num <= 0) return 'Zero Rupees Only';
-  const a = ['', 'One ', 'Two ', 'Three ', 'Four ', 'Five ', 'Six ', 'Seven ', 'Eight ', 'Nine ', 'Ten ', 'Eleven ', 'Twelve ', 'Thirteen ', 'Fourteen ', 'Fifteen ', 'Sixteen ', 'Seventeen ', 'Eighteen ', 'Nineteen '];
-  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
-  
-  const convertToWords = (n: number): string => {
-    if (n < 20) return a[n];
-    return b[Math.floor(n / 10)] + (n % 10 !== 0 ? ' ' + a[n % 10] : '');
-  };
-
-  const getIndianFormatString = (n: number): string => {
-    let res = '';
-    const crore = Math.floor(n / 10000000);
-    n -= crore * 10000000;
-    const lakh = Math.floor(n / 100000);
-    n -= lakh * 100000;
-    const thousand = Math.floor(n / 1000);
-    n -= thousand * 1000;
-    const hundred = Math.floor(n / 100);
-    n -= hundred * 100;
-
-    if (crore > 99) res += getIndianFormatString(crore) + ' Crore ';
-    else if (crore > 0) res += convertToWords(crore) + ' Crore ';
-    if (lakh > 0) res += convertToWords(lakh) + ' Lakh ';
-    if (thousand > 0) res += convertToWords(thousand) + ' Thousand ';
-    if (hundred > 0) res += convertToWords(hundred) + ' Hundred ';
-    if (n > 0) res += (res !== '' ? 'and ' : '') + convertToWords(n);
-    return res.trim();
-  };
-
-  const roundedNum = Math.round(num * 100) / 100;
-  const rupees = Math.floor(roundedNum);
-  const paise = Math.round((roundedNum - rupees) * 100);
-  let result = getIndianFormatString(rupees) + ' Rupees';
-  if (paise > 0) {
-    result += ' and ' + getIndianFormatString(paise) + ' Paise';
-  }
-  return (result + ' Only').replace(/\s+/g, ' ');
-}
-
-/**
  * Calculates complete, end-to-end invoice totals, taxes, round-off, and profit.
- * Profit is calculated as the authentic difference between total sale amount with GST
- * and total spare/buy cost with GST (as well as book taxable profit).
+ * Excludes GST from profit calculations so business owners see authentic margins.
  */
 export function calculateInvoiceSummary(
   items: InvoiceLineItemInput[],
@@ -306,50 +229,26 @@ export function calculateInvoiceSummary(
   let totalSgst = 0;
   let totalIgst = 0;
   let totalTax = 0;
-  let totalLinesWithGst = 0;
   let totalCostOfGoods = 0;
-  let totalCostOfGoodsWithGst = 0;
 
   items.forEach(it => {
-    const qty = Math.max(1, Number(it.quantity) || 1);
-    const pct = isNonGstFirm ? 0 : Math.max(0, Number(it.gstPercent) || 0);
-    const lineDisc = Math.max(0, Number(it.discount) || 0);
-    totalItemDiscount += lineDisc;
+    const qty = Number(it.quantity) > 0 ? Number(it.quantity) : 1;
+    // cost counts for services too when entered (consumables, outside labour)
+    const pCost = Math.max(0, Number(it.purchaseCost) || 0);
+    totalCostOfGoods += pCost * qty;
 
-    // 1. Spares / Purchase Cost Calculation (with GST)
-    if (it.isService) {
-      // Services have 0 purchase cost -> 100% margin
-    } else {
-      const pCostBase = Math.max(0, Number(it.purchaseCost) || 0);
-      const pCostGross = Math.max(0, Number(it.purchaseCostWithGst) || 0);
-      const pGst = it.purchaseGstPercent !== undefined ? Number(it.purchaseGstPercent) : pct;
-
-      let unitCostBase = pCostBase;
-      let unitCostGross = pCostGross;
-
-      if (unitCostGross > 0 && unitCostBase === 0) {
-        unitCostBase = pGst > 0 ? Math.round((unitCostGross / (1 + pGst / 100)) * 100) / 100 : unitCostGross;
-      } else if (unitCostBase > 0 && unitCostGross === 0) {
-        unitCostGross = pGst > 0 ? Math.round((unitCostBase * (1 + pGst / 100)) * 100) / 100 : unitCostBase;
-      } else if (unitCostGross === 0 && unitCostBase === 0) {
-        unitCostBase = 0;
-        unitCostGross = 0;
-      }
-
-      totalCostOfGoods += Math.round(unitCostBase * qty * 100) / 100;
-      totalCostOfGoodsWithGst += Math.round(unitCostGross * qty * 100) / 100;
-    }
-
-    // 2. Line Item Sale & Tax Calculation
     if (isNonGstFirm) {
       const rate = Math.max(0, Number(it.grossRate !== undefined ? it.grossRate : it.rate) || 0);
-      const lineTotal = Math.max(0, Math.round(((rate * qty) - lineDisc) * 100) / 100);
+      const lineTotal = rate * qty;
       totalTaxable += lineTotal;
-      totalLinesWithGst += lineTotal;
       return;
     }
 
-    // GST Firm: SGS
+    const pct = Math.max(0, Number(it.gstPercent) || 0);
+    const lineDisc = Math.max(0, Number(it.discount) || 0);
+    totalItemDiscount += lineDisc;
+
+    // Use baseRate if available, else derive from grossRate
     let itemCalc: ItemGstCalculation;
     if (it.grossRate !== undefined && it.grossRate > 0) {
       itemCalc = calculateFromInclusiveRate(it.grossRate, pct, qty, lineDisc, isInterState);
@@ -362,62 +261,62 @@ export function calculateInvoiceSummary(
     totalSgst += itemCalc.sgst;
     totalIgst += itemCalc.igst;
     totalTax += itemCalc.totalGst;
-    totalLinesWithGst += itemCalc.totalWithGst;
   });
 
-  totalTaxable = Math.round(totalTaxable * 100) / 100;
-  totalCgst = Math.round(totalCgst * 100) / 100;
-  totalSgst = Math.round(totalSgst * 100) / 100;
-  totalIgst = Math.round(totalIgst * 100) / 100;
-  totalTax = isNonGstFirm ? 0 : (isInterState ? totalIgst : Math.round((totalCgst + totalSgst) * 100) / 100);
-  totalLinesWithGst = Math.round(totalLinesWithGst * 100) / 100;
-  totalCostOfGoods = Math.round(totalCostOfGoods * 100) / 100;
-  totalCostOfGoodsWithGst = Math.round(totalCostOfGoodsWithGst * 100) / 100;
+  const netTaxableAmount = Math.max(0, totalTaxable - invoiceDiscount);
 
-  const validInvDiscount = Math.max(0, Number(invoiceDiscount) || 0);
-  const netTaxableAmount = Math.max(0, Math.round((totalTaxable - validInvDiscount) * 100) / 100);
+  // If there's an invoice-level discount on a GST invoice, adjust taxes proportionally
+  let finalCgst = totalCgst;
+  let finalSgst = totalSgst;
+  let finalIgst = totalIgst;
+  let finalTotalTax = totalTax;
 
-  // Grand Total calculation:
-  // In standard retail/service billing (like Free GST Billing Software),
-  // total lines with GST minus invoice discount gives unrounded payable amount.
-  const unroundedTotal = Math.max(0, Math.round((totalLinesWithGst - validInvDiscount) * 100) / 100);
+  if (!isNonGstFirm && invoiceDiscount > 0 && totalTaxable > 0) {
+    const ratio = netTaxableAmount / totalTaxable;
+    finalCgst = Math.round(totalCgst * ratio * 100) / 100;
+    finalSgst = Math.round(totalSgst * ratio * 100) / 100;
+    finalIgst = Math.round(totalIgst * ratio * 100) / 100;
+    finalTotalTax = isInterState ? finalIgst : (finalCgst + finalSgst);
+  }
+
+  if (isNonGstFirm) {
+    finalCgst = 0;
+    finalSgst = 0;
+    finalIgst = 0;
+    finalTotalTax = 0;
+  }
+
+  const unroundedTotal = Number((netTaxableAmount + finalTotalTax).toFixed(2));
   
   let roundOff = Number(roundOffAdjustment.toFixed(2));
   if (autoRoundOff) {
     const target = Math.round(unroundedTotal);
-    roundOff = Math.round((target - unroundedTotal) * 100) / 100;
+    roundOff = Number((target - unroundedTotal).toFixed(2));
   }
 
-  const grandTotal = Math.max(0, Math.round((unroundedTotal + roundOff) * 100) / 100);
+  const grandTotal = Math.max(0, Number((unroundedTotal + roundOff).toFixed(2)));
 
-  // Profit calculation:
-  // User Requirement: "profit cost is different between item buy with GST and sale amount with GST"
-  // Cash profit = (Sale Amount with GST) - (Total Spares Buy Cost with GST) - (Extra Manual Expenses)
-  const validExtraCost = Math.max(0, Number(manualExtraCost) || 0);
-  const grossProfit = Math.round((grandTotal - totalCostOfGoodsWithGst) * 100) / 100;
-  const netProfit = Math.round((grossProfit - validExtraCost) * 100) / 100;
-  const taxableProfit = Math.round((netTaxableAmount - totalCostOfGoods - validExtraCost) * 100) / 100;
-  const profitMarginPercent = grandTotal > 0 
-    ? Number(((netProfit / grandTotal) * 100).toFixed(1)) 
+  // Profit calculation: (Taxable Revenue - Cost of Goods Sold - Manual Extra Costs)
+  const grossProfit = Number((netTaxableAmount - totalCostOfGoods).toFixed(2));
+  const netProfit = Number((grossProfit - manualExtraCost).toFixed(2));
+  const profitMarginPercent = netTaxableAmount > 0 
+    ? Number(((netProfit / netTaxableAmount) * 100).toFixed(1)) 
     : 0;
 
   return {
-    subtotal: totalTaxable,
-    totalItemDiscount: Math.round(totalItemDiscount * 100) / 100,
-    invoiceDiscount: validInvDiscount,
-    netTaxableAmount,
-    totalCgst,
-    totalSgst,
-    totalIgst,
-    totalTax,
-    totalCostOfGoods,
-    totalCostOfGoodsWithGst,
-    manualExtraCost: validExtraCost,
+    subtotal: Number(totalTaxable.toFixed(2)),
+    totalItemDiscount: Number(totalItemDiscount.toFixed(2)),
+    invoiceDiscount: Number(invoiceDiscount.toFixed(2)),
+    netTaxableAmount: Number(netTaxableAmount.toFixed(2)),
+    totalCgst: Number(finalCgst.toFixed(2)),
+    totalSgst: Number(finalSgst.toFixed(2)),
+    totalIgst: Number(finalIgst.toFixed(2)),
+    totalTax: Number(finalTotalTax.toFixed(2)),
+    totalCostOfGoods: Number(totalCostOfGoods.toFixed(2)),
+    manualExtraCost: Number(manualExtraCost.toFixed(2)),
     grossProfit,
     netProfit,
-    taxableProfit,
     profitMarginPercent,
-    totalLinesWithGst,
     unroundedTotal,
     roundOff,
     grandTotal,

@@ -1,3 +1,4 @@
+import { todayLocal } from './accounting.ts';
 /**
  * Layout-aware invoice parser for PaddleOCR 3.x output.
  *
@@ -411,7 +412,7 @@ export function parseInvoiceLayout(
   if (!invoiceDate) {
     for (const r of scanRows) { const d = parseDate(r.text); if (d) { invoiceDate = d; break; } }
   }
-  if (!invoiceDate) { invoiceDate = new Date().toISOString().split('T')[0]; warnings.push('Invoice date not read - please check the date'); }
+  if (!invoiceDate) { invoiceDate = todayLocal(); warnings.push('Invoice date not read - please check the date'); }
   if (!invoiceNumber) warnings.push('Invoice number not read - please type it');
 
   // totals
