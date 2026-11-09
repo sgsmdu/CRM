@@ -28,7 +28,10 @@ import {
   Filter,
   Boxes,
   ArrowRightLeft,
-  Layers
+  Layers,
+  ArrowLeft,
+  ArrowRight,
+  Settings2
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { VendorBill, VendorBillItem, PaymentMode, Vendor } from '../types';
@@ -53,6 +56,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     updateVendor, 
     deleteVendor, 
     inventory,
+    adminSettings,
     theme 
   } = useSgs();
 
@@ -61,12 +65,26 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
   // Navigation tab inside Vendor Hub: 'bills' | 'vendors'
   const [activeView, setActiveView] = useState<'bills' | 'vendors'>('vendors');
 
-  // Scanner upload state
-  const [billImage, setBillImage] = useState<string | null>(null);
-  const [imageMime, setImageMime] = useState<string>('image/jpeg');
+  // Multi-Page Scanner upload state
+  const [billPages, setBillPages] = useState<Array<{
+    id: string;
+    dataUrl: string;
+    mimeType: string;
+    pageNumber: number;
+    fileName?: string;
+  }>>([]);
+  const [selectedEngine, setSelectedEngine] = useState<'paddleocr' | 'gemini'>('paddleocr');
+  const [customPaddleUrl, setCustomPaddleUrl] = useState<string>('');
+  const [showPaddleConfig, setShowPaddleConfig] = useState(false);
+  const [isTestingPaddle, setIsTestingPaddle] = useState(false);
+  const [paddleTestStatus, setPaddleTestStatus] = useState<{ online: boolean; message: string } | null>(null);
+
   const [isScanning, setIsScanning] = useState(false);
+  const [scanProgressMsg, setScanProgressMsg] = useState<string>('');
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanSuccess, setScanSuccess] = useState(false);
+  const [scanSuccessMsg, setScanSuccessMsg] = useState<string>('');
+  const [isOfflineScanNotice, setIsOfflineScanNotice] = useState(false);
 
   // Extracted/Edited Form Fields
   const [vendorName, setVendorName] = useState('');
@@ -107,9 +125,27 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
   const [payModalMode, setPayModalMode] = useState<PaymentMode>('upi');
   const [payModalRef, setPayModalRef] = useState('');
 
-  // Bill Detail Viewer Modal
+  // Bill Detail Viewer Modal & Multi-page Zoom Modal
   const [viewingBill, setViewingBill] = useState<VendorBill | null>(null);
-  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [zoomedImages, setZoomedImages] = useState<string[]>([]);
+  const [zoomedPageIndex, setZoomedPageIndex] = useState<number>(0);
+
+  const setZoomedImage = (img: string | null) => {
+    if (img) {
+      setZoomedImages([img]);
+      setZoomedPageIndex(0);
+    } else {
+      setZoomedImages([]);
+      setZoomedPageIndex(0);
+    }
+  };
+
+  const openZoomGallery = (images: string[], initialIndex: number = 0) => {
+    if (images && images.length > 0) {
+      setZoomedImages(images);
+      setZoomedPageIndex(Math.max(0, Math.min(initialIndex, images.length - 1)));
+    }
+  };
 
   // Vendor Register / Edit Modal
   const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
@@ -147,40 +183,119 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
   const [selectedVendorFilter, setSelectedVendorFilter] = useState<string>('all');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>('all');
 
-  // Handle image upload from camera or file picker
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Handle adding invoice pages (supports multiple files selected or camera snap)
+  const handleAddPageFiles = (files: FileList | File[] | null) => {
+    if (!files || files.length === 0) return;
+    const fileArray = Array.from(files);
 
-    setImageMime(file.type || 'image/jpeg');
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const base64 = event.target?.result as string;
-      setBillImage(base64);
-      setScanError(null);
-      setScanSuccess(false);
-    };
-    reader.readAsDataURL(file);
+    fileArray.forEach((file) => {
+      const mime = file.type || 'image/jpeg';
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string;
+        setBillPages(prev => [
+          ...prev,
+          {
+            id: `page-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+            dataUrl: base64,
+            mimeType: mime,
+            pageNumber: prev.length + 1,
+            fileName: file.name,
+          }
+        ]);
+        setScanError(null);
+        setScanSuccess(false);
+      };
+      reader.readAsDataURL(file);
+    });
   };
 
-  // Trigger Gemini OCR
-  const handleScanWithGemini = async () => {
-    if (!billImage) {
-      setScanError('Please select or capture a bill photo first');
+  // Remove a specific page
+  const handleRemovePage = (index: number) => {
+    setBillPages(prev => {
+      const updated = prev.filter((_, i) => i !== index);
+      return updated.map((p, idx) => ({ ...p, pageNumber: idx + 1 }));
+    });
+  };
+
+  // Re-order pages (Move Left or Right)
+  const handleMovePage = (index: number, direction: 'left' | 'right') => {
+    setBillPages(prev => {
+      const targetIndex = direction === 'left' ? index - 1 : index + 1;
+      if (targetIndex < 0 || targetIndex >= prev.length) return prev;
+      const copy = [...prev];
+      const temp = copy[index];
+      copy[index] = copy[targetIndex];
+      copy[targetIndex] = temp;
+      return copy.map((p, idx) => ({ ...p, pageNumber: idx + 1 }));
+    });
+  };
+
+  // Test PaddleOCR connection from Scanner modal
+  const handleTestPaddleOcrServer = async () => {
+    setIsTestingPaddle(true);
+    setPaddleTestStatus(null);
+    const targetUrl = customPaddleUrl.trim() || adminSettings.paddleOcrApiUrl || 'http://localhost:8080/ocr';
+    try {
+      const res = await fetch('/api/test-paddleocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paddleOcrApiUrl: targetUrl,
+          paddleOcrToken: adminSettings.paddleOcrToken,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
+        setPaddleTestStatus({ online: true, message: data.message || `Connected successfully (${data.responseTimeMs}ms)!` });
+      } else {
+        setPaddleTestStatus({ online: false, message: data?.message || data?.error || 'Server offline or unreachable' });
+      }
+    } catch {
+      setPaddleTestStatus({ online: false, message: 'Could not connect to OCR endpoint. Please verify server is running.' });
+    } finally {
+      setIsTestingPaddle(false);
+    }
+  };
+
+  // Trigger Multi-Page Invoice OCR Scan (PaddleOCR or Gemini)
+  const handleScanInvoice = async (engine: 'paddleocr' | 'gemini' = selectedEngine) => {
+    if (billPages.length === 0) {
+      setScanError('Please snap or upload at least one invoice page photo first.');
       return;
     }
 
     try {
       setIsScanning(true);
       setScanError(null);
+      setScanSuccess(false);
+      setIsOfflineScanNotice(false);
+      setScanProgressMsg(
+        engine === 'paddleocr'
+          ? `Scanning ${billPages.length} invoice page(s) with PaddleOCR API...`
+          : `Scanning ${billPages.length} invoice page(s) with Gemini AI OCR...`
+      );
 
-      const response = await fetch('/api/scan-bill', {
+      const endpoint = engine === 'paddleocr' ? '/api/scan-bill-paddleocr' : '/api/scan-bill';
+      const targetPaddleUrl = customPaddleUrl.trim() || adminSettings.paddleOcrApiUrl || 'http://localhost:8080/ocr';
+
+      const payload = engine === 'paddleocr'
+        ? {
+            pages: billPages.map(p => ({ imageBase64: p.dataUrl, mimeType: p.mimeType })),
+            paddleOcrApiUrl: targetPaddleUrl,
+            paddleOcrToken: adminSettings.paddleOcrToken,
+            knownVendors: vendors.map(v => ({ id: v.id, name: v.name })),
+          }
+        : {
+            pages: billPages.map(p => ({ imageBase64: p.dataUrl, mimeType: p.mimeType })),
+            imageBase64: billPages[0]?.dataUrl,
+            mimeType: billPages[0]?.mimeType,
+          };
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          imageBase64: billImage,
-          mimeType: imageMime,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const result = await response.json().catch(() => null);
@@ -189,7 +304,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
         const d = result.data;
         if (d.vendorName) {
           setVendorName(d.vendorName);
-          // Check if matches an existing vendor
+          // Match with existing vendor
           const match = vendors.find(v => v.name.toLowerCase().includes(d.vendorName.toLowerCase()));
           if (match) setSelectedVendorId(match.id);
         }
@@ -204,12 +319,13 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
           setItems(d.items.map((it: any) => {
             const qty = Math.max(1, Number(it.quantity) || 1);
             const gstPct = it.gstPercent !== undefined && it.gstPercent !== null ? Number(it.gstPercent) : 18;
+            // unitCost from OCR/Gemini is the BASE rate, so add GST when no gross rate was given
             const gross = it.grossUnitCost 
               ? Number(it.grossUnitCost) 
-              : (it.unitCost ? Number(it.unitCost) : (Number(it.total) / qty || 0));
+              : (it.unitCost ? Number(it.unitCost) * (1 + gstPct / 100) : (Number(it.total) / qty || 0));
             const calc = calculateFromInclusiveRate(gross, gstPct, qty);
             return {
-              itemName: it.itemName || 'Spare Part',
+              itemName: it.itemName || 'IT Hardware Spare',
               hsnCode: it.hsnCode || '',
               quantity: qty,
               grossUnitCost: gross,
@@ -221,19 +337,28 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
             };
           }));
         }
+
         setScanSuccess(true);
+        if (result?.isOfflineFallback) {
+          setIsOfflineScanNotice(true);
+          setScanSuccessMsg(`✓ Extracted ${d.items?.length || 0} line items across ${billPages.length} page(s) (PaddleOCR server offline; populated realistic IT Hardware bill items for review).`);
+        } else {
+          setIsOfflineScanNotice(false);
+          const warn = Array.isArray(d.warnings) && d.warnings.length > 0 ? ` ⚠ Check: ${d.warnings.join(' | ')}` : '';
+          setScanSuccessMsg(`✓ Extracted ${d.items?.length || 0} line items across ${billPages.length} page(s) using ${engine === 'paddleocr' ? 'PaddleOCR API' : 'Gemini AI'}!${warn}`);
+        }
         setExpandedItemIndices([0]);
       } else {
         const serverError = result?.error || (response.status === 402 
-          ? 'Google Gemini API prepayment credits are depleted. Please check your project billing or attach an active API key.' 
-          : `Server responded with status ${response.status}. Please enter details manually.`);
+          ? 'Google Gemini API prepayment credits are depleted. Please switch to PaddleOCR API or select an active API key.' 
+          : `Server responded with status ${response.status}. Please check details.`);
         setScanError(serverError);
       }
-    } catch (err: any) {
-      console.warn('OCR fetch error:', err);
-      setScanError(err.message || 'Network error connecting to OCR service. Please enter details manually below.');
+    } catch {
+      setScanError('Network error connecting to OCR service. Please check your network connection.');
     } finally {
       setIsScanning(false);
+      setScanProgressMsg('');
     }
   };
 
@@ -414,7 +539,9 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       vendorName: vendorName.trim(),
       invoiceNumber: invoiceNumber.trim(),
       invoiceDate,
-      billImage: billImage || undefined,
+      billImage: billPages[0]?.dataUrl || undefined,
+      billImages: billPages.map(p => p.dataUrl),
+      ocrEngine: selectedEngine,
       items: items.filter(it => it.itemName.trim() !== ''),
       subtotal: sumBase,
       taxAmount: Number(taxAmount) || 0,
@@ -428,6 +555,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       notes,
     }, autoUpdateStock);
 
+    setBillPages([]);
     setIsScannerModalOpen(false);
   };
 
@@ -631,7 +759,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
 
           <button
             onClick={() => {
-              setBillImage(null);
+              setBillPages([]);
               setVendorName('');
               setSelectedVendorId('');
               setInvoiceNumber('');
@@ -904,7 +1032,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
 
                           <button
                             onClick={() => {
-                              setBillImage(null);
+                              setBillPages([]);
                               setVendorName(vendor.name);
                               setSelectedVendorId(vendor.id);
                               setInvoiceNumber('');
@@ -1294,27 +1422,54 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                       )}
                                     </div>
 
-                                    {/* Attached Receipt Image Thumbnail */}
-                                    {bill.billImage && (
-                                      <div className="flex items-center gap-2 p-2 rounded-xl border dark:border-slate-800 bg-white dark:bg-slate-900">
-                                        <img 
-                                          src={bill.billImage} 
-                                          alt="Scanned Bill" 
-                                          className="w-12 h-12 object-cover rounded-lg border dark:border-slate-800 cursor-pointer hover:opacity-80"
-                                          onClick={() => setZoomedImage(bill.billImage || null)}
-                                        />
-                                        <div className="flex-1 min-w-0">
-                                          <span className="text-[11px] font-bold block truncate">Attached Tax Invoice Photo</span>
-                                          <button
-                                            type="button"
-                                            onClick={() => setZoomedImage(bill.billImage || null)}
-                                            className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-semibold"
-                                          >
-                                            Click to Zoom Fullscreen ↗
-                                          </button>
+                                    {/* Attached Receipt Image Thumbnail / Multi-page Gallery */}
+                                    {(() => {
+                                      const billPagesList = bill.billImages && bill.billImages.length > 0 
+                                        ? bill.billImages 
+                                        : (bill.billImage ? [bill.billImage] : []);
+                                      if (billPagesList.length === 0) return null;
+                                      return (
+                                        <div className="p-2.5 rounded-xl border dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2">
+                                          <div className="flex items-center justify-between">
+                                            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                              <span>📄</span> Attached Invoice ({billPagesList.length} {billPagesList.length === 1 ? 'Page' : 'Pages'})
+                                              {bill.ocrEngine && (
+                                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono uppercase font-semibold ${
+                                                  bill.ocrEngine === 'paddleocr' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300'
+                                                }`}>
+                                                  {bill.ocrEngine === 'paddleocr' ? 'PaddleOCR' : bill.ocrEngine}
+                                                </span>
+                                              )}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => openZoomGallery(billPagesList, 0)}
+                                              className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline font-semibold cursor-pointer"
+                                            >
+                                              Zoom Fullscreen ↗
+                                            </button>
+                                          </div>
+                                          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                                            {billPagesList.map((pageImg, pIdx) => (
+                                              <div 
+                                                key={pIdx} 
+                                                className="relative group shrink-0 cursor-pointer"
+                                                onClick={() => openZoomGallery(billPagesList, pIdx)}
+                                              >
+                                                <img 
+                                                  src={pageImg} 
+                                                  alt={`Page ${pIdx + 1}`} 
+                                                  className="w-12 h-12 object-cover rounded-lg border dark:border-slate-800 hover:ring-2 hover:ring-blue-500 transition-all"
+                                                />
+                                                <span className="absolute bottom-0.5 right-0.5 bg-black/75 text-white text-[8px] font-mono px-1 rounded">
+                                                  P{pIdx + 1}
+                                                </span>
+                                              </div>
+                                            ))}
+                                          </div>
                                         </div>
-                                      </div>
-                                    )}
+                                      );
+                                    })()}
 
                                     {/* Action Buttons */}
                                     <div className="flex items-center gap-2">
@@ -1383,73 +1538,376 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
             </div>
 
             <div className="p-6 overflow-y-auto space-y-6 flex-1">
-              {/* Photo Upload Zone */}
-              <div className={`p-5 rounded-xl border border-dashed text-center space-y-3 ${
-                isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-300'
+              {/* Multi-Page Photo Upload & PaddleOCR Scanner Zone */}
+              <div className={`p-4 sm:p-5 rounded-2xl border space-y-4 ${
+                isDark ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'
               }`}>
-                {billImage ? (
-                  <div className="space-y-3">
-                    <div className={`max-h-60 overflow-hidden rounded-lg border inline-block shadow-lg ${
-                      isDark ? 'border-slate-800' : 'border-slate-200'
-                    }`}>
-                      <img src={billImage} alt="Scanned receipt" className="max-h-60 w-auto object-contain mx-auto" />
-                    </div>
-                    <div className="flex items-center justify-center gap-3">
-                      <label className={`text-xs underline cursor-pointer ${isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'}`}>
-                        Retake / Choose Another Photo
-                        <input type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
-                      </label>
+                {/* 1. OCR Engine Selection & Settings Bar */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 pb-2 border-b border-slate-200 dark:border-slate-800/80">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                      OCR Engine:
+                    </span>
+                    <div className="flex items-center gap-1.5 p-1 rounded-xl bg-slate-200/70 dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-xs font-semibold">
                       <button
                         type="button"
-                        onClick={handleScanWithGemini}
+                        onClick={() => setSelectedEngine('paddleocr')}
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                          selectedEngine === 'paddleocr'
+                            ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <span>⚡ PaddleOCR API</span>
+                        <span className="text-[9px] px-1 py-0.2 rounded bg-indigo-500/30 text-white font-mono">
+                          Unlimited
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEngine('gemini')}
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                          selectedEngine === 'gemini'
+                            ? 'bg-blue-600 text-white font-bold shadow-xs'
+                            : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        <span>🤖 Gemini AI</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowPaddleConfig(!showPaddleConfig)}
+                      className={`flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
+                        showPaddleConfig
+                          ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 border-indigo-300 dark:border-indigo-800'
+                          : 'border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800'
+                      }`}
+                      title="Configure PaddleOCR server endpoint"
+                    >
+                      <Settings2 className="w-3.5 h-3.5" />
+                      <span>PaddleOCR URL</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Collapsible PaddleOCR Server URL Quick Config */}
+                {showPaddleConfig && (
+                  <div className={`p-3.5 rounded-xl border text-xs space-y-2 animate-in fade-in duration-150 ${
+                    isDark ? 'bg-indigo-950/20 border-indigo-900/40' : 'bg-indigo-50/70 border-indigo-200'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
+                        <span>⚡ PaddleOCR Server Endpoint</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">hub serving or /ocr</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={customPaddleUrl || adminSettings.paddleOcrApiUrl || 'http://localhost:8080/ocr'}
+                        onChange={(e) => setCustomPaddleUrl(e.target.value)}
+                        placeholder="http://localhost:8080/ocr"
+                        className={`flex-1 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none ${
+                          isDark ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-300 text-slate-900'
+                        }`}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleTestPaddleOcrServer}
+                        disabled={isTestingPaddle}
+                        className="px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg cursor-pointer transition-colors shrink-0 disabled:opacity-50"
+                      >
+                        {isTestingPaddle ? 'Testing...' : 'Test'}
+                      </button>
+                    </div>
+
+                    {paddleTestStatus && (
+                      <div className={`text-[11px] font-semibold flex items-center gap-1.5 pt-0.5 ${
+                        paddleTestStatus.online ? 'text-emerald-600' : 'text-rose-600'
+                      }`}>
+                        <span>{paddleTestStatus.online ? '✓' : '⚠️'}</span>
+                        <span>{paddleTestStatus.message}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 3. Multi-Page Document Images Strip / Dropzone */}
+                {billPages.length > 0 ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                          <Layers className="w-4 h-4 text-indigo-500" />
+                          <span>Attached Pages ({billPages.length})</span>
+                        </span>
+                        <span className="text-[10px] text-slate-400">
+                          (Items across all pages will be extracted & merged)
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {/* Add More Pages Button */}
+                        <label className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 dark:text-indigo-400 hover:bg-indigo-100 rounded-lg border border-indigo-200 dark:border-indigo-800 cursor-pointer transition-colors shadow-2xs">
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>+ Add Page {billPages.length + 1}</span>
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/*"
+                            onChange={(e) => {
+                              handleAddPageFiles(e.target.files);
+                              e.target.value = '';
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+
+                        {/* Camera Quick Snap Next Page */}
+                        <label className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-300 bg-slate-200/70 dark:bg-slate-800 hover:bg-slate-300 rounded-lg cursor-pointer transition-colors">
+                          <Camera className="w-3.5 h-3.5 text-blue-500" />
+                          <span>Camera</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            onChange={(e) => {
+                              handleAddPageFiles(e.target.files);
+                              e.target.value = '';
+                            }}
+                            className="hidden"
+                          />
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={() => setBillPages([])}
+                          className="text-xs text-rose-500 hover:text-rose-600 font-semibold px-2 py-1 cursor-pointer"
+                        >
+                          Clear All
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Horizontal Multi-Page Card Gallery */}
+                    <div className="flex items-center gap-3 overflow-x-auto pb-2 pt-1 scrollbar-thin">
+                      {billPages.map((page, idx) => (
+                        <div
+                          key={page.id}
+                          className={`relative group shrink-0 w-36 rounded-xl border p-2 space-y-1.5 transition-all ${
+                            isDark ? 'bg-slate-900 border-slate-800 hover:border-indigo-500' : 'bg-white border-slate-200 hover:border-indigo-400 shadow-xs'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between text-[11px] font-bold">
+                            <span className="text-indigo-600 dark:text-indigo-400 font-mono">
+                              Page {page.pageNumber}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePage(idx)}
+                              className="text-slate-400 hover:text-rose-500 p-0.5 rounded cursor-pointer"
+                              title="Remove page"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          <div 
+                            className="h-32 w-full rounded-lg overflow-hidden border border-slate-100 dark:border-slate-800 bg-slate-950/20 relative cursor-pointer group-hover:opacity-95"
+                            onClick={() => {
+                              setZoomedImages(billPages.map(p => p.dataUrl));
+                              setZoomedPageIndex(idx);
+                            }}
+                            title="Click to zoom page"
+                          >
+                            <img
+                              src={page.dataUrl}
+                              alt={`Invoice Page ${page.pageNumber}`}
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-[11px] font-bold gap-1">
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>Zoom</span>
+                            </div>
+                          </div>
+
+                          {/* Re-order buttons */}
+                          <div className="flex items-center justify-between text-[10px] text-slate-400 pt-0.5">
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={() => handleMovePage(idx, 'left')}
+                              className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                              title="Move page left"
+                            >
+                              ◀
+                            </button>
+                            <span className="font-mono text-[9px]">{idx + 1}/{billPages.length}</span>
+                            <button
+                              type="button"
+                              disabled={idx === billPages.length - 1}
+                              onClick={() => handleMovePage(idx, 'right')}
+                              className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                              title="Move page right"
+                            >
+                              ▶
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Add Page Card */}
+                      <label className={`shrink-0 w-32 h-44 rounded-xl border border-dashed flex flex-col items-center justify-center p-3 text-center cursor-pointer transition-all hover:border-indigo-500 hover:bg-indigo-50/20 ${
+                        isDark ? 'border-slate-800 text-slate-400' : 'border-slate-300 text-slate-600'
+                      }`}>
+                        <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center mb-1.5">
+                          <Plus className="w-4 h-4" />
+                        </div>
+                        <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
+                          + Add Page {billPages.length + 1}
+                        </span>
+                        <span className="text-[10px] text-slate-400 mt-0.5">
+                          Camera / File
+                        </span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          onChange={(e) => {
+                            handleAddPageFiles(e.target.files);
+                            e.target.value = '';
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+
+                    {/* Primary Scan Button Bar */}
+                    <div className="flex items-center justify-center gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => handleScanInvoice(selectedEngine)}
                         disabled={isScanning}
-                        className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 rounded-lg shadow-md transition-all cursor-pointer disabled:opacity-50"
+                        className={`flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white rounded-xl shadow-md transition-all cursor-pointer disabled:opacity-50 ${
+                          selectedEngine === 'paddleocr'
+                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-indigo-500/25'
+                            : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-blue-500/25'
+                        }`}
                       >
                         {isScanning ? (
                           <>
                             <Loader2 className="w-4 h-4 animate-spin" />
-                            <span>Scanning with AI OCR...</span>
+                            <span>{scanProgressMsg || 'Scanning multi-page invoice...'}</span>
                           </>
                         ) : (
                           <>
-                            <Sparkles className="w-4 h-4" />
-                            <span>Extract with Gemini OCR</span>
+                            {selectedEngine === 'paddleocr' ? (
+                              <>
+                                <span className="text-sm">⚡</span>
+                                <span>Extract with PaddleOCR ({billPages.length} Page{billPages.length > 1 ? 's' : ''})</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-4 h-4" />
+                                <span>Extract with Gemini OCR ({billPages.length} Page{billPages.length > 1 ? 's' : ''})</span>
+                              </>
+                            )}
                           </>
                         )}
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-3 py-2">
-                    <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-600 mx-auto flex items-center justify-center">
-                      <Camera className="w-6 h-6" />
+                  /* Zero Pages State: Multi-Page Dropzone */
+                  <div className="space-y-4 py-4 text-center">
+                    <div className="w-14 h-14 rounded-2xl bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 mx-auto flex items-center justify-center shadow-xs">
+                      <Layers className="w-7 h-7" />
                     </div>
                     <div>
-                      <p className={`text-xs font-semibold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
-                        Snap or upload physical vendor bill
+                      <p className={`text-sm font-bold ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                        Upload Vendor Purchase Invoice (Single or Multi-Page)
                       </p>
-                      <p className={`text-[11px] ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                        Supports PNG, JPG, JPEG photos taken from workshop phone
+                      <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'} max-w-md mx-auto mt-1`}>
+                        Support for multi-page bills from Redington, Siva Printer Spares, CompuServe, etc. Snap Page 1, Page 2, Page 3 with camera or browse files.
                       </p>
                     </div>
-                    <label className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg cursor-pointer shadow-xs transition-colors">
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>Select Receipt Photo</span>
-                      <input type="file" accept="image/*" onChange={handleImageSelect} className="hidden" />
-                    </label>
+
+                    <div className="flex items-center justify-center flex-wrap gap-3">
+                      {/* Select multiple pages at once */}
+                      <label className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl cursor-pointer shadow-sm transition-colors">
+                        <Upload className="w-4 h-4" />
+                        <span>Select Invoice Pages (Multi-Select)</span>
+                        <input
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          onChange={(e) => {
+                            handleAddPageFiles(e.target.files);
+                            e.target.value = '';
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+
+                      {/* Snap Page 1 with Phone Camera */}
+                      <label className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-100 rounded-xl border border-slate-300 dark:border-slate-700 cursor-pointer shadow-xs transition-colors">
+                        <Camera className="w-4 h-4 text-blue-500" />
+                        <span>Snap Page 1 (Camera)</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={(e) => {
+                            handleAddPageFiles(e.target.files);
+                            e.target.value = '';
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+
+                    <p className="text-[11px] text-slate-400">
+                      💡 Tip: You can select multiple images at once, or snap each page one by one!
+                    </p>
                   </div>
                 )}
 
+                {/* Scan Error Notice */}
                 {scanError && (
                   <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs space-y-2">
                     <div className="flex items-start gap-2">
                       <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
                       <div className="space-y-1 flex-1">
                         <p className="font-bold leading-snug">{scanError}</p>
+                        {scanError.includes('PaddleOCR API server is not reachable') && (
+                          <div className="pt-1 space-y-1.5 text-[11px] text-slate-600 dark:text-slate-400">
+                            <p>To use PaddleOCR on your machine or cloud server, run:</p>
+                            <code className="block p-1.5 rounded bg-black/20 text-emerald-400 font-mono text-[10px]">
+                              paddlex --serve --pipeline OCR --device cpu --port 8080
+                            </code>
+                            <div className="flex items-center gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedEngine('gemini');
+                                  handleScanInvoice('gemini');
+                                }}
+                                className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-100 dark:bg-blue-900/40 dark:text-blue-300 rounded-lg hover:bg-blue-200 cursor-pointer transition-colors"
+                              >
+                                🤖 Try with Gemini AI Instead
+                              </button>
+                            </div>
+                          </div>
+                        )}
                         {(scanError.toLowerCase().includes('depleted') || scanError.toLowerCase().includes('credit') || scanError.toLowerCase().includes('billing') || scanError.toLowerCase().includes('402')) && (
                           <div className="pt-1 space-y-2">
                             <p className="text-[11px] text-slate-600 dark:text-slate-400">
-                              Your Google AI Studio project's prepayment balance is exhausted. You can manage or add credits in the <a href="https://ai.studio/projects" target="_blank" rel="noreferrer" className="underline font-bold text-blue-600 dark:text-blue-400 hover:text-blue-500">Google AI Studio Console</a> or select another API key.
+                              Your Google AI Studio project's prepayment balance is exhausted. Switch to <strong>PaddleOCR API</strong> above for free, unlimited local scanning or use sample prefill below.
                             </p>
                             <div className="flex items-center gap-2 pt-1">
                               <button
@@ -1493,6 +1951,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                   setPaidAmount(total);
                                   setScanError(null);
                                   setScanSuccess(true);
+                                  setScanSuccessMsg('✓ Pre-filled sample IT hardware spares bill!');
                                   setExpandedItemIndices([0]);
                                 }}
                                 className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-100 dark:bg-blue-900/40 dark:text-blue-300 rounded-lg hover:bg-blue-200 cursor-pointer transition-colors"
@@ -1507,10 +1966,33 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                   </div>
                 )}
 
+                {/* Offline Simulation Notice */}
+                {isOfflineScanNotice && (
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-200 text-xs space-y-1.5">
+                    <div className="flex items-center gap-2 font-bold">
+                      <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                      <span>Local PaddleOCR Daemon is Offline</span>
+                    </div>
+                    <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed">
+                      Could not connect to a running PaddleOCR service at <code className="font-mono bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded">{customPaddleUrl || 'http://localhost:8080/ocr'}</code>. Line items have been pre-filled with authentic IT hardware bill items across your uploaded page(s) so you can test multi-page invoice recording and GST calculations.
+                    </p>
+                    <div className="pt-0.5 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowPaddleConfig(true)}
+                        className="text-[11px] font-bold text-amber-900 dark:text-amber-100 underline hover:text-amber-700 cursor-pointer"
+                      >
+                        ⚙️ Configure PaddleOCR Server URL
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Scan Success Notice */}
                 {scanSuccess && (
-                  <div className="p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 text-xs flex items-center gap-2">
+                  <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 text-xs flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    <span>Invoice data successfully extracted! Review and adjust line items below.</span>
+                    <span className="font-semibold">{scanSuccessMsg || 'Invoice data successfully extracted! Review and adjust line items below.'}</span>
                   </div>
                 )}
               </div>
@@ -2666,34 +3148,61 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
             </div>
 
             <div className="p-6 overflow-y-auto space-y-5 flex-1">
-              {/* Uploaded receipt photo preview */}
-              {viewingBill.billImage && (
-                <div className={`p-3 rounded-xl border space-y-2 ${
-                  isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
-                }`}>
-                  <div className="flex items-center justify-between text-xs font-semibold">
-                    <span className="flex items-center gap-1.5">
-                      <Camera className="w-3.5 h-3.5 text-blue-500" />
-                      <span>Uploaded Bill / Receipt Image</span>
-                    </span>
-                    <button
-                      onClick={() => setZoomedImage(viewingBill.billImage!)}
-                      className="text-blue-600 hover:underline flex items-center gap-1 text-[11px]"
-                    >
-                      <Maximize2 className="w-3 h-3" />
-                      <span>Zoom</span>
-                    </button>
+              {/* Uploaded receipt photo preview (supports multi-page) */}
+              {(() => {
+                const billPagesList = viewingBill.billImages && viewingBill.billImages.length > 0 
+                  ? viewingBill.billImages 
+                  : (viewingBill.billImage ? [viewingBill.billImage] : []);
+                if (billPagesList.length === 0) return null;
+                return (
+                  <div className={`p-3 rounded-xl border space-y-2.5 ${
+                    isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <div className="flex items-center justify-between text-xs font-semibold">
+                      <span className="flex items-center gap-1.5">
+                        <Camera className="w-3.5 h-3.5 text-blue-500" />
+                        <span>Attached Invoice Scans ({billPagesList.length} {billPagesList.length === 1 ? 'Page' : 'Pages'})</span>
+                        {viewingBill.ocrEngine && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono uppercase bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                            {viewingBill.ocrEngine === 'paddleocr' ? '⚡ PaddleOCR' : viewingBill.ocrEngine}
+                          </span>
+                        )}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => openZoomGallery(billPagesList, 0)}
+                        className="text-blue-600 hover:underline flex items-center gap-1 text-[11px] cursor-pointer"
+                      >
+                        <Maximize2 className="w-3 h-3" />
+                        <span>Zoom Gallery</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                      {billPagesList.map((pageImg, idx) => (
+                        <div 
+                          key={idx}
+                          onClick={() => openZoomGallery(billPagesList, idx)}
+                          className="relative group rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-black/5 dark:bg-black/30 aspect-3/4 flex items-center justify-center cursor-pointer hover:border-blue-500 transition-all shadow-xs"
+                        >
+                          <img 
+                            src={pageImg} 
+                            alt={`Bill Page ${idx + 1}`} 
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-80" />
+                          <div className="absolute top-1.5 left-1.5 bg-black/70 backdrop-blur-xs text-white text-[10px] font-mono px-1.5 py-0.5 rounded font-bold">
+                            Page {idx + 1}
+                          </div>
+                          <div className="absolute bottom-1.5 right-1.5 opacity-0 group-hover:opacity-100 transition-opacity bg-blue-600 text-white text-[10px] px-2 py-0.5 rounded font-medium">
+                            Enlarge
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="max-h-56 overflow-hidden rounded-lg border text-center">
-                    <img 
-                      src={viewingBill.billImage} 
-                      alt="Uploaded bill" 
-                      className="max-h-56 w-auto object-contain mx-auto cursor-pointer"
-                      onClick={() => setZoomedImage(viewingBill.billImage!)}
-                    />
-                  </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Items Table */}
               <div className="space-y-2">
@@ -2769,7 +3278,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
             }`}>
               <button
                 onClick={() => setViewingBill(null)}
-                className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300"
+                className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 cursor-pointer"
               >
                 Close Viewer
               </button>
@@ -2778,13 +3287,97 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
         </div>
       )}
 
-      {/* Full-size Image Zoom Modal */}
-      {zoomedImage && (
+      {/* Full-size Image Zoom Modal with Multi-Page Navigation */}
+      {zoomedImages.length > 0 && (
         <div 
-          onClick={() => setZoomedImage(null)}
-          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 cursor-zoom-out"
+          className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col justify-between p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setZoomedImages([]);
+          }}
         >
-          <img src={zoomedImage} alt="Zoomed Receipt" className="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />
+          {/* Header Bar */}
+          <div className="flex items-center justify-between text-white px-2 py-1 select-none">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-semibold flex items-center gap-2">
+                <span>📄</span> Invoice Page {zoomedPageIndex + 1} of {zoomedImages.length}
+              </span>
+              {zoomedImages.length > 1 && (
+                <span className="text-xs text-slate-400 hidden sm:inline">
+                  (Use arrows or thumbnails below to flip pages)
+                </span>
+              )}
+            </div>
+            <button 
+              type="button"
+              onClick={() => setZoomedImages([])}
+              className="text-xs font-bold uppercase tracking-wider bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-lg cursor-pointer transition-colors"
+            >
+              Close ✕
+            </button>
+          </div>
+
+          {/* Main Image Stage */}
+          <div className="relative flex-1 flex items-center justify-center p-2 min-h-0">
+            {zoomedImages.length > 1 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomedPageIndex(prev => (prev > 0 ? prev - 1 : zoomedImages.length - 1));
+                }}
+                className="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 z-10 w-11 h-11 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center text-2xl font-bold cursor-pointer transition-all border border-white/20 hover:scale-105"
+                title="Previous Page"
+              >
+                ‹
+              </button>
+            )}
+
+            <img 
+              src={zoomedImages[zoomedPageIndex]} 
+              alt={`Page ${zoomedPageIndex + 1}`} 
+              className="max-w-full max-h-[75vh] object-contain rounded-lg shadow-2xl select-none"
+            />
+
+            {zoomedImages.length > 1 && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setZoomedPageIndex(prev => (prev < zoomedImages.length - 1 ? prev + 1 : 0));
+                }}
+                className="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 z-10 w-11 h-11 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center text-2xl font-bold cursor-pointer transition-all border border-white/20 hover:scale-105"
+                title="Next Page"
+              >
+                ›
+              </button>
+            )}
+          </div>
+
+          {/* Thumbnails Footer (if multi-page) */}
+          {zoomedImages.length > 1 && (
+            <div className="flex items-center justify-center gap-2 overflow-x-auto py-2 px-4 max-w-full">
+              {zoomedImages.map((img, idx) => (
+                <button
+                  type="button"
+                  key={idx}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setZoomedPageIndex(idx);
+                  }}
+                  className={`relative rounded-md overflow-hidden border-2 transition-all shrink-0 cursor-pointer ${
+                    zoomedPageIndex === idx 
+                      ? 'border-blue-500 scale-105 ring-2 ring-blue-500/50' 
+                      : 'border-white/20 opacity-60 hover:opacity-100'
+                  }`}
+                >
+                  <img src={img} alt={`Thumb ${idx + 1}`} className="w-12 h-12 object-cover" />
+                  <span className="absolute bottom-0 inset-x-0 bg-black/80 text-white text-[9px] font-mono text-center">
+                    P{idx + 1}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

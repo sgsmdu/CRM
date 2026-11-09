@@ -85,6 +85,35 @@ export const AdminDashboard: React.FC = () => {
   // Preview message tab
   const [previewTab, setPreviewTab] = useState<'welcome' | 'status' | 'review'>('review');
 
+  // PaddleOCR connection test state
+  const [testingPaddleOcr, setTestingPaddleOcr] = useState(false);
+  const [paddleTestResult, setPaddleTestResult] = useState<{ online: boolean; message: string } | null>(null);
+
+  const handleTestPaddleOcr = async () => {
+    setTestingPaddleOcr(true);
+    setPaddleTestResult(null);
+    try {
+      const res = await fetch('/api/test-paddleocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paddleOcrApiUrl: formData.paddleOcrApiUrl || 'http://localhost:8080/ocr',
+          paddleOcrToken: formData.paddleOcrToken,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setPaddleTestResult({ online: true, message: data.message || `Connected (${data.responseTimeMs}ms)!` });
+      } else {
+        setPaddleTestResult({ online: false, message: data.error || 'Server offline or unreachable.' });
+      }
+    } catch (err: any) {
+      setPaddleTestResult({ online: false, message: err.message || 'Network connection failed.' });
+    } finally {
+      setTestingPaddleOcr(false);
+    }
+  };
+
   const handleFieldChange = <K extends keyof AdminSettings>(field: K, value: AdminSettings[K]) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -129,10 +158,10 @@ export const AdminDashboard: React.FC = () => {
 
   // Profit & Loss Calculations
   const activeInvoices = invoices.filter(inv => inv.status !== 'cancelled' && inv.type === 'invoice');
-  const totalBilled = activeInvoices.reduce((sum, inv) => sum + (inv.subtotal || 0), 0);
-  const totalSpareCosts = activeInvoices.reduce((sum, inv) => sum + (inv.purchaseCostTotal || 0), 0);
+  const totalBilled = activeInvoices.reduce((sum, inv) => sum + (inv.grandTotal || inv.subtotal || 0), 0);
+  const totalSpareCosts = activeInvoices.reduce((sum, inv) => sum + (inv.totalPurchaseCostWithGst ?? inv.purchaseCostTotal ?? 0), 0);
   const totalManualCosts = activeInvoices.reduce((sum, inv) => sum + (inv.manualExtraCost || 0), 0);
-  const totalInvoiceProfit = totalBilled - totalSpareCosts - totalManualCosts;
+  const totalInvoiceProfit = activeInvoices.reduce((sum, inv) => sum + (inv.profitAmount ?? ((inv.grandTotal || inv.subtotal) - (inv.totalPurchaseCostWithGst ?? inv.purchaseCostTotal ?? 0) - (inv.manualExtraCost || 0))), 0);
   const overallMargin = totalBilled > 0 ? Math.round((totalInvoiceProfit / totalBilled) * 100) : 0;
 
   const totalVendorPurchases = vendorBills.reduce((sum, vb) => sum + (vb.totalAmount || 0), 0);
@@ -671,6 +700,124 @@ export const AdminDashboard: React.FC = () => {
               <p>
                 All presets configured here automatically populate on new Job Cards and Customer Bills with 1-click!
               </p>
+            </div>
+          </div>
+
+          {/* PaddleOCR & Multi-Page Document Scanner Configuration */}
+          <div className={`lg:col-span-3 p-6 rounded-2xl border space-y-5 ${
+            isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
+          }`}>
+            <div className="flex items-center justify-between border-b pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-600/10 text-indigo-600 flex items-center justify-center font-bold text-lg">
+                  ⚡
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h2 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                      PaddleOCR API & Multi-Page Invoice Scanner
+                    </h2>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
+                      High Speed · Unlimited Pages
+                    </span>
+                  </div>
+                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Configure local or self-hosted PaddleOCR API server for fast, private invoice extraction with multi-page support
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2 space-y-3">
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    PaddleOCR Server API URL *
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={formData.paddleOcrApiUrl || ''}
+                      onChange={(e) => handleFieldChange('paddleOcrApiUrl', e.target.value)}
+                      placeholder="http://localhost:8080/ocr"
+                      className={`flex-1 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
+                        isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-indigo-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-indigo-600'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleTestPaddleOcr}
+                      disabled={testingPaddleOcr}
+                      className="px-3 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg cursor-pointer transition-colors shadow-2xs shrink-0 disabled:opacity-50"
+                    >
+                      {testingPaddleOcr ? 'Testing...' : 'Test Connection'}
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Supports PaddleHub Serving (<code>/predict/ocr_system</code>), PaddleX Serving (<code>/ocr</code>), or custom FastAPI/Flask wrappers.
+                  </p>
+                </div>
+
+                {paddleTestResult && (
+                  <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
+                    paddleTestResult.online
+                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600'
+                      : 'bg-rose-500/10 border-rose-500/30 text-rose-600'
+                  }`}>
+                    <span>{paddleTestResult.online ? '✓' : '⚠️'}</span>
+                    <span className="font-semibold">{paddleTestResult.message}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Optional Authorization Token (Bearer)
+                    </label>
+                    <input
+                      type="password"
+                      value={formData.paddleOcrToken || ''}
+                      onChange={(e) => handleFieldChange('paddleOcrToken', e.target.value)}
+                      placeholder="Optional API token"
+                      className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
+                        isDark ? 'bg-slate-950 border border-slate-800 text-white' : 'bg-slate-50 border border-slate-300 text-slate-900'
+                      }`}
+                    />
+                  </div>
+
+                  <div>
+                    <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Default Scanner OCR Engine
+                    </label>
+                    <select
+                      value={formData.defaultOcrEngine || 'paddleocr'}
+                      onChange={(e) => handleFieldChange('defaultOcrEngine', e.target.value as any)}
+                      className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
+                        isDark ? 'bg-slate-950 border border-slate-800 text-white' : 'bg-slate-50 border border-slate-300 text-slate-900'
+                      }`}
+                    >
+                      <option value="paddleocr">⚡ PaddleOCR (Recommended - Multi-Page & Unlimited)</option>
+                      <option value="gemini">🤖 Google Gemini AI OCR</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Instructions Callout */}
+              <div className={`p-4 rounded-xl border text-xs space-y-2 ${
+                isDark ? 'bg-indigo-950/20 border-indigo-900/40 text-indigo-200' : 'bg-indigo-50/70 border-indigo-200 text-indigo-900'
+              }`}>
+                <p className="font-bold">🚀 How to run PaddleOCR Server:</p>
+                <div className="font-mono text-[11px] bg-black/20 p-2 rounded-lg space-y-1">
+                  <p># Install PaddleOCR:</p>
+                  <p className="text-emerald-400">Use your paddleocr-env Python environment with paddlepaddle and paddleocr installed</p>
+                  <p className="pt-1"># Start OCR Hub Serving:</p>
+                  <p className="text-emerald-400">paddlex --serve --pipeline OCR --device cpu --port 8080</p>
+                </div>
+                <p className="text-[11px] opacity-85">
+                  Multi-page invoices from Redington, Siva Printer Spares, or CompuServe are automatically processed and line items consolidated!
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -1471,8 +1618,8 @@ export const AdminDashboard: React.FC = () => {
                       <th className="py-3 px-4">Invoice #</th>
                       <th className="py-3 px-4">Customer</th>
                       <th className="py-3 px-4">Date</th>
-                      <th className="py-3 px-4 font-mono text-right">Billed Subtotal</th>
-                      <th className="py-3 px-4 font-mono text-right">Spares Cost</th>
+                      <th className="py-3 px-4 font-mono text-right">Sale Total (₹)</th>
+                      <th className="py-3 px-4 font-mono text-right">Spares Cost (with GST)</th>
                       <th className="py-3 px-4 font-mono text-right">Extra Costs</th>
                       <th className="py-3 px-4 font-mono text-right">Net Profit</th>
                       <th className="py-3 px-4 text-center">Margin</th>
@@ -1481,10 +1628,11 @@ export const AdminDashboard: React.FC = () => {
                   </thead>
                   <tbody className={`divide-y ${isDark ? 'divide-slate-800/70' : 'divide-slate-100'}`}>
                     {activeInvoices.map((inv, idx) => {
-                      const cost = inv.purchaseCostTotal || 0;
+                      const saleAmount = inv.grandTotal || inv.subtotal || 0;
+                      const cost = inv.totalPurchaseCostWithGst ?? inv.purchaseCostTotal ?? 0;
                       const manual = inv.manualExtraCost || 0;
-                      const profit = (inv.subtotal || 0) - cost - manual;
-                      const margin = inv.subtotal > 0 ? Math.round((profit / inv.subtotal) * 100) : 0;
+                      const profit = inv.profitAmount ?? (saleAmount - cost - manual);
+                      const margin = saleAmount > 0 ? Math.round((profit / saleAmount) * 100) : 0;
 
                       return (
                         <tr key={`${inv.id}-${idx}`} className={isDark ? 'hover:bg-slate-900/60' : 'hover:bg-slate-50'}>
@@ -1498,16 +1646,16 @@ export const AdminDashboard: React.FC = () => {
                             {inv.date}
                           </td>
                           <td className={`py-3 px-4 font-mono font-bold text-right ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                            ₹{inv.subtotal.toLocaleString('en-IN')}
+                            ₹{saleAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td className={`py-3 px-4 font-mono text-right ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
-                            ₹{cost.toLocaleString('en-IN')}
+                            ₹{cost.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td className={`py-3 px-4 font-mono text-right ${isDark ? 'text-rose-400' : 'text-rose-700'}`}>
                             ₹{manual.toLocaleString('en-IN')}
                           </td>
                           <td className="py-3 px-4 font-mono font-bold text-right text-emerald-600">
-                            +₹{profit.toLocaleString('en-IN')}
+                            +₹{profit.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
                           <td className="py-3 px-4 text-center">
                             <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">

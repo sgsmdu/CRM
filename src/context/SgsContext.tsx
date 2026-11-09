@@ -803,9 +803,14 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         if (targetExisting && item.syncMode !== 'create_separate') {
           // Merge into existing stock item
           recordStockMovement(targetExisting.id, 'in', item.quantity, `Vendor Purchase (${newBill.vendorName} - Inv #${newBill.invoiceNumber})`, undefined);
-          if (item.hsnCode && !targetExisting.hsnCode) {
-            updateInventoryItem(targetExisting.id, { hsnCode: item.hsnCode });
-          }
+          updateInventoryItem(targetExisting.id, {
+            unitCost: item.unitCost > 0 ? item.unitCost : targetExisting.unitCost,
+            vendorBillId: newBill.id,
+            vendorName: newBill.vendorName,
+            vendorInvoiceNumber: newBill.invoiceNumber,
+            vendorBillDate: newBill.invoiceDate,
+            hsnCode: item.hsnCode || targetExisting.hsnCode,
+          });
         } else {
           // Add as separate new stock item
           const created = addInventoryItem({
@@ -818,6 +823,10 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             sku: `SP-${Date.now().toString().slice(-4)}`,
             location: 'Main Shelf',
             hsnCode: item.hsnCode || '8471',
+            vendorBillId: newBill.id,
+            vendorName: newBill.vendorName,
+            vendorInvoiceNumber: newBill.invoiceNumber,
+            vendorBillDate: newBill.invoiceDate,
           });
           const tx: StockTransaction = {
             id: `st-${Date.now()}-${Math.random()}`,
@@ -895,6 +904,11 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteVendorBill = (id: string) => {
+    // 1. Remove associated cashflow entry so cash balance is restored
+    setCashFlow(prev => prev.filter(c => c.referenceId !== id));
+    // 2. Remove stock transactions referencing this bill
+    setStockTransactions(prev => prev.filter(st => st.referenceBillId !== id));
+    // 3. Remove bill
     setVendorBills(prev => prev.filter(b => b.id !== id));
   };
 
@@ -962,18 +976,33 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Invoices & Billing
   const addInvoice = (invoiceData: Omit<Invoice, 'id'>): Invoice => {
-    // Auto-compute profit if not provided
+    // Auto-compute spare costs with GST and profit: (Sale Amount with GST - Spares Buy Cost with GST - Extra Cost)
+    const totalPurchaseCostWithGst = invoiceData.totalPurchaseCostWithGst ?? 
+      (invoiceData.items || []).reduce((sum, it) => {
+        if (it.isService) return sum;
+        const gross = it.purchaseCostWithGst !== undefined 
+          ? it.purchaseCostWithGst 
+          : (it.purchaseCost ? (it.purchaseCost * (1 + (it.purchaseGstPercent ?? it.gstPercent ?? 18) / 100)) : 0);
+        return sum + (gross * (it.quantity || 1));
+      }, 0);
+
     const purchaseCostTotal = invoiceData.purchaseCostTotal ?? 
       (invoiceData.items || []).reduce((sum, it) => sum + ((it.purchaseCost || 0) * (it.quantity || 1)), 0);
+
     const manualExtraCost = invoiceData.manualExtraCost ?? 0;
-    const profitAmount = invoiceData.profitAmount ?? 
-      (invoiceData.subtotal - purchaseCostTotal - manualExtraCost);
+    const effectiveSaleAmount = invoiceData.grandTotal ?? Math.max(0, (invoiceData.subtotal || 0) + (invoiceData.taxAmount || 0) - (invoiceData.discount || 0));
+    
+    // Profit = Sale Amount with GST - Total Spares Buy Cost with GST - Extra Manual Cost
+    const profitAmount = invoiceData.profitAmount !== undefined
+      ? invoiceData.profitAmount
+      : Math.round((effectiveSaleAmount - totalPurchaseCostWithGst - manualExtraCost) * 100) / 100;
 
     const newInvoice: Invoice = {
       ...invoiceData,
       billingFirm: invoiceData.billingFirm || 'sgs',
       id: `inv-doc-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
       purchaseCostTotal,
+      totalPurchaseCostWithGst,
       manualExtraCost,
       profitAmount,
       status: invoiceData.status || 'active',
@@ -986,9 +1015,10 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (newInvoice.billingFirm !== 'pandiyan' && newInvoice.type === 'invoice' && newInvoice.status !== 'cancelled') {
       (newInvoice.items || []).forEach(it => {
         if (!it.isService && it.quantity > 0) {
+          const cleanItemName = it.description.trim().toLowerCase();
           const matchedItem = it.inventoryItemId 
             ? inventory.find(i => i.id === it.inventoryItemId)
-            : inventory.find(i => i.name.toLowerCase() === it.description.toLowerCase());
+            : inventory.find(i => i.name.trim().toLowerCase() === cleanItemName);
           if (matchedItem) {
             recordStockMovement(matchedItem.id, 'out', it.quantity, `Invoice Sale: ${newInvoice.invoiceNumber} (${newInvoice.customerName})`, newInvoice.jobCardId);
           }
@@ -1019,14 +1049,27 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setInvoices(prev => prev.map(inv => {
       if (inv.id === id) {
         const merged = { ...inv, ...updates };
-        // Recalculate profit if items or costs changed
-        if (updates.items || updates.subtotal !== undefined || updates.manualExtraCost !== undefined) {
+        // Recalculate profit if items, subtotal, discount, or extra costs changed
+        if (updates.profitAmount !== undefined) {
+          merged.profitAmount = updates.profitAmount;
+        } else if (updates.items || updates.subtotal !== undefined || updates.grandTotal !== undefined || updates.manualExtraCost !== undefined || updates.discount !== undefined) {
+          const totalPurchaseCostWithGst = updates.totalPurchaseCostWithGst !== undefined 
+            ? updates.totalPurchaseCostWithGst 
+            : (merged.items || []).reduce((sum, it) => {
+                if (it.isService) return sum;
+                const gross = it.purchaseCostWithGst !== undefined 
+                  ? it.purchaseCostWithGst 
+                  : (it.purchaseCost ? (it.purchaseCost * (1 + (it.purchaseGstPercent ?? it.gstPercent ?? 18) / 100)) : 0);
+                return sum + (gross * (it.quantity || 1));
+              }, 0);
           const purchaseCostTotal = updates.purchaseCostTotal !== undefined 
             ? updates.purchaseCostTotal 
             : (merged.items || []).reduce((sum, it) => sum + ((it.purchaseCost || 0) * (it.quantity || 1)), 0);
           const manualExtraCost = merged.manualExtraCost ?? 0;
+          const effectiveSaleAmount = merged.grandTotal ?? Math.max(0, (merged.subtotal || 0) + (merged.taxAmount || 0) - (merged.discount || 0));
+          merged.totalPurchaseCostWithGst = totalPurchaseCostWithGst;
           merged.purchaseCostTotal = purchaseCostTotal;
-          merged.profitAmount = merged.subtotal - purchaseCostTotal - manualExtraCost;
+          merged.profitAmount = Math.round((effectiveSaleAmount - totalPurchaseCostWithGst - manualExtraCost) * 100) / 100;
         }
         return merged;
       }
@@ -1071,6 +1114,28 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const cancelInvoice = (id: string, reason = 'Cancelled by Admin') => {
+    const target = invoices.find(inv => inv.id === id);
+    if (!target) return;
+
+    // 1. If active SGS sales invoice, restock items that were deducted
+    if (target.status === 'active' && target.billingFirm !== 'pandiyan' && target.type === 'invoice') {
+      (target.items || []).forEach(it => {
+        if (!it.isService && it.quantity > 0) {
+          const cleanItemName = it.description.trim().toLowerCase();
+          const matchedItem = it.inventoryItemId 
+            ? inventory.find(i => i.id === it.inventoryItemId)
+            : inventory.find(i => i.name.trim().toLowerCase() === cleanItemName);
+          if (matchedItem) {
+            recordStockMovement(matchedItem.id, 'in', it.quantity, `Restock (Cancelled ${target.invoiceNumber})`, target.jobCardId);
+          }
+        }
+      });
+    }
+
+    // 2. Remove associated cashflow entry so cash balance stays correct
+    setCashFlow(prev => prev.filter(c => c.referenceId !== id));
+
+    // 3. Mark invoice as cancelled
     setInvoices(prev => prev.map(inv => {
       if (inv.id === id) {
         return {
@@ -1111,6 +1176,23 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteInvoice = (id: string) => {
+    const target = invoices.find(inv => inv.id === id);
+    if (target && target.status === 'active' && target.billingFirm !== 'pandiyan' && target.type === 'invoice') {
+      (target.items || []).forEach(it => {
+        if (!it.isService && it.quantity > 0) {
+          const cleanItemName = it.description.trim().toLowerCase();
+          const matchedItem = it.inventoryItemId 
+            ? inventory.find(i => i.id === it.inventoryItemId)
+            : inventory.find(i => i.name.trim().toLowerCase() === cleanItemName);
+          if (matchedItem) {
+            recordStockMovement(matchedItem.id, 'in', it.quantity, `Restock (Deleted ${target.invoiceNumber})`, target.jobCardId);
+          }
+        }
+      });
+    }
+    // Remove linked cash flow entry
+    setCashFlow(prev => prev.filter(c => c.referenceId !== id));
+    // Remove invoice
     setInvoices(prev => prev.filter(inv => inv.id !== id));
   };
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   CreditCard, 
   IndianRupee, 
@@ -44,7 +44,16 @@ import {
   SGS_THEMES, 
   PANDIYAN_THEMES 
 } from '../utils/brandAssets';
-import { calculateFromInclusiveRate, calculateFromBaseRate, GST_PRESET_RATES } from '../utils/gstUtils';
+import { 
+  calculateFromInclusiveRate, 
+  calculateFromBaseRate, 
+  calculateInvoiceSummary, 
+  GST_PRESET_RATES, 
+  COMMON_IT_HSN_CODES,
+  ItemGstCalculation,
+  suggestGstRate,
+  numberToWordsIndian
+} from '../utils/gstUtils';
 
 interface BillingCashFlowProps {
   initialJobId?: string | null;
@@ -114,6 +123,8 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
   const [paidAmount, setPaidAmount] = useState<number>(850);
   const [discount, setDiscount] = useState<number>(0);
   const [roundOff, setRoundOff] = useState<number>(0);
+  const [autoRoundOff, setAutoRoundOff] = useState<boolean>(false);
+  const [isInterState, setIsInterState] = useState<boolean>(false);
   const [manualExtraCost, setManualExtraCost] = useState<number>(0);
   const [invoiceNotes, setInvoiceNotes] = useState('Thank you for trusting Spider Grid Solutions! Spares carry 1-year warranty.');
   const [attachedBillImage, setAttachedBillImage] = useState<string | null>(null);
@@ -149,16 +160,40 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
 
   const netBalance = totalIncome - totalExpense;
 
-  // Profit & Tax calculations for form - Amount as per exact value (no integer rounding)
-  const subtotalCalc = Number(docItems.reduce((acc, it) => acc + (it.amount || 0), 0).toFixed(2));
-  const totalItemTaxCalc = docItems.reduce((acc, it) => {
-    if (billingFirm === 'pandiyan') return 0;
-    if (it.gstAmount !== undefined && it.gstAmount >= 0) return acc + it.gstAmount;
-    const itPct = it.gstPercent ?? gstPercent ?? 0;
-    return acc + (((it.amount || 0) * itPct) / 100);
-  }, 0);
-  const taxCalc = billingFirm === 'pandiyan' ? 0 : Number(totalItemTaxCalc.toFixed(2));
-  const grandTotalCalc = Number(Math.max(0, subtotalCalc + taxCalc - (discount || 0) + (roundOff || 0)).toFixed(2));
+  // Profit, GST & Invoice calculations using robust unified GST engine
+  const invoiceSummary = useMemo(() => {
+    return calculateInvoiceSummary(
+      docItems.map(it => ({
+        description: it.description,
+        quantity: it.quantity,
+        rate: it.rate,
+        grossRate: it.grossRate,
+        gstPercent: billingFirm === 'pandiyan' ? 0 : (it.gstPercent !== undefined ? it.gstPercent : (gstPercent || 0)),
+        purchaseCost: it.purchaseCost,
+        purchaseCostWithGst: it.purchaseCostWithGst,
+        purchaseGstPercent: it.purchaseGstPercent !== undefined ? it.purchaseGstPercent : (it.gstPercent ?? 18),
+        isService: it.isService,
+        discount: it.discount,
+      })),
+      {
+        invoiceDiscount: Number(discount) || 0,
+        manualExtraCost: Number(manualExtraCost) || 0,
+        roundOffAdjustment: Number(roundOff) || 0,
+        autoRoundOff,
+        isInterState,
+        isNonGstFirm: billingFirm === 'pandiyan',
+      }
+    );
+  }, [docItems, discount, manualExtraCost, roundOff, autoRoundOff, isInterState, billingFirm, gstPercent]);
+
+  const subtotalCalc = invoiceSummary.subtotal;
+  const taxCalc = invoiceSummary.totalTax;
+  const grandTotalCalc = invoiceSummary.grandTotal;
+  const totalPurchaseCostCalc = invoiceSummary.totalCostOfGoods;
+  const totalPurchaseCostWithGstCalc = invoiceSummary.totalCostOfGoodsWithGst;
+  const netProfitCalc = invoiceSummary.netProfit;
+  const taxableProfitCalc = invoiceSummary.taxableProfit;
+  const profitMarginPercentCalc = invoiceSummary.profitMarginPercent;
 
   // Auto-fill and keep paidAmount in sync when paymentStatus is 'paid'
   useEffect(() => {
@@ -318,9 +353,6 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     setHasPendingDraft(false);
   };
 
-  const totalPurchaseCostCalc = docItems.reduce((acc, it) => acc + ((it.purchaseCost || 0) * (it.quantity || 1)), 0);
-  const netProfitCalc = subtotalCalc - totalPurchaseCostCalc - Number(manualExtraCost || 0);
-  const profitMarginPercentCalc = subtotalCalc > 0 ? Math.round((netProfitCalc / subtotalCalc) * 100) : 0;
 
   const handleCustomerSelect = (id: string) => {
     setSelectedCustomerId(id);
@@ -368,6 +400,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
         description: '', 
         hsnCode: billingFirm === 'pandiyan' ? undefined : (adminSettings.defaultHsnCode || '998713'), 
         quantity: 1, 
+        unit: 'Nos',
         rate: 0, 
         grossRate: 0,
         gstPercent: defaultPct,
@@ -375,6 +408,11 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
         totalWithGst: 0,
         amount: 0, 
         purchaseCost: 0, 
+        purchaseCostWithGst: 0,
+        purchaseGstPercent: defaultPct,
+        totalPurchaseCost: 0,
+        totalPurchaseCostWithGst: 0,
+        itemProfit: 0,
         isService: false 
       }
     ]);
@@ -384,19 +422,27 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     const defaultPct = billingFirm === 'pandiyan' ? 0 : (adminSettings.defaultGstPercent || 18);
     const unitP = inv.unitPrice || 0;
     const calc = calculateFromInclusiveRate(unitP, defaultPct, 1);
+    const baseCost = inv.unitCost || 0;
+    const costGross = defaultPct > 0 ? Math.round(baseCost * (1 + defaultPct / 100) * 100) / 100 : baseCost;
     setDocItems(prev => [
       ...prev,
       {
         description: inv.name,
         hsnCode: billingFirm === 'pandiyan' ? undefined : (inv.hsnCode || '8471'),
         quantity: 1,
+        unit: 'Nos',
         grossRate: unitP,
         gstPercent: defaultPct,
         rate: calc.baseRate,
         amount: calc.baseAmount,
         gstAmount: calc.totalGst,
         totalWithGst: calc.totalWithGst,
-        purchaseCost: inv.unitCost || 0,
+        purchaseCost: baseCost,
+        purchaseCostWithGst: costGross,
+        purchaseGstPercent: defaultPct,
+        totalPurchaseCost: baseCost,
+        totalPurchaseCostWithGst: costGross,
+        itemProfit: Math.round((calc.totalWithGst - costGross) * 100) / 100,
         isService: false,
         inventoryItemId: inv.id,
       }
@@ -414,6 +460,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
         description: name,
         hsnCode: billingFirm === 'pandiyan' ? undefined : hsn,
         quantity: 1,
+        unit: 'Job',
         grossRate: rate,
         gstPercent: defaultPct,
         rate: calc.baseRate,
@@ -421,6 +468,11 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
         gstAmount: calc.totalGst,
         totalWithGst: calc.totalWithGst,
         purchaseCost: 0,
+        purchaseCostWithGst: 0,
+        purchaseGstPercent: defaultPct,
+        totalPurchaseCost: 0,
+        totalPurchaseCostWithGst: 0,
+        itemProfit: calc.totalWithGst,
         isService: true,
       }
     ]);
@@ -430,108 +482,250 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     setDocItems(docItems.filter((_, i) => i !== index));
   };
 
-  const handleDocItemChange = (index: number, field: keyof InvoiceItem, value: any) => {
+  const handleDocItemChange = (index: number, field: keyof InvoiceItem | 'discount', value: any) => {
     const updated = [...docItems];
     const current = { ...updated[index] };
     const defaultPct = billingFirm === 'pandiyan' ? 0 : (adminSettings.defaultGstPercent || 18);
     const itPct = current.gstPercent !== undefined ? current.gstPercent : defaultPct;
     const qty = field === 'quantity' ? Math.max(1, Number(value) || 1) : Math.max(1, current.quantity || 1);
+    const disc = field === 'discount' ? Math.max(0, Number(value) || 0) : Math.max(0, current.discount || 0);
+    const isServ = field === 'isService' ? Boolean(value) : Boolean(current.isService);
 
-    // Pandiyan Computers: Completely Non-GST firm - direct rate * qty, 0 tax
+    // Helper for spare buy costs
+    const computeSpares = (base: number, gross: number, pGst: number, isServiceItem: boolean) => {
+      if (isServiceItem) {
+        return {
+          purchaseCost: 0,
+          purchaseCostWithGst: 0,
+          totalPurchaseCost: 0,
+          totalPurchaseCostWithGst: 0,
+        };
+      }
+      let b = base;
+      let g = gross;
+      if (g > 0 && b === 0) {
+        b = pGst > 0 ? Math.round((g / (1 + pGst / 100)) * 100) / 100 : g;
+      } else if (b > 0 && g === 0) {
+        g = pGst > 0 ? Math.round((b * (1 + pGst / 100)) * 100) / 100 : b;
+      }
+      const totalB = Math.round(b * qty * 100) / 100;
+      const totalG = Math.round(g * qty * 100) / 100;
+      return {
+        purchaseCost: b,
+        purchaseCostWithGst: g,
+        totalPurchaseCost: totalB,
+        totalPurchaseCostWithGst: totalG,
+      };
+    };
+
+    // Pandiyan Computers: Completely Non-GST firm - direct rate * qty - discount, 0 tax
     if (billingFirm === 'pandiyan') {
       const unitP = field === 'grossRate' || field === 'rate'
         ? Math.max(0, Number(value) || 0)
         : (current.grossRate !== undefined ? current.grossRate : (current.rate || 0));
-      const totalAmt = Number((unitP * qty).toFixed(2));
-      if (field === 'grossRate' || field === 'rate') {
-        updated[index] = {
-          ...current,
-          rate: unitP,
-          grossRate: unitP,
-          gstPercent: 0,
-          quantity: qty,
-          amount: totalAmt,
-          gstAmount: 0,
-          totalWithGst: totalAmt,
-        };
-      } else if (field === 'quantity') {
-        updated[index] = {
-          ...current,
-          quantity: qty,
-          amount: totalAmt,
-          gstAmount: 0,
-          totalWithGst: totalAmt,
-        };
-      } else {
-        updated[index] = { ...current, [field]: value };
+      const totalAmt = Number(Math.max(0, (unitP * qty) - disc).toFixed(2));
+      const pCost = field === 'purchaseCost' || field === 'purchaseCostWithGst'
+        ? Math.max(0, Number(value) || 0)
+        : (current.purchaseCostWithGst || current.purchaseCost || 0);
+      const totalSpares = isServ ? 0 : Math.round(pCost * qty * 100) / 100;
+      const profit = Math.round((totalAmt - totalSpares) * 100) / 100;
+
+      updated[index] = {
+        ...current,
+        rate: unitP,
+        grossRate: unitP,
+        gstPercent: 0,
+        quantity: qty,
+        discount: disc,
+        amount: totalAmt,
+        gstAmount: 0,
+        totalWithGst: totalAmt,
+        isService: isServ,
+        purchaseCost: isServ ? 0 : pCost,
+        purchaseCostWithGst: isServ ? 0 : pCost,
+        totalPurchaseCost: totalSpares,
+        totalPurchaseCostWithGst: totalSpares,
+        itemProfit: profit,
+      };
+      if (field !== 'grossRate' && field !== 'rate' && field !== 'quantity' && field !== 'discount' && field !== 'purchaseCost' && field !== 'purchaseCostWithGst' && field !== 'isService') {
+        updated[index] = { ...updated[index], [field]: value };
       }
       setDocItems(updated);
       return;
     }
 
+    // SGS Firm (GST Enabled)
+    let nextGross = current.grossRate;
+    let nextRate = current.rate;
+    let nextGstPct = itPct;
+    let nextHsn = current.hsnCode;
+
+    if (field === 'hsnCode') {
+      nextHsn = String(value);
+      const suggested = suggestGstRate(nextHsn);
+      if (suggested !== null) {
+        nextGstPct = suggested;
+      }
+    }
+
     if (field === 'grossRate') {
-      // User inputs amount with GST (Rate with GST)
-      const gross = Math.max(0, Number(value) || 0);
-      const calc = calculateFromInclusiveRate(gross, itPct, qty);
-      updated[index] = {
-        ...current,
-        grossRate: gross,
-        gstPercent: itPct,
-        quantity: qty,
-        rate: calc.baseRate,
-        amount: calc.baseAmount,
-        gstAmount: calc.totalGst,
-        totalWithGst: calc.totalWithGst,
-      };
-    } else if (field === 'gstPercent') {
-      // User types or changes GST % for this item -> reduce GST % from the rate!
-      const pct = Math.max(0, Number(value) || 0);
-      const gross = (current.grossRate !== undefined && current.grossRate > 0)
-        ? current.grossRate
-        : (current.rate * (1 + (current.gstPercent || 0) / 100));
-      const calc = calculateFromInclusiveRate(gross, pct, qty);
-      updated[index] = {
-        ...current,
-        gstPercent: pct,
-        grossRate: gross,
-        quantity: qty,
-        rate: calc.baseRate,
-        amount: calc.baseAmount,
-        gstAmount: calc.totalGst,
-        totalWithGst: calc.totalWithGst,
-      };
+      nextGross = Math.max(0, Number(value) || 0);
+      const calc = calculateFromInclusiveRate(nextGross, nextGstPct, qty, disc, isInterState);
+      nextRate = calc.baseRate;
     } else if (field === 'rate') {
-      // User directly inputs Base Rate (Without GST)
-      const base = Math.max(0, Number(value) || 0);
-      const calc = calculateFromBaseRate(base, itPct, qty);
-      updated[index] = {
-        ...current,
-        rate: base,
-        grossRate: calc.grossRate,
-        gstPercent: itPct,
-        quantity: qty,
-        amount: calc.baseAmount,
-        gstAmount: calc.totalGst,
-        totalWithGst: calc.totalWithGst,
-      };
-    } else if (field === 'quantity') {
-      const q = Math.max(1, Number(value) || 1);
-      const gross = (current.grossRate !== undefined && current.grossRate > 0)
-        ? current.grossRate
-        : (current.rate * (1 + itPct / 100));
-      const calc = calculateFromInclusiveRate(gross, itPct, q);
-      updated[index] = {
-        ...current,
-        quantity: q,
-        amount: calc.baseAmount,
-        gstAmount: calc.totalGst,
-        totalWithGst: calc.totalWithGst,
-      };
+      nextRate = Math.max(0, Number(value) || 0);
+      const calc = calculateFromBaseRate(nextRate, nextGstPct, qty, disc, isInterState);
+      nextGross = calc.grossRate;
+    } else if (field === 'gstPercent') {
+      nextGstPct = Math.max(0, Number(value) || 0);
+      if (nextGross !== undefined && nextGross > 0) {
+        const calc = calculateFromInclusiveRate(nextGross, nextGstPct, qty, disc, isInterState);
+        nextRate = calc.baseRate;
+      } else {
+        const calc = calculateFromBaseRate(nextRate || 0, nextGstPct, qty, disc, isInterState);
+        nextGross = calc.grossRate;
+      }
+    }
+
+    let lineCalc: ItemGstCalculation;
+    if (nextGross !== undefined && nextGross > 0) {
+      lineCalc = calculateFromInclusiveRate(nextGross, nextGstPct, qty, disc, isInterState);
     } else {
-      updated[index] = { ...current, [field]: value };
+      lineCalc = calculateFromBaseRate(nextRate || 0, nextGstPct, qty, disc, isInterState);
+    }
+
+    // Spare costs with GST
+    let baseSpare = field === 'purchaseCost' ? Math.max(0, Number(value) || 0) : (current.purchaseCost || 0);
+    let grossSpare = field === 'purchaseCostWithGst' ? Math.max(0, Number(value) || 0) : (current.purchaseCostWithGst || 0);
+
+    if (field === 'purchaseCost') {
+      grossSpare = nextGstPct > 0 ? Math.round(baseSpare * (1 + nextGstPct / 100) * 100) / 100 : baseSpare;
+    } else if (field === 'purchaseCostWithGst') {
+      baseSpare = nextGstPct > 0 ? Math.round((grossSpare / (1 + nextGstPct / 100)) * 100) / 100 : grossSpare;
+    } else if (baseSpare > 0 && grossSpare === 0) {
+      grossSpare = nextGstPct > 0 ? Math.round(baseSpare * (1 + nextGstPct / 100) * 100) / 100 : baseSpare;
+    }
+
+    const spareData = computeSpares(baseSpare, grossSpare, nextGstPct, isServ);
+    const itemProfit = Math.round((lineCalc.totalWithGst - spareData.totalPurchaseCostWithGst) * 100) / 100;
+
+    updated[index] = {
+      ...current,
+      description: field === 'description' ? value : current.description,
+      hsnCode: nextHsn,
+      unit: field === 'unit' ? value : (current.unit || 'Nos'),
+      quantity: qty,
+      discount: disc,
+      gstPercent: nextGstPct,
+      rate: lineCalc.baseRate,
+      grossRate: nextGross,
+      amount: lineCalc.taxableAmount,
+      gstAmount: lineCalc.totalGst,
+      totalWithGst: lineCalc.totalWithGst,
+      cgstAmount: lineCalc.cgst,
+      sgstAmount: lineCalc.sgst,
+      igstAmount: lineCalc.igst,
+      isService: isServ,
+      purchaseCost: spareData.purchaseCost,
+      purchaseCostWithGst: spareData.purchaseCostWithGst,
+      purchaseGstPercent: nextGstPct,
+      totalPurchaseCost: spareData.totalPurchaseCost,
+      totalPurchaseCostWithGst: spareData.totalPurchaseCostWithGst,
+      itemProfit,
+    };
+
+    if (field !== 'description' && field !== 'hsnCode' && field !== 'unit' && field !== 'quantity' && field !== 'discount' && field !== 'gstPercent' && field !== 'rate' && field !== 'grossRate' && field !== 'purchaseCost' && field !== 'purchaseCostWithGst' && field !== 'isService') {
+      updated[index] = { ...updated[index], [field]: value };
     }
 
     setDocItems(updated);
+  };
+
+  // 1-Click Verification Test Entry (User requested: "neeyea oru entry pattu eppati work athunu paru")
+  const handleLoadTestEntry = () => {
+    const testCust = customers[0] || { id: 'cust-karthik', name: 'Karthik Raja', phone: '+91 98421 55678', area: 'KK Nagar, Madurai' };
+    setSelectedCustomerId(testCust.id);
+    setCustName(testCust.name);
+    setCustPhone(testCust.phone);
+    setCustArea(testCust.area || 'Madurai');
+
+    const nvmeItem = inventory.find(i => i.name.toLowerCase().includes('ssd')) || inventory[0];
+    const ramItem = inventory.find(i => i.name.toLowerCase().includes('ram')) || inventory[1];
+
+    const item1Calc = calculateFromBaseRate(2200, 18, 1, 0, false);
+    const item2Calc = calculateFromInclusiveRate(1770, 18, 1, 0, false);
+    const item3Calc = calculateFromBaseRate(650, 18, 1, 0, false);
+
+    setDocItems([
+      {
+        inventoryItemId: nvmeItem?.id,
+        description: nvmeItem?.name || 'Crucial BX500 480GB 2.5 Inch SATA SSD',
+        hsnCode: nvmeItem?.hsnCode || '8471',
+        quantity: 1,
+        unit: 'Nos',
+        rate: item1Calc.baseRate,
+        grossRate: item1Calc.grossRate,
+        gstPercent: 18,
+        discount: 0,
+        amount: item1Calc.taxableAmount,
+        gstAmount: item1Calc.totalGst,
+        totalWithGst: item1Calc.totalWithGst,
+        purchaseCost: 1750,
+        purchaseCostWithGst: 2065,
+        purchaseGstPercent: 18,
+        totalPurchaseCost: 1750,
+        totalPurchaseCostWithGst: 2065,
+        itemProfit: 531,
+        isService: false,
+      },
+      {
+        inventoryItemId: ramItem?.id,
+        description: ramItem?.name || 'Corsair Vengeance 8GB DDR4 3200MHz RAM',
+        hsnCode: ramItem?.hsnCode || '8471',
+        quantity: 1,
+        unit: 'Nos',
+        rate: item2Calc.baseRate,
+        grossRate: item2Calc.grossRate,
+        gstPercent: 18,
+        discount: 0,
+        amount: item2Calc.taxableAmount,
+        gstAmount: item2Calc.totalGst,
+        totalWithGst: item2Calc.totalWithGst,
+        purchaseCost: 1150,
+        purchaseCostWithGst: 1357,
+        purchaseGstPercent: 18,
+        totalPurchaseCost: 1150,
+        totalPurchaseCostWithGst: 1357,
+        itemProfit: 413,
+        isService: false,
+      },
+      {
+        description: 'Laptop High Speed SSD & RAM Installation + OS Service',
+        hsnCode: '998713',
+        quantity: 1,
+        unit: 'Job',
+        rate: item3Calc.baseRate,
+        grossRate: item3Calc.grossRate,
+        gstPercent: 18,
+        discount: 0,
+        amount: item3Calc.taxableAmount,
+        gstAmount: item3Calc.totalGst,
+        totalWithGst: item3Calc.totalWithGst,
+        purchaseCost: 0,
+        purchaseCostWithGst: 0,
+        purchaseGstPercent: 18,
+        totalPurchaseCost: 0,
+        totalPurchaseCostWithGst: 0,
+        itemProfit: 767,
+        isService: true,
+      }
+    ]);
+    setIsInterState(false);
+    setDiscount(50);
+    setRoundOff(0);
+    setAutoRoundOff(false);
+    setManualExtraCost(0);
+    setInvoiceNotes('Verified Test Bill: SSD & RAM from stock + Labor service. Profit calculated as (Sale Amount with GST - Buy Cost with GST)!');
   };
 
   const handleAddPresetItem = (preset: { name: string; hsn: string; rate: number; cost: number }) => {
@@ -745,10 +939,10 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     }
     const invoiceNumber = `${prefix}${nextNo}`;
     const effectiveGstPercent = billingFirm === 'pandiyan' ? 0 : gstPercent;
-    const effectiveTaxAmount = billingFirm === 'pandiyan' ? 0 : taxCalc;
+    const effectiveTaxAmount = billingFirm === 'pandiyan' ? 0 : invoiceSummary.totalTax;
     const effectiveDiscount = Number(discount) || 0;
     const effectiveRoundOff = Number(roundOff) || 0;
-    const effectiveGrandTotal = Number(Math.max(0, subtotalCalc + effectiveTaxAmount - effectiveDiscount + effectiveRoundOff).toFixed(2));
+    const effectiveGrandTotal = invoiceSummary.grandTotal;
 
     if (editingInvoiceId) {
       // Update existing
@@ -764,9 +958,13 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
         jobCardId: selectedJobId || undefined,
         date: docDate,
         items: docItems,
-        subtotal: subtotalCalc,
+        subtotal: invoiceSummary.subtotal,
         gstPercent: effectiveGstPercent,
         taxAmount: effectiveTaxAmount,
+        cgstAmount: invoiceSummary.totalCgst,
+        sgstAmount: invoiceSummary.totalSgst,
+        igstAmount: invoiceSummary.totalIgst,
+        isInterState: invoiceSummary.isInterState,
         discount: effectiveDiscount,
         roundOff: effectiveRoundOff,
         grandTotal: effectiveGrandTotal,
@@ -774,9 +972,13 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
         paymentMode,
         paymentReference: paymentReference.trim() || undefined,
         paidAmount: Number(paidAmount) || 0,
-        purchaseCostTotal: totalPurchaseCostCalc,
+        purchaseCostTotal: invoiceSummary.totalCostOfGoods,
+        totalPurchaseCostWithGst: invoiceSummary.totalCostOfGoodsWithGst,
+        totalSaleWithGst: invoiceSummary.totalLinesWithGst,
         manualExtraCost: Number(manualExtraCost) || 0,
-        profitAmount: netProfitCalc,
+        profitAmount: invoiceSummary.netProfit,
+        taxableProfit: invoiceSummary.taxableProfit,
+        profitMarginPercent: invoiceSummary.profitMarginPercent,
         notes: invoiceNotes,
         attachedBillImage: attachedBillImage || undefined,
       });
@@ -795,9 +997,13 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
         jobCardId: selectedJobId || undefined,
         date: docDate,
         items: docItems,
-        subtotal: subtotalCalc,
+        subtotal: invoiceSummary.subtotal,
         gstPercent: effectiveGstPercent,
         taxAmount: effectiveTaxAmount,
+        cgstAmount: invoiceSummary.totalCgst,
+        sgstAmount: invoiceSummary.totalSgst,
+        igstAmount: invoiceSummary.totalIgst,
+        isInterState: invoiceSummary.isInterState,
         discount: effectiveDiscount,
         roundOff: effectiveRoundOff,
         grandTotal: effectiveGrandTotal,
@@ -805,9 +1011,13 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
         paymentMode,
         paymentReference: paymentReference.trim() || undefined,
         paidAmount: Number(paidAmount) || 0,
-        purchaseCostTotal: totalPurchaseCostCalc,
+        purchaseCostTotal: invoiceSummary.totalCostOfGoods,
+        totalPurchaseCostWithGst: invoiceSummary.totalCostOfGoodsWithGst,
+        totalSaleWithGst: invoiceSummary.totalLinesWithGst,
         manualExtraCost: Number(manualExtraCost) || 0,
-        profitAmount: netProfitCalc,
+        profitAmount: invoiceSummary.netProfit,
+        taxableProfit: invoiceSummary.taxableProfit,
+        profitMarginPercent: invoiceSummary.profitMarginPercent,
         notes: invoiceNotes,
         attachedBillImage: attachedBillImage || undefined,
       });
@@ -1563,34 +1773,34 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
               }`}>
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-                    <TrendingUp className="w-4 h-4" /> Bill Profit & Loss Breakdown
+                    <TrendingUp className="w-4 h-4" /> Bill Profit & Loss Breakdown (Sale with GST vs Spares with GST)
                   </span>
-                  <span className="text-xs font-bold font-mono px-2 py-0.5 rounded-full bg-emerald-600 text-white">
-                    Net Profit: +₹{(viewingInvoice.profitAmount || (viewingInvoice.subtotal - (viewingInvoice.purchaseCostTotal || 0) - (viewingInvoice.manualExtraCost || 0))).toLocaleString('en-IN')}
+                  <span className="text-xs font-bold font-mono px-2.5 py-0.5 rounded-full bg-emerald-600 text-white">
+                    Net Cash Profit: +₹{(viewingInvoice.profitAmount ?? (viewingInvoice.grandTotal - (viewingInvoice.totalPurchaseCostWithGst || viewingInvoice.purchaseCostTotal || 0) - (viewingInvoice.manualExtraCost || 0))).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2">
                   <div>
-                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Billed Subtotal</span>
-                    <p className="font-mono font-bold mt-0.5">₹{viewingInvoice.subtotal.toLocaleString('en-IN')}</p>
+                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Sale Amount (Grand Total)</span>
+                    <p className="font-mono font-bold mt-0.5 text-emerald-600">₹{viewingInvoice.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                   </div>
                   <div>
-                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Spares Purchase Cost</span>
+                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Spares Buy Cost (with GST)</span>
                     <p className={`font-mono font-bold mt-0.5 ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
-                      -₹{(viewingInvoice.purchaseCostTotal || 0).toLocaleString('en-IN')}
+                      -₹{((viewingInvoice.totalPurchaseCostWithGst || viewingInvoice.purchaseCostTotal || 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                   </div>
                   <div>
-                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Extra Manual Cost</span>
+                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Extra Workshop Cost</span>
                     <p className={`font-mono font-bold mt-0.5 ${isDark ? 'text-rose-400' : 'text-rose-700'}`}>
-                      -₹{(viewingInvoice.manualExtraCost || 0).toLocaleString('en-IN')}
+                      -₹{(viewingInvoice.manualExtraCost || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
                   </div>
                   <div>
                     <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Profit Margin</span>
                     <p className="font-mono font-bold text-emerald-600 mt-0.5">
-                      {viewingInvoice.subtotal > 0 ? Math.round(((viewingInvoice.profitAmount || 0) / viewingInvoice.subtotal) * 100) : 0}% Margin
+                      {viewingInvoice.grandTotal > 0 ? (((viewingInvoice.profitAmount || 0) / viewingInvoice.grandTotal) * 100).toFixed(1) : '0.0'}% Margin
                     </p>
                   </div>
                 </div>
@@ -2158,7 +2368,16 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                   <label className={`text-xs font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
                     Line Items & HSN Codes
                   </label>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={handleLoadTestEntry}
+                      className="text-xs font-bold text-purple-600 hover:text-purple-700 dark:text-purple-400 flex items-center gap-1.5 cursor-pointer bg-purple-50 dark:bg-purple-950/40 px-2.5 py-1 rounded-lg border border-purple-200 dark:border-purple-800 transition-colors shadow-xs"
+                      title="Insert verified test bill with SSD + RAM from stock and labor service to test end-to-end calculations"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>🧪 Load Test Entry</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => setIsStockPickerOpen(!isStockPickerOpen)}
@@ -2177,6 +2396,44 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                     </button>
                   </div>
                 </div>
+
+                {/* Place of Supply (Intra-state Tamil Nadu vs Inter-state IGST) */}
+                {billingFirm !== 'pandiyan' && (
+                  <div className={`p-2.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs ${
+                    isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-blue-50/50 border-blue-200'
+                  }`}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-slate-700 dark:text-slate-300">Place of Supply:</span>
+                      <div className="inline-flex rounded-lg border p-0.5 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 text-xs font-semibold">
+                        <button
+                          type="button"
+                          onClick={() => setIsInterState(false)}
+                          className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                            !isInterState
+                              ? 'bg-blue-600 text-white shadow-xs'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                          }`}
+                        >
+                          📍 Tamil Nadu (Intra-State: CGST + SGST)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsInterState(true)}
+                          className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                            isInterState
+                              ? 'bg-blue-600 text-white shadow-xs'
+                              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                          }`}
+                        >
+                          🌐 Outside TN (Inter-State: IGST)
+                        </button>
+                      </div>
+                    </div>
+                    <span className="text-[11px] text-slate-500 font-mono">
+                      {isInterState ? 'IGST Applicable (Full 100% Tax to Integrated GST)' : 'Intra-State: CGST (50%) + SGST (50%)'}
+                    </span>
+                  </div>
+                )}
 
                 {/* Search Stock Inventory Drawer */}
                 {isStockPickerOpen && (
@@ -2359,7 +2616,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                               <input
                                 type="number"
                                 min="0"
-                                value={item.grossRate !== undefined && item.grossRate > 0 ? item.grossRate : (item.rate || 0)}
+                                value={item.grossRate !== undefined && item.grossRate > 0 ? item.grossRate : (item.rate || '')}
                                 onChange={(e) => handleDocItemChange(idx, 'grossRate', e.target.value)}
                                 placeholder="Rate"
                                 className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono font-bold focus:outline-none ${
@@ -2372,23 +2629,41 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
 
                           {/* 2. Spare Cost (for Profit & Loss) */}
                           <div>
-                            <label className={`block text-[10px] font-bold mb-0.5 truncate ${isDark ? 'text-rose-400' : 'text-rose-700'}`}>
-                              Spare Cost (₹)
-                            </label>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <label className={`text-[10px] font-bold truncate ${isDark ? 'text-rose-400' : 'text-rose-700'}`}>
+                                Spare Cost (₹)
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => handleDocItemChange(idx, 'isService', !item.isService)}
+                                className={`text-[9px] font-bold px-1 rounded cursor-pointer ${
+                                  item.isService 
+                                    ? 'bg-emerald-600 text-white' 
+                                    : 'bg-slate-200 dark:bg-slate-800 text-slate-500'
+                                }`}
+                              >
+                                {item.isService ? 'Service' : 'Spare'}
+                              </button>
+                            </div>
                             <div className="relative">
                               <input
                                 type="number"
                                 min="0"
-                                value={item.purchaseCost || 0}
+                                disabled={item.isService}
+                                value={item.isService ? 0 : (item.purchaseCost || '')}
                                 onChange={(e) => handleDocItemChange(idx, 'purchaseCost', Number(e.target.value))}
-                                placeholder="Spare Cost"
+                                placeholder="0"
                                 className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono focus:outline-none ${
-                                  isDark ? 'bg-slate-900 border border-slate-700 text-rose-300' : 'bg-white border border-slate-300 text-rose-700'
+                                  item.isService
+                                    ? 'bg-slate-100 dark:bg-slate-900/40 text-slate-400 cursor-not-allowed'
+                                    : (isDark ? 'bg-slate-900 border border-slate-700 text-rose-300' : 'bg-white border border-slate-300 text-rose-700')
                                 }`}
                               />
                               <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-rose-400">₹</span>
                             </div>
-                            <span className="text-[9px] text-slate-500 block truncate mt-0.5">Workshop cost</span>
+                            <span className="text-[9px] text-slate-500 block truncate mt-0.5 font-mono">
+                              Total Cost: ₹{(item.totalPurchaseCost || 0).toLocaleString('en-IN')}
+                            </span>
                           </div>
 
                           {/* 3. Quantity Display */}
@@ -2406,7 +2681,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                             </span>
                           </div>
 
-                          {/* 4. Total Amount */}
+                          {/* 4. Total Amount & Profit */}
                           <div className="text-right">
                             <label className={`block text-[10px] font-bold mb-0.5 ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
                               Item Total (₹)
@@ -2416,20 +2691,45 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                             }`}>
                               ₹{(item.amount ?? ((item.rate || 0) * (item.quantity || 1))).toLocaleString('en-IN')}
                             </div>
-                            <span className="text-[9px] text-amber-500 block truncate mt-0.5 font-sans">
-                              Exempt / Nil Tax
+                            <span className="text-[9px] font-bold text-emerald-600 block truncate mt-0.5 font-mono">
+                              Profit: +₹{((item.amount || 0) - (item.totalPurchaseCost || 0)).toLocaleString('en-IN')}
                             </span>
                           </div>
                         </div>
                       ) : (
-                        <div className={`p-2.5 rounded-lg border grid grid-cols-2 sm:grid-cols-5 gap-2.5 items-end text-xs ${
+                        <div className={`p-3 rounded-lg border grid grid-cols-2 sm:grid-cols-6 gap-2.5 items-end text-xs ${
                           isDark ? 'bg-slate-950/60 border-slate-800/80' : 'bg-slate-50 border-slate-200'
                         }`}>
-                          {/* 1. Rate with GST (Gross / Inclusive) */}
+                          {/* 1. Base Rate (Without GST) */}
+                          <div>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <label className={`text-[10px] font-bold ${isDark ? 'text-sky-400' : 'text-sky-700'}`}>
+                                Base Rate (Without GST)
+                              </label>
+                              <span className="text-[9px] font-bold text-sky-600 bg-sky-100 dark:bg-sky-950/80 px-1 rounded">Net</span>
+                            </div>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={item.rate || ''}
+                                onChange={(e) => handleDocItemChange(idx, 'rate', e.target.value)}
+                                placeholder="Base Rate"
+                                className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono font-bold focus:outline-none ${
+                                  isDark ? 'bg-slate-900 border border-sky-800 text-sky-300' : 'bg-white border border-sky-300 text-sky-800'
+                                }`}
+                              />
+                              <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-sky-500 font-bold">₹</span>
+                            </div>
+                            <span className="text-[9px] text-slate-400 block truncate mt-0.5">Excl. GST</span>
+                          </div>
+
+                          {/* 2. Rate with GST (Gross / Inclusive) */}
                           <div>
                             <div className="flex items-center justify-between mb-0.5">
                               <label className={`text-[10px] font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
-                                Rate with GST (₹)
+                                Rate With GST (MRP)
                               </label>
                               <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-950/80 px-1 rounded">Gross</span>
                             </div>
@@ -2437,7 +2737,8 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                               <input
                                 type="number"
                                 min="0"
-                                value={item.grossRate !== undefined ? item.grossRate : Number(((item.rate * (1 + (item.gstPercent || 0)/100))).toFixed(2))}
+                                step="any"
+                                value={item.grossRate !== undefined ? item.grossRate : (item.rate ? Number(((item.rate * (1 + (item.gstPercent || 0)/100))).toFixed(2)) : '')}
                                 onChange={(e) => handleDocItemChange(idx, 'grossRate', e.target.value)}
                                 placeholder="Rate with GST"
                                 className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono font-bold focus:outline-none ${
@@ -2446,35 +2747,34 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                               />
                               <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-emerald-500 font-bold">₹</span>
                             </div>
+                            <span className="text-[9px] text-slate-400 block truncate mt-0.5">Incl. GST</span>
                           </div>
 
-                          {/* 2. Individual GST % Input Box */}
+                          {/* 3. Individual GST % Input & Presets */}
                           <div>
                             <div className="flex items-center justify-between mb-0.5">
                               <label className={`text-[10px] font-bold ${isDark ? 'text-blue-400' : 'text-blue-700'}`}>
-                                GST % Box
+                                GST %
                               </label>
                               <span className="text-[9px] text-blue-500 font-mono">Tax %</span>
                             </div>
-                            <div className="flex items-center gap-1">
-                              <div className="relative flex-1">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max="100"
-                                  step="0.5"
-                                  value={item.gstPercent !== undefined ? item.gstPercent : 18}
-                                  onChange={(e) => handleDocItemChange(idx, 'gstPercent', e.target.value)}
-                                  placeholder="GST %"
-                                  className={`w-full rounded-md pl-2 pr-4 py-1 text-xs font-mono font-bold text-center focus:outline-none ${
-                                    isDark ? 'bg-slate-900 border border-blue-700 text-blue-300' : 'bg-white border border-blue-400 text-blue-800'
-                                  }`}
-                                />
-                                <span className="text-[10px] absolute right-1.5 top-1/2 -translate-y-1/2 text-blue-500 font-bold">%</span>
-                              </div>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                step="0.5"
+                                value={item.gstPercent !== undefined ? item.gstPercent : 18}
+                                onChange={(e) => handleDocItemChange(idx, 'gstPercent', e.target.value)}
+                                placeholder="18"
+                                className={`w-full rounded-md pl-2 pr-4 py-1 text-xs font-mono font-bold text-center focus:outline-none ${
+                                  isDark ? 'bg-slate-900 border border-blue-700 text-blue-300' : 'bg-white border border-blue-400 text-blue-800'
+                                }`}
+                              />
+                              <span className="text-[10px] absolute right-1.5 top-1/2 -translate-y-1/2 text-blue-500 font-bold">%</span>
                             </div>
-                            {/* Quick GST % Presets */}
-                            <div className="flex items-center gap-1 mt-1">
+                            {/* Quick GST Presets */}
+                            <div className="flex items-center gap-0.5 mt-1">
                               {[0, 5, 12, 18, 28].map(ratePct => (
                                 <button
                                   key={ratePct}
@@ -2492,58 +2792,87 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                             </div>
                           </div>
 
-                          {/* 3. GST Tax Amount */}
-                          <div>
-                            <div className="flex items-center justify-between mb-0.5">
-                              <label className={`text-[10px] font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
-                                GST Tax (₹)
-                              </label>
-                              <span className="text-[9px] text-amber-500 font-mono">Tax Amount</span>
-                            </div>
-                            <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold border ${
-                              isDark ? 'bg-slate-900 border-amber-900/60 text-amber-300' : 'bg-white border-amber-200 text-amber-800'
-                            }`}>
-                              +₹{(item.gstAmount ?? (((item.amount || 0) * (item.gstPercent || 0)) / 100)).toFixed(2)}
-                            </div>
-                            <span className="text-[9px] text-slate-400 block truncate mt-0.5 font-mono">
-                              CGST: ₹{(((item.gstAmount || 0) / 2)).toFixed(2)} | SGST: ₹{(((item.gstAmount || 0) / 2)).toFixed(2)}
-                            </span>
-                          </div>
-
-                          {/* 4. Spare Cost (for Profit & Loss) */}
+                          {/* 4. Line Discount (₹) */}
                           <div>
                             <label className={`block text-[10px] font-bold mb-0.5 truncate ${isDark ? 'text-rose-400' : 'text-rose-700'}`}>
-                              Spare Cost (₹)
+                              Discount (₹)
                             </label>
                             <div className="relative">
                               <input
                                 type="number"
                                 min="0"
-                                value={item.purchaseCost || 0}
-                                onChange={(e) => handleDocItemChange(idx, 'purchaseCost', Number(e.target.value))}
-                                placeholder="Spare Cost"
+                                step="any"
+                                value={item.discount || ''}
+                                onChange={(e) => handleDocItemChange(idx, 'discount', e.target.value)}
+                                placeholder="0"
                                 className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono focus:outline-none ${
                                   isDark ? 'bg-slate-900 border border-slate-700 text-rose-300' : 'bg-white border border-slate-300 text-rose-700'
                                 }`}
                               />
-                              <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-rose-400">₹</span>
+                              <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-rose-400 font-bold">-₹</span>
                             </div>
-                            <span className="text-[9px] text-slate-500 block truncate mt-0.5">Workshop cost</span>
+                            <span className="text-[9px] text-slate-400 block truncate mt-0.5">Item discount</span>
                           </div>
 
-                          {/* 5. Total With GST */}
+                          {/* 5. Spare Cost / Purchase Cost WITH GST */}
+                          <div>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <label className={`text-[10px] font-bold truncate ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+                                Spare Cost (₹)
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => handleDocItemChange(idx, 'isService', !item.isService)}
+                                className={`text-[9px] font-bold px-1 rounded cursor-pointer ${
+                                  item.isService 
+                                    ? 'bg-emerald-600 text-white' 
+                                    : 'bg-slate-200 dark:bg-slate-800 text-slate-500 hover:bg-emerald-100'
+                                }`}
+                                title="Toggle between Service (0 Spare) and Hardware Part"
+                              >
+                                {item.isService ? 'Labor' : 'Spare'}
+                              </button>
+                            </div>
+                            <div className="relative">
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                disabled={item.isService}
+                                value={item.isService ? 0 : (item.purchaseCostWithGst !== undefined && item.purchaseCostWithGst > 0 ? item.purchaseCostWithGst : (item.purchaseCost || ''))}
+                                onChange={(e) => handleDocItemChange(idx, 'purchaseCostWithGst', Number(e.target.value))}
+                                placeholder="0"
+                                className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono focus:outline-none ${
+                                  item.isService
+                                    ? 'bg-slate-100 dark:bg-slate-900/40 text-slate-400 cursor-not-allowed'
+                                    : (isDark ? 'bg-slate-900 border border-slate-700 text-amber-300' : 'bg-white border border-slate-300 text-amber-800')
+                                }`}
+                              />
+                              <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-amber-500 font-bold">₹</span>
+                            </div>
+                            <span className="text-[9px] text-amber-600 dark:text-amber-400 block truncate mt-0.5 font-mono font-medium">
+                              {item.isService 
+                                ? '₹0 Spares (100% Profit)' 
+                                : `Cost w/GST: ₹${(item.totalPurchaseCostWithGst || (item.purchaseCost || 0) * (item.quantity || 1)).toLocaleString('en-IN')}`
+                              }
+                            </span>
+                          </div>
+
+                          {/* 6. Total With GST & Profit */}
                           <div className="text-right">
                             <label className={`block text-[10px] font-bold mb-0.5 ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
-                              Item Total with GST
+                              Line Total (₹)
                             </label>
                             <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold text-right border ${
                               isDark ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
                             }`}>
                               ₹{(item.totalWithGst ?? ((item.amount || 0) + (item.gstAmount || 0))).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </div>
-                            <span className="text-[9px] text-slate-400 block truncate mt-0.5 font-mono">
-                              Base: ₹{(item.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </span>
+                            <div className="flex items-center justify-end gap-1 mt-0.5">
+                              <span className="text-[9px] font-bold font-mono text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/80 px-1 py-0.2 rounded border border-emerald-300 dark:border-emerald-800">
+                                Profit: +₹{((item.totalWithGst || 0) - (item.totalPurchaseCostWithGst || 0)).toLocaleString('en-IN')}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -2579,22 +2908,34 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                   <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
                     <TrendingUp className="w-4 h-4" /> Real-time Bill Profit & Loss Calculation
                   </span>
-                  <span className="text-xs font-bold font-mono px-2 py-0.5 rounded-full bg-emerald-600 text-white">
+                  <span className="text-xs font-bold font-mono px-2.5 py-1 rounded-full bg-emerald-600 text-white shadow-xs">
                     Estimated Profit: +₹{netProfitCalc.toLocaleString('en-IN')} ({profitMarginPercentCalc}%)
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
                   <div>
-                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Billed Amount</span>
-                    <p className="font-mono font-bold text-sm mt-0.5">₹{subtotalCalc.toLocaleString('en-IN')}</p>
+                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>
+                      Total Sale Amount {billingFirm !== 'pandiyan' ? '(With GST)' : ''}
+                    </span>
+                    <p className="font-mono font-bold text-sm mt-0.5">
+                      ₹{grandTotalCalc.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    <span className="text-[10px] text-slate-400 block font-sans">
+                      Billed to Customer
+                    </span>
                   </div>
 
                   <div>
-                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Spares Purchase Cost</span>
+                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>
+                      Total Spares Cost {billingFirm !== 'pandiyan' ? '(With GST)' : ''}
+                    </span>
                     <p className={`font-mono font-bold text-sm mt-0.5 ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
-                      -₹{totalPurchaseCostCalc.toLocaleString('en-IN')}
+                      -₹{totalPurchaseCostWithGstCalc.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
+                    <span className="text-[10px] text-slate-400 block font-sans">
+                      Purchase cost paid to vendors
+                    </span>
                   </div>
 
                   <div>
@@ -2603,22 +2944,43 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                     </label>
                     <input
                       type="number"
-                      value={manualExtraCost}
-                      onChange={(e) => setManualExtraCost(Number(e.target.value))}
-                      placeholder="e.g. Travel, outside lathe"
+                      value={manualExtraCost || ''}
+                      onChange={(e) => setManualExtraCost(Math.max(0, Number(e.target.value) || 0))}
+                      placeholder="0.00"
                       className={`w-full rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none ${
                         isDark ? 'bg-slate-900 border border-slate-700 text-rose-400' : 'bg-white border border-slate-300 text-rose-700'
                       }`}
                     />
+                    <span className="text-[10px] text-slate-400 block font-sans">
+                      Travel, outside lathe, etc.
+                    </span>
                   </div>
 
                   <div>
-                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Net Profit</span>
+                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>
+                      Net Cash Profit
+                    </span>
                     <p className="font-mono font-bold text-base text-emerald-600 mt-0.5">
-                      +₹{netProfitCalc.toLocaleString('en-IN')}
+                      +₹{netProfitCalc.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </p>
+                    <span className="text-[10px] text-emerald-700 dark:text-emerald-400 block truncate font-sans font-semibold">
+                      Margin: {profitMarginPercentCalc}% (Sale with GST - Spares with GST)
+                    </span>
                   </div>
                 </div>
+
+                {billingFirm !== 'pandiyan' && (
+                  <div className={`pt-2 border-t text-[11px] flex flex-wrap items-center justify-between gap-2 ${
+                    isDark ? 'border-emerald-900/50 text-slate-400' : 'border-emerald-200 text-slate-600'
+                  }`}>
+                    <span className="font-mono">
+                      Book Basis (Excl. GST): Taxable Sales ₹{subtotalCalc.toLocaleString('en-IN')} - Taxable Spares ₹{totalPurchaseCostCalc.toLocaleString('en-IN')} = Taxable Profit +₹{taxableProfitCalc.toLocaleString('en-IN')}
+                    </span>
+                    <span className="font-mono text-blue-600 font-semibold">
+                      Output Tax: +₹{taxCalc.toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Financial Totals: Subtotal, Total GST, Discount, Round Off, Grand Total & Payment */}
@@ -2638,10 +3000,10 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                     </div>
                   </div>
 
-                  {/* 2. Total GST Amount (Replaced GST Percentage dropdown) */}
+                  {/* 2. Total GST Amount */}
                   <div>
                     <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                      Total GST Amount
+                      Total GST {isInterState ? '(IGST)' : '(CGST + SGST)'}
                     </label>
                     {billingFirm === 'pandiyan' ? (
                       <div className={`rounded-lg px-3 py-2 text-xs font-bold border text-amber-600 dark:text-amber-400 ${
@@ -2655,7 +3017,10 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                       }`}>
                         +₹{taxCalc.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         <span className="text-[9px] text-slate-400 block font-normal font-sans">
-                          CGST: ₹{(taxCalc/2).toFixed(2)} | SGST: ₹{(taxCalc/2).toFixed(2)}
+                          {isInterState 
+                            ? `IGST (100%): ₹${invoiceSummary.totalIgst.toFixed(2)}`
+                            : `CGST: ₹${invoiceSummary.totalCgst.toFixed(2)} | SGST: ₹${invoiceSummary.totalSgst.toFixed(2)}`
+                          }
                         </span>
                       </div>
                     )}
@@ -2680,6 +3045,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                       />
                       <span className="text-xs absolute left-2.5 top-1/2 -translate-y-1/2 text-rose-400 font-bold">-₹</span>
                     </div>
+                    <span className="text-[9px] text-slate-400 block mt-0.5">Deducted from bill total</span>
                   </div>
 
                   {/* 4. Manual Round Off (₹) with Auto Round button */}
@@ -2691,9 +3057,9 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                       <button
                         type="button"
                         onClick={() => {
-                          const base = subtotalCalc + taxCalc - discount;
-                          const rounded = Math.round(base);
-                          const diff = Number((rounded - base).toFixed(2));
+                          const unrounded = invoiceSummary.unroundedTotal;
+                          const rounded = Math.round(unrounded);
+                          const diff = Number((rounded - unrounded).toFixed(2));
                           setRoundOff(diff);
                         }}
                         className="text-[10px] text-blue-600 hover:underline cursor-pointer font-bold"
@@ -2715,23 +3081,35 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                       />
                       <span className="text-xs absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">±₹</span>
                     </div>
+                    <span className="text-[9px] text-slate-400 block mt-0.5">To nearest ₹</span>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-200 dark:border-slate-800 items-end">
                   {/* Grand Total */}
-                  <div>
-                    <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                      Grand Total Amount (₹)
-                    </label>
-                    <input
-                      type="number"
-                      value={grandTotalCalc}
-                      readOnly
-                      className={`w-full rounded-lg px-3 py-2 text-sm font-mono font-bold focus:outline-none ${
-                        isDark ? 'bg-slate-900 border border-emerald-900 text-emerald-400' : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
-                      }`}
-                    />
+                  <div className="sm:col-span-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <label className={`block text-xs font-bold uppercase tracking-wider ${isDark ? 'text-emerald-400' : 'text-emerald-800'}`}>
+                        Grand Total Amount (₹)
+                      </label>
+                      <span className="text-[10px] font-mono text-slate-400">
+                        Lines Total: ₹{invoiceSummary.totalLinesWithGst.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={grandTotalCalc}
+                        readOnly
+                        className={`w-full rounded-lg pl-7 pr-3 py-2 text-base font-mono font-black focus:outline-none ${
+                          isDark ? 'bg-slate-900 border-2 border-emerald-600 text-emerald-300' : 'bg-emerald-50 border-2 border-emerald-500 text-emerald-900'
+                        }`}
+                      />
+                      <span className="text-sm absolute left-2.5 top-1/2 -translate-y-1/2 font-bold text-emerald-600">₹</span>
+                    </div>
+                    <p className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 mt-1 italic">
+                      {numberToWordsIndian(grandTotalCalc)}
+                    </p>
                   </div>
 
                   {/* Payment Status */}
@@ -3210,6 +3588,14 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* Amount in Words (Indian Currency) */}
+              <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-xs">
+                <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Amount in Words:</span>
+                <p className="font-semibold text-slate-800 italic capitalize">
+                  {numberToWordsIndian(printableInvoice.grandTotal)}
+                </p>
               </div>
 
               {/* SGS Bank Account Details & UPI Section (Shown on Tax Invoices & Quotes) */}

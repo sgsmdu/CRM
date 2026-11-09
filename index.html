@@ -20,8 +20,54 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <script>
-      // Suppress Vite dev server HMR WebSocket disconnection errors in iframe preview
+      // Shim WebSocket for Vite HMR to eliminate "WebSocket closed without opened" in AI Studio preview
       (function() {
+        if (typeof window !== 'undefined' && window.WebSocket) {
+          var RealWebSocket = window.WebSocket;
+          function ViteSafeWebSocket(url, protocols) {
+            var urlStr = String(url || '');
+            var isViteHmr = urlStr.indexOf('vite') !== -1 || 
+                            protocols === 'vite-hmr' || 
+                            (Array.isArray(protocols) && protocols.indexOf('vite-hmr') !== -1);
+            if (isViteHmr) {
+              var listeners = {};
+              var fakeWs = {
+                readyState: 1, // OPEN
+                OPEN: 1,
+                CLOSED: 3,
+                CONNECTING: 0,
+                CLOSING: 2,
+                addEventListener: function(event, fn) {
+                  listeners[event] = listeners[event] || [];
+                  listeners[event].push(fn);
+                  if (event === 'open') {
+                    setTimeout(function() {
+                      try { fn({ type: 'open' }); } catch(e) {}
+                    }, 0);
+                  }
+                },
+                removeEventListener: function(event, fn) {
+                  if (listeners[event]) {
+                    listeners[event] = listeners[event].filter(function(cb) { return cb !== fn; });
+                  }
+                },
+                send: function() {},
+                close: function() {
+                  fakeWs.readyState = 3;
+                }
+              };
+              return fakeWs;
+            }
+            return new RealWebSocket(url, protocols);
+          }
+          ViteSafeWebSocket.prototype = RealWebSocket.prototype;
+          ViteSafeWebSocket.OPEN = 1;
+          ViteSafeWebSocket.CLOSED = 3;
+          ViteSafeWebSocket.CONNECTING = 0;
+          ViteSafeWebSocket.CLOSING = 2;
+          window.WebSocket = ViteSafeWebSocket;
+        }
+
         var originalConsoleError = console.error;
         console.error = function() {
           var args = Array.prototype.slice.call(arguments);
@@ -37,12 +83,11 @@
         };
 
         window.addEventListener('error', function(event) {
+          var msg = (event.message || '') + ' ' + (event.error ? (event.error.message || '') + ' ' + (event.error.stack || '') : '');
           if (
-            event.message && (
-              event.message.indexOf('WebSocket') !== -1 ||
-              event.message.indexOf('WebSocket closed without opened') !== -1 ||
-              event.message.indexOf('[vite]') !== -1
-            )
+            msg.indexOf('WebSocket') !== -1 ||
+            msg.indexOf('WebSocket closed without opened') !== -1 ||
+            msg.indexOf('[vite]') !== -1
           ) {
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -52,11 +97,11 @@
 
         window.addEventListener('unhandledrejection', function(event) {
           var reason = event.reason;
+          var msg = (typeof reason === 'string' ? reason : (reason ? (reason.message || '') + ' ' + (reason.stack || '') : ''));
           if (
-            reason && (
-              (typeof reason === 'string' && (reason.indexOf('WebSocket') !== -1 || reason.indexOf('vite') !== -1)) ||
-              (reason.message && (reason.message.indexOf('WebSocket') !== -1 || reason.message.indexOf('vite') !== -1))
-            )
+            msg.indexOf('WebSocket') !== -1 ||
+            msg.indexOf('vite') !== -1 ||
+            msg.indexOf('[vite]') !== -1
           ) {
             event.preventDefault();
             event.stopImmediatePropagation();

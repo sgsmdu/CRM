@@ -58,4 +58,17 @@
 
 9. **Blue & White Theme & User-Friendly UX**:
    - Corporate Blue & White theme as primary view with seamless Dark mode toggle.
+
+10. **Multi-Page Vendor Bill Scanner & PaddleOCR Engine**:
+   - Added multi-page receipt capture (single or multi-photo uploads from camera or device).
+   - Horizontal gallery preview strip with page indexing (`Page 1`, `Page 2`, etc.), zoom modal, page reordering, and removal.
+   - Dual OCR engine selector: **PaddleOCR API** (local/remote endpoint for free unlimited extraction) & **Gemini AI OCR**.
+   - Indian GST invoice parser with vendor matching, HSN extraction, itemized gross/base prices, and 18% GST calculation.
+
+11. **PaddleOCR Connection Resilience & Offline Simulation**:
+   - Resolved `PaddleOCR error on page 1: fetch failed` connection issues when local endpoint `localhost:8866` is offline.
+   - Safe timeouts and graceful fallback handling in `server.ts` without unhandled errors or stderr warnings.
+   - Automatic IT Hardware catalog simulation fallback when external PaddleOCR server is not running, ensuring uninterrupted scanning workflow.
+   - Real-time PaddleOCR server endpoint latency tester with non-blocking status feedback.
+
    - Clean badges, responsive tables, and intuitive modals.

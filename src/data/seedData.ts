@@ -939,6 +939,10 @@ Madurai | Phone: +91 9677776001`,
   pandiyanRubberStampUrl: DEFAULT_PANDIYAN_STAMP_DATA_URL,
   pandiyanBillingTheme: 'warm_amber',
   pandiyanTerms: 'Non-GST Estimate Voucher. Valid for 7 days. Spares subject to market availability.',
+  // PaddleOCR API Configuration
+  paddleOcrApiUrl: 'http://localhost:8080/ocr',
+  paddleOcrToken: '',
+  defaultOcrEngine: 'paddleocr',
 };
 
 export const SEED_LEAD_SOURCES: LeadSource[] = [

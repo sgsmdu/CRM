@@ -211,10 +211,16 @@ export interface VendorBill {
   vendorName: string;
   invoiceNumber: string;
   invoiceDate: string;
-  billImage?: string; // Base64 preview or uploaded document photo
+  billImage?: string; // Primary preview / Page 1 photo
+  billImages?: string[]; // Multiple invoice pages (Page 1, Page 2, Page 3, etc.)
+  ocrEngine?: 'paddleocr' | 'gemini' | 'manual';
   items: VendorBillItem[];
   subtotal?: number;
   taxAmount?: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
+  isInterState?: boolean;
   discount?: number; // Discount in ₹
   roundOff?: number; // Manual rounding off in ₹
   totalAmount: number;
@@ -263,15 +269,25 @@ export interface InvoiceItem {
   description: string;
   hsnCode?: string; // HSN / SAC code (e.g. 998713, 8471, etc.)
   quantity: number;
+  unit?: string; // e.g. Nos, Pcs, Set, Unit, Mtr
   rate: number; // Base rate (without GST / net selling rate)
   amount: number; // Base amount (quantity * rate)
-  purchaseCost?: number; // Cost price per unit for profit calculation
-  isService?: boolean; // If true, full profit
+  purchaseCost?: number; // Cost price per unit without GST
+  purchaseCostWithGst?: number; // Cost price per unit WITH GST (Gross spare cost)
+  purchaseGstPercent?: number; // GST % paid on spare purchase (default 18 or item gstPercent)
+  totalPurchaseCost?: number; // Total spare purchase cost (base)
+  totalPurchaseCostWithGst?: number; // Total spare purchase cost WITH GST (quantity * purchaseCostWithGst)
+  itemProfit?: number; // Profit on this item: (totalWithGst - totalPurchaseCostWithGst)
+  isService?: boolean; // If true, full profit (spare cost = 0)
   inventoryItemId?: string; // If selected from stock
   grossRate?: number; // Rate with GST (Rate inclusive of GST)
   gstPercent?: number; // GST % for this specific item (e.g. 0, 5, 12, 18, 28)
   gstAmount?: number; // Calculated GST amount for this line item
   totalWithGst?: number; // Total amount inclusive of GST
+  discount?: number; // Line item discount in ₹
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
 }
 
 export type BillingFirm = 'sgs' | 'pandiyan';
@@ -295,6 +311,10 @@ export interface Invoice {
   subtotal: number;
   gstPercent: number; // 0, 5, 12, 18 (0 for Pandiyan Computers)
   taxAmount: number;
+  cgstAmount?: number;
+  sgstAmount?: number;
+  igstAmount?: number;
+  isInterState?: boolean;
   discount?: number; // Discount in ₹
   roundOff?: number; // Manual rounding off adjustment in ₹
   grandTotal: number;
@@ -304,9 +324,13 @@ export interface Invoice {
   paidAmount: number;
   notes?: string;
   // Profit & Loss Tracking
-  purchaseCostTotal?: number; // Total purchase cost of spare parts
+  purchaseCostTotal?: number; // Total purchase cost of spare parts (base without GST)
+  totalPurchaseCostWithGst?: number; // Total purchase cost of spare parts WITH GST
+  totalSaleWithGst?: number; // Total sale amount inclusive of GST
   manualExtraCost?: number; // Additional manual input expenses (travel, outside repair, etc.)
-  profitAmount?: number; // Calculated profit: (subtotal - purchaseCostTotal - manualExtraCost)
+  profitAmount?: number; // Calculated profit: (Sale Amount with GST - Total Spares Cost with GST - Extra Expenses)
+  taxableProfit?: number; // Book profit: (subtotal - purchaseCostTotal - manualExtraCost)
+  profitMarginPercent?: number; // Margin %
   status?: 'active' | 'cancelled';
   cancelledReason?: string;
   attachedBillImage?: string; // Scanned invoice / receipt photo
@@ -367,6 +391,10 @@ export interface AdminSettings {
   pandiyanRubberStampUrl?: string; // Pandiyan Computers Rubber Stamp Seal
   pandiyanBillingTheme?: PandiyanBillingTheme; // Pandiyan Theme
   pandiyanTerms?: string;
+  // PaddleOCR API & Scanner Configuration
+  paddleOcrApiUrl?: string; // e.g. "http://localhost:8080/ocr" or "http://127.0.0.1:8000/ocr"
+  paddleOcrToken?: string; // Optional bearer/auth token
+  defaultOcrEngine?: 'paddleocr' | 'gemini'; // Default engine: paddleocr vs gemini
 }
 
 export interface Employee {

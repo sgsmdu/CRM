@@ -18,7 +18,10 @@ import {
   RefreshCw,
   Layers,
   Receipt,
-  ShoppingCart
+  ShoppingCart,
+  TrendingUp,
+  Scale,
+  IndianRupee
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { Invoice, VendorBill, CashFlowEntry } from '../types';
@@ -34,7 +37,7 @@ export const ReportsManager: React.FC = () => {
   
   const isDark = theme === 'dark';
 
-  const [activeReportTab, setActiveReportTab] = useState<'all' | 'gstr1' | 'gstr2'>('gstr1');
+  const [activeReportTab, setActiveReportTab] = useState<'pnl_tax' | 'gstr1' | 'gstr2' | 'all'>('pnl_tax');
   
   // Period filter for GSTR (YYYY-MM)
   const currentMonth = new Date().toISOString().substring(0, 7); // e.g. "2026-10"
@@ -125,6 +128,91 @@ export const ReportsManager: React.FC = () => {
       totalSgst: Number((totalInputGst / 2).toFixed(2)),
     };
   }, [gstr2Bills]);
+
+  // Comprehensive P&L and GST Settlement (GSTR-3B) stats
+  const pnlStats = useMemo(() => {
+    const periodInvoices = invoices.filter(inv => {
+      if (inv.status === 'cancelled') return false;
+      return !selectedMonth || inv.date.startsWith(selectedMonth);
+    });
+
+    const periodBills = vendorBills.filter(b => {
+      const bDate = b.invoiceDate || b.createdAt;
+      return !selectedMonth || bDate.startsWith(selectedMonth);
+    });
+
+    let totalBilledRevenue = 0;
+    let totalTaxableSales = 0;
+    let totalOutputGst = 0;
+    let totalCgst = 0;
+    let totalSgst = 0;
+    let totalIgst = 0;
+    let totalSparesCost = 0;
+    let totalManualExtra = 0;
+    let totalInvoiceProfit = 0;
+
+    periodInvoices.forEach(inv => {
+      const netTaxable = Math.max(0, (inv.subtotal || 0) - (inv.discount || 0));
+      totalBilledRevenue += inv.grandTotal || 0;
+      totalTaxableSales += netTaxable;
+      totalOutputGst += inv.taxAmount || 0;
+      if (inv.isInterState) {
+        totalIgst += inv.taxAmount || 0;
+      } else {
+        totalCgst += (inv.taxAmount || 0) / 2;
+        totalSgst += (inv.taxAmount || 0) / 2;
+      }
+      totalSparesCost += inv.totalPurchaseCostWithGst ?? inv.purchaseCostTotal ?? 0;
+      totalManualExtra += inv.manualExtraCost || 0;
+      totalInvoiceProfit += inv.profitAmount !== undefined 
+        ? inv.profitAmount 
+        : ((inv.grandTotal || inv.subtotal || 0) - (inv.totalPurchaseCostWithGst ?? inv.purchaseCostTotal ?? 0) - (inv.manualExtraCost || 0));
+    });
+
+    let totalVendorPurchases = 0;
+    let totalInputGst = 0;
+    let inputCgst = 0;
+    let inputSgst = 0;
+    let inputIgst = 0;
+
+    periodBills.forEach(b => {
+      totalVendorPurchases += b.totalAmount || 0;
+      const tax = b.taxAmount || 0;
+      totalInputGst += tax;
+      if (b.isInterState) {
+        inputIgst += tax;
+      } else {
+        inputCgst += tax / 2;
+        inputSgst += tax / 2;
+      }
+    });
+
+    const netGstPayable = Math.max(0, totalOutputGst - totalInputGst);
+    const itcExcess = Math.max(0, totalInputGst - totalOutputGst);
+    const grossMarginPercent = totalTaxableSales > 0 ? (totalInvoiceProfit / totalTaxableSales) * 100 : 0;
+
+    return {
+      periodInvoices,
+      periodBills,
+      totalBilledRevenue: Number(totalBilledRevenue.toFixed(2)),
+      totalTaxableSales: Number(totalTaxableSales.toFixed(2)),
+      totalOutputGst: Number(totalOutputGst.toFixed(2)),
+      totalCgst: Number(totalCgst.toFixed(2)),
+      totalSgst: Number(totalSgst.toFixed(2)),
+      totalIgst: Number(totalIgst.toFixed(2)),
+      totalSparesCost: Number(totalSparesCost.toFixed(2)),
+      totalManualExtra: Number(totalManualExtra.toFixed(2)),
+      totalInvoiceProfit: Number(totalInvoiceProfit.toFixed(2)),
+      totalVendorPurchases: Number(totalVendorPurchases.toFixed(2)),
+      totalInputGst: Number(totalInputGst.toFixed(2)),
+      inputCgst: Number(inputCgst.toFixed(2)),
+      inputSgst: Number(inputSgst.toFixed(2)),
+      inputIgst: Number(inputIgst.toFixed(2)),
+      netGstPayable: Number(netGstPayable.toFixed(2)),
+      itcExcess: Number(itcExcess.toFixed(2)),
+      grossMarginPercent: Number(grossMarginPercent.toFixed(1)),
+    };
+  }, [invoices, vendorBills, selectedMonth]);
 
   // Generate Official GSTR-1 JSON (as per GST Portal Offline Tool Schema)
   const generateGstr1Json = () => {
@@ -700,6 +788,23 @@ export const ReportsManager: React.FC = () => {
         {/* Tab Switcher */}
         <div className="flex items-center gap-2 mt-6 border-b border-slate-200 dark:border-slate-800 pb-3 overflow-x-auto">
           <button
+            onClick={() => setActiveReportTab('pnl_tax')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              activeReportTab === 'pnl_tax'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20'
+                : (isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100')
+            }`}
+          >
+            <TrendingUp className="w-4 h-4 text-emerald-400" />
+            <span>P&L & GST Settlement (GSTR-3B)</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+              activeReportTab === 'pnl_tax' ? 'bg-blue-700 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+            }`}>
+              Profit: ₹{pnlStats.totalInvoiceProfit.toLocaleString('en-IN')}
+            </span>
+          </button>
+
+          <button
             onClick={() => setActiveReportTab('gstr1')}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               activeReportTab === 'gstr1'
@@ -751,6 +856,169 @@ export const ReportsManager: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* TAB 0: P&L & Net GST Settlement (GSTR-3B) */}
+      {activeReportTab === 'pnl_tax' && (
+        <div className="space-y-6">
+          {/* Summary KPIs */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+            <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Taxable Sales (Rev)</span>
+              <p className="text-xl font-bold font-mono text-blue-600 mt-1">₹{pnlStats.totalTaxableSales.toLocaleString('en-IN')}</p>
+              <span className="text-[10px] text-slate-400">{pnlStats.periodInvoices.length} Active Invoices</span>
+            </div>
+
+            <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Cost of Spares (COGS)</span>
+              <p className="text-xl font-bold font-mono text-amber-500 mt-1">₹{pnlStats.totalSparesCost.toLocaleString('en-IN')}</p>
+              <span className="text-[10px] text-slate-400">Inventory Purchases</span>
+            </div>
+
+            <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Net Workshop Profit</span>
+              <p className="text-xl font-bold font-mono text-emerald-500 mt-1">+₹{pnlStats.totalInvoiceProfit.toLocaleString('en-IN')}</p>
+              <span className="text-[10px] text-emerald-600 font-bold font-mono">Margin: {pnlStats.grossMarginPercent}%</span>
+            </div>
+
+            <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Output GST (Sales)</span>
+              <p className="text-xl font-bold font-mono text-purple-500 mt-1">₹{pnlStats.totalOutputGst.toLocaleString('en-IN')}</p>
+              <span className="text-[10px] text-slate-400">Tax Liability</span>
+            </div>
+
+            <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Input Tax Credit (ITC)</span>
+              <p className="text-xl font-bold font-mono text-teal-500 mt-1">₹{pnlStats.totalInputGst.toLocaleString('en-IN')}</p>
+              <span className="text-[10px] text-slate-400">{pnlStats.periodBills.length} Vendor Invoices</span>
+            </div>
+
+            <div className={`p-4 rounded-xl border ${
+              pnlStats.netGstPayable > 0 
+                ? (isDark ? 'bg-rose-950/40 border-rose-800' : 'bg-rose-50 border-rose-200')
+                : (isDark ? 'bg-emerald-950/40 border-emerald-800' : 'bg-emerald-50 border-emerald-200')
+            }`}>
+              <span className={`text-xs font-bold ${pnlStats.netGstPayable > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                {pnlStats.netGstPayable > 0 ? 'Net GST Payable' : 'ITC Balance C/F'}
+              </span>
+              <p className={`text-xl font-bold font-mono mt-1 ${pnlStats.netGstPayable > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                ₹{(pnlStats.netGstPayable > 0 ? pnlStats.netGstPayable : pnlStats.itcExcess).toLocaleString('en-IN')}
+              </p>
+              <span className="text-[10px] text-slate-500">Output Tax - Input Tax</span>
+            </div>
+          </div>
+
+          {/* Tax Calculation Flow Visual Reconciliation */}
+          <div className={`p-5 rounded-2xl border ${isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200 shadow-xs'}`}>
+            <h3 className="text-sm font-bold flex items-center gap-2 mb-3">
+              <Scale className="w-4 h-4 text-blue-500" />
+              <span>GSTR-3B Tax Liability & Input Tax Credit (ITC) Settlement Flow</span>
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+              <div className={`p-3.5 rounded-xl border ${isDark ? 'bg-purple-950/20 border-purple-800/40' : 'bg-purple-50/50 border-purple-200'}`}>
+                <span className="font-bold text-purple-700 dark:text-purple-300 block mb-1">Step 1: Output Tax on Sales</span>
+                <p className="text-slate-600 dark:text-slate-300 leading-relaxed font-mono">
+                  Tax collected on customer sales: <strong>₹{pnlStats.totalOutputGst.toLocaleString('en-IN')}</strong>
+                  <br /><span className="text-[11px] text-slate-500">CGST: ₹{pnlStats.totalCgst} | SGST: ₹{pnlStats.totalSgst} | IGST: ₹{pnlStats.totalIgst}</span>
+                </p>
+              </div>
+
+              <div className={`p-3.5 rounded-xl border ${isDark ? 'bg-teal-950/20 border-teal-800/40' : 'bg-teal-50/50 border-teal-200'}`}>
+                <span className="font-bold text-teal-700 dark:text-teal-300 block mb-1">Step 2: Input Tax Credit (ITC)</span>
+                <p className="text-slate-600 dark:text-slate-300 leading-relaxed font-mono">
+                  GST paid to suppliers/vendors: <strong>₹{pnlStats.totalInputGst.toLocaleString('en-IN')}</strong>
+                  <br /><span className="text-[11px] text-slate-500">CGST: ₹{pnlStats.inputCgst} | SGST: ₹{pnlStats.inputSgst} | IGST: ₹{pnlStats.inputIgst}</span>
+                </p>
+              </div>
+
+              <div className={`p-3.5 rounded-xl border ${
+                pnlStats.netGstPayable > 0 
+                  ? (isDark ? 'bg-rose-950/20 border-rose-800/40' : 'bg-rose-50/50 border-rose-200')
+                  : (isDark ? 'bg-emerald-950/20 border-emerald-800/40' : 'bg-emerald-50/50 border-emerald-200')
+              }`}>
+                <span className={`font-bold block mb-1 ${pnlStats.netGstPayable > 0 ? 'text-rose-700 dark:text-rose-300' : 'text-emerald-700 dark:text-emerald-300'}`}>
+                  Step 3: Net Cash Settlement
+                </span>
+                <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+                  {pnlStats.netGstPayable > 0 ? (
+                    <>Output Tax exceeds ITC. Net payable to tax portal: <strong className="font-mono text-rose-600">₹{pnlStats.netGstPayable.toLocaleString('en-IN')}</strong></>
+                  ) : (
+                    <>ITC exceeds Output Tax. Excess credit carried forward: <strong className="font-mono text-emerald-600">₹{pnlStats.itcExcess.toLocaleString('en-IN')}</strong></>
+                  )}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Detailed Itemized Invoices Profit & Tax Breakdown Table */}
+          <div className={`rounded-2xl border overflow-hidden ${isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200 shadow-xs'}`}>
+            <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <h4 className="font-bold text-sm">Invoice Profit & Tax Analysis</h4>
+                <p className="text-xs text-slate-500">Taxable revenue, purchase cost of parts (COGS), profit, and tax collected per bill</p>
+              </div>
+              <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                Period Net Profit: +₹{pnlStats.totalInvoiceProfit.toLocaleString('en-IN')} ({pnlStats.grossMarginPercent}%)
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className={`border-b uppercase text-[10px] font-bold ${isDark ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'}`}>
+                  <tr>
+                    <th className="py-2.5 px-3">Invoice #</th>
+                    <th className="py-2.5 px-3">Date</th>
+                    <th className="py-2.5 px-3">Customer</th>
+                    <th className="py-2.5 px-3 text-right">Taxable Sales</th>
+                    <th className="py-2.5 px-3 text-right">Spares Cost</th>
+                    <th className="py-2.5 px-3 text-right">Net Profit</th>
+                    <th className="py-2.5 px-3 text-center">Margin %</th>
+                    <th className="py-2.5 px-3 text-right">Tax Collected</th>
+                    <th className="py-2.5 px-3">Place of Supply</th>
+                    <th className="py-2.5 px-3 text-right">Grand Total</th>
+                  </tr>
+                </thead>
+                <tbody className={`divide-y font-mono ${isDark ? 'divide-slate-800 text-slate-300' : 'divide-slate-100 text-slate-800'}`}>
+                  {pnlStats.periodInvoices.map(inv => {
+                    const taxable = Math.max(0, (inv.subtotal || 0) - (inv.discount || 0));
+                    const cost = inv.purchaseCostTotal || 0;
+                    const profit = inv.profitAmount !== undefined ? inv.profitAmount : (taxable - cost - (inv.manualExtraCost || 0));
+                    const margin = taxable > 0 ? ((profit / taxable) * 100).toFixed(1) : '0';
+                    return (
+                      <tr key={inv.id} className={isDark ? 'hover:bg-slate-850/50' : 'hover:bg-slate-50'}>
+                        <td className="py-2.5 px-3 font-bold text-blue-500">{inv.invoiceNumber}</td>
+                        <td className="py-2.5 px-3 text-slate-500 font-sans">{inv.date}</td>
+                        <td className="py-2.5 px-3 font-sans font-medium">{inv.customerName}</td>
+                        <td className="py-2.5 px-3 text-right">₹{taxable.toLocaleString('en-IN')}</td>
+                        <td className="py-2.5 px-3 text-right text-amber-500">₹{cost.toLocaleString('en-IN')}</td>
+                        <td className={`py-2.5 px-3 text-right font-bold ${profit >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                          {profit >= 0 ? '+' : ''}₹{profit.toLocaleString('en-IN')}
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${Number(margin) >= 25 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' : 'bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-300'}`}>
+                            {margin}%
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-purple-500">₹{(inv.taxAmount || 0).toLocaleString('en-IN')}</td>
+                        <td className="py-2.5 px-3 font-sans text-[11px]">
+                          {inv.isInterState ? (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-semibold">
+                              Inter-State (IGST)
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-semibold">
+                              Tamil Nadu (CGST+SGST)
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-bold">₹{(inv.grandTotal || 0).toLocaleString('en-IN')}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TAB 1: GSTR-1 */}
       {activeReportTab === 'gstr1' && (
