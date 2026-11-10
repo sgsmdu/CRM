@@ -412,7 +412,7 @@ export const DEFAULT_SGS_QUOTATION_LETTERHEAD_BG = `data:image/svg+xml;utf8,${en
     <rect x="0" y="0" width="185" height="74" rx="4" fill="#0b1b3d" fill-opacity="0.45" stroke="#38bdf8" stroke-width="1" />
     <text x="12" y="19" font-family="system-ui, -apple-system, sans-serif" font-size="9" font-weight="700" fill="#ffffff">📍 MADURAI, TAMIL NADU</text>
     <text x="12" y="34" font-family="system-ui, -apple-system, sans-serif" font-size="8.5" font-weight="500" fill="#e0f2fe">Shop No. 14, Simmakkal Main Rd</text>
-    <text x="12" y="48" font-family="system-ui, -apple-system, sans-serif" font-size="8.5" font-weight="700" fill="#38bdf8">📞 Ph: +91 9677776001</text>
+    <text x="12" y="48" font-family="system-ui, -apple-system, sans-serif" font-size="8.5" font-weight="700" fill="#38bdf8">📞 Ph: +91 9176795665</text>
     <text x="12" y="62" font-family="system-ui, -apple-system, sans-serif" font-size="7.5" font-weight="500" fill="#bae6fd">✉ spidergridsolutions@gmail.com</text>
   </g>
 

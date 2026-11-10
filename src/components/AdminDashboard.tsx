@@ -27,11 +27,19 @@ import {
   Palette,
   Image,
   Layers,
-  RefreshCw
+  RefreshCw,
+  Users,
+  ShieldAlert,
+  Key,
+  Lock,
+  Unlock,
+  UserCheck,
+  UserX,
+  AlertTriangle
 } from 'lucide-react';
 import * as Acc from '../utils/accounting';
 import { useSgs } from '../context/SgsContext';
-import { AdminSettings, QuickServicePreset, DeviceCategory, BillingTheme, PandiyanBillingTheme } from '../types';
+import { AdminSettings, QuickServicePreset, DeviceCategory, BillingTheme, PandiyanBillingTheme, UserRole, AllowedUser } from '../types';
 import { 
   DEFAULT_SGS_LOGO_DATA_URL, 
   OFFICIAL_SGS_LOGO_URL,
@@ -60,12 +68,23 @@ export const AdminDashboard: React.FC = () => {
     exportDataJson,
     importDataJson,
     clearAllInputData,
-    resetToDefaultData
+    resetToDefaultData,
+    currentUserEmail,
+    setCurrentUserEmail,
+    currentUserRole,
+    setCurrentUserRole,
+    isAdmin,
+    canDelete,
+    canEditCritical,
+    allowedUsers,
+    refreshAllowedUsers,
+    saveAllowedUser,
+    deleteAllowedUser,
   } = useSgs();
   
   const isDark = theme === 'dark';
 
-  const [activeTab, setActiveTab] = useState<'prefill' | 'billing_themes' | 'whatsapp' | 'profitloss' | 'backup'>('prefill');
+  const [activeTab, setActiveTab] = useState<'prefill' | 'billing_themes' | 'whatsapp' | 'users' | 'profitloss' | 'backup'>('prefill');
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
@@ -86,7 +105,15 @@ export const AdminDashboard: React.FC = () => {
   const [newServiceCategory, setNewServiceCategory] = useState<DeviceCategory>('laptop');
 
   // Preview message tab
-  const [previewTab, setPreviewTab] = useState<'welcome' | 'status' | 'review'>('review');
+  const [previewTab, setPreviewTab] = useState<'welcome' | 'status' | 'review' | 'payment_pending'>('payment_pending');
+
+  // RBAC User Form state
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserDisplayName, setNewUserDisplayName] = useState('');
+  const [newUserRole, setNewUserRole] = useState<UserRole>('user');
+  const [newUserNotes, setNewUserNotes] = useState('');
+  const [userOperationStatus, setUserOperationStatus] = useState<string | null>(null);
+  const [isSavingUser, setIsSavingUser] = useState(false);
 
   // PaddleOCR connection test state
   const [testingPaddleOcr, setTestingPaddleOcr] = useState(false);
@@ -125,6 +152,64 @@ export const AdminDashboard: React.FC = () => {
     updateAdminSettings(formData);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2500);
+  };
+
+  const handleSaveUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUserEmail.trim()) {
+      setUserOperationStatus('Please enter a valid user email address.');
+      return;
+    }
+    setIsSavingUser(true);
+    setUserOperationStatus('Connecting to Firestore allowed_users...');
+    try {
+      await saveAllowedUser({
+        email: newUserEmail.trim(),
+        displayName: newUserDisplayName.trim() || undefined,
+        role: newUserRole,
+        notes: newUserNotes.trim() || undefined,
+      });
+      setUserOperationStatus(`Successfully saved ${newUserEmail.trim()} with role ${newUserRole.toUpperCase()}!`);
+      setNewUserEmail('');
+      setNewUserDisplayName('');
+      setNewUserRole('user');
+      setNewUserNotes('');
+      setTimeout(() => setUserOperationStatus(null), 4000);
+    } catch (err: any) {
+      setUserOperationStatus(`Error: ${err?.message || 'Failed to save user'}`);
+    } finally {
+      setIsSavingUser(false);
+    }
+  };
+
+  const handleToggleRole = async (user: AllowedUser) => {
+    if (user.email.toLowerCase() === 'spidergridsolutions@gmail.com') {
+      window.alert('The organization root administrator account (spidergridsolutions@gmail.com) must always remain an Admin.');
+      return;
+    }
+    const nextRole: UserRole = user.role === 'admin' ? 'user' : 'admin';
+    if (!window.confirm(`Change role for ${user.email} from ${user.role.toUpperCase()} to ${nextRole.toUpperCase()}?`)) return;
+    try {
+      await saveAllowedUser({
+        ...user,
+        role: nextRole,
+      });
+    } catch (err: any) {
+      window.alert(`Failed to update role: ${err.message}`);
+    }
+  };
+
+  const handleDeleteUser = async (email: string) => {
+    if (email.toLowerCase() === 'spidergridsolutions@gmail.com') {
+      window.alert('Cannot delete the organization primary administrator account.');
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to remove ${email} from allowed users?`)) return;
+    try {
+      await deleteAllowedUser(email);
+    } catch (err: any) {
+      window.alert(`Failed to delete user: ${err.message}`);
+    }
   };
 
   const handleAddTechnician = () => {
@@ -185,14 +270,18 @@ export const AdminDashboard: React.FC = () => {
     status: 'Ready for Pickup & Delivery',
     technicianNotes: 'SMPS capacitor replaced & thermal paste re-applied.',
     amount: '3,200',
+    paidAmount: '1,000',
+    pendingBalance: '2,200',
+    workshopUpiId: formData.workshopUpiId || 'spidergridsolutions@okaxis',
     googleReviewUrl: formData.googleReviewUrl || 'https://g.page/r/spidergridsolutions/review',
-    workshopPhone: formData.workshopPhone || '+91 9677776001',
+    workshopPhone: formData.workshopPhone || '+91 9176795665',
   };
 
   const getPreviewText = () => {
     let tpl = '';
     if (previewTab === 'welcome') tpl = formData.welcomeMessageTemplate;
     else if (previewTab === 'status') tpl = formData.statusMessageTemplate;
+    else if (previewTab === 'payment_pending') tpl = formData.paymentPendingMessageTemplate || '';
     else tpl = formData.reviewMessageTemplate;
 
     return tpl
@@ -207,6 +296,9 @@ export const AdminDashboard: React.FC = () => {
       .replace(/{status}/g, sampleCustomer.status)
       .replace(/{technicianNotes}/g, sampleCustomer.technicianNotes)
       .replace(/{amount}/g, sampleCustomer.amount)
+      .replace(/{paidAmount}/g, sampleCustomer.paidAmount)
+      .replace(/{pendingBalance}/g, sampleCustomer.pendingBalance)
+      .replace(/{workshopUpiId}/g, sampleCustomer.workshopUpiId)
       .replace(/{googleReviewUrl}/g, sampleCustomer.googleReviewUrl)
       .replace(/{workshopPhone}/g, sampleCustomer.workshopPhone);
   };
@@ -332,6 +424,23 @@ export const AdminDashboard: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setActiveTab('users')}
+            className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+              activeTab === 'users'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : (isDark ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100')
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>Allowed Users & Roles (RBAC)</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+              isAdmin ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-500/20 text-slate-400'
+            }`}>
+              {allowedUsers.length}
+            </span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('profitloss')}
             className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
               activeTab === 'profitloss'
@@ -359,160 +468,185 @@ export const AdminDashboard: React.FC = () => {
 
       {/* Tab 1: Prefill & Billing Defaults */}
       {activeTab === 'prefill' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Workshop Details & UPI ID */}
-          <div className={`lg:col-span-2 p-6 rounded-2xl border space-y-5 ${
-            isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
-          }`}>
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <h2 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>Workshop Profile & Billing Header</h2>
-                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Appears on customer invoices, vouchers, and UPI payments</p>
+        <div className="space-y-6">
+          {!canEditCritical && (
+            <div className={`p-4 rounded-xl border flex items-center gap-3 ${
+              isDark ? 'bg-amber-950/30 border-amber-800 text-amber-200' : 'bg-amber-50 border-amber-200 text-amber-900'
+            }`}>
+              <Lock className="w-5 h-5 text-amber-500 shrink-0" />
+              <div className="text-xs">
+                <strong className="font-bold">Staff Read-Only Mode:</strong> Core firm settings (Legal Trade Name, GSTIN, UPI ID, GST Tax Rate, Bank Accounts) are locked for non-admin accounts. Contact Admin (<code>spidergridsolutions@gmail.com</code>) to request changes.
               </div>
-              <Building2 className={`w-5 h-5 ${isDark ? 'text-blue-400' : 'text-blue-600'}`} />
             </div>
+          )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                  Workshop Legal Trade Name
-                </label>
-                <input
-                  type="text"
-                  value={formData.workshopName}
-                  onChange={(e) => handleFieldChange('workshopName', e.target.value)}
-                  className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
-                    isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
-                  }`}
-                />
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Workshop Details & UPI ID */}
+            <div className={`lg:col-span-2 p-6 rounded-2xl border space-y-5 ${
+              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
+            }`}>
+              <div className="flex items-center justify-between border-b pb-3">
+                <div>
+                  <h2 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>Workshop Profile & Billing Header</h2>
+                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Appears on customer invoices, vouchers, and UPI payments</p>
+                </div>
+                <Building2 className={`w-5 h-5 ${isDark ? 'text-blue-400' : 'text-blue-600'}`} />
               </div>
 
-              <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                  GSTIN / MSME Udyam Number
-                </label>
-                <input
-                  type="text"
-                  value={formData.workshopGstin}
-                  onChange={(e) => handleFieldChange('workshopGstin', e.target.value)}
-                  className={`w-full rounded-lg px-3 py-2 text-xs font-mono uppercase focus:outline-none ${
-                    isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                  Workshop Official Phone
-                </label>
-                <input
-                  type="text"
-                  value={formData.workshopPhone}
-                  onChange={(e) => handleFieldChange('workshopPhone', e.target.value)}
-                  className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
-                    isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                  Official Email
-                </label>
-                <input
-                  type="email"
-                  value={formData.workshopEmail}
-                  onChange={(e) => handleFieldChange('workshopEmail', e.target.value)}
-                  className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
-                    isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
-                  }`}
-                />
-              </div>
-
-              <div className="sm:col-span-2">
-                <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                  Workshop Address (Madurai)
-                </label>
-                <input
-                  type="text"
-                  value={formData.workshopAddress}
-                  onChange={(e) => handleFieldChange('workshopAddress', e.target.value)}
-                  className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
-                    isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                  Workshop UPI ID (VPA for QR / Online Customer Payment)
-                </label>
-                <div className="relative">
-                  <CreditCard className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 flex items-center gap-1.5 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    <span>Workshop Legal Trade Name</span>
+                    {!canEditCritical && <Lock className="w-3 h-3 text-amber-500" />}
+                  </label>
                   <input
                     type="text"
-                    value={formData.workshopUpiId}
-                    onChange={(e) => handleFieldChange('workshopUpiId', e.target.value)}
-                    placeholder="e.g. spidergridsolutions@okaxis"
-                    className={`w-full rounded-lg pl-9 pr-3 py-2 text-xs font-mono focus:outline-none ${
+                    disabled={!canEditCritical}
+                    value={formData.workshopName}
+                    onChange={(e) => handleFieldChange('workshopName', e.target.value)}
+                    className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
+                      !canEditCritical ? 'opacity-70 cursor-not-allowed bg-slate-100 dark:bg-slate-900 text-slate-500' :
                       isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
                     }`}
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                  Invoice Number Prefix
-                </label>
-                <input
-                  type="text"
-                  value={formData.invoicePrefix}
-                  onChange={(e) => handleFieldChange('invoicePrefix', e.target.value)}
-                  placeholder="SGS-INV-"
-                  className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
-                    isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
-                  }`}
-                />
-              </div>
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 flex items-center gap-1.5 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    <span>GSTIN / MSME Udyam Number</span>
+                    {!canEditCritical && <Lock className="w-3 h-3 text-amber-500" />}
+                  </label>
+                  <input
+                    type="text"
+                    disabled={!canEditCritical}
+                    value={formData.workshopGstin}
+                    onChange={(e) => handleFieldChange('workshopGstin', e.target.value)}
+                    className={`w-full rounded-lg px-3 py-2 text-xs font-mono uppercase focus:outline-none ${
+                      !canEditCritical ? 'opacity-70 cursor-not-allowed bg-slate-100 dark:bg-slate-900 text-slate-500' :
+                      isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
+                    }`}
+                  />
+                </div>
 
-              <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                  Default HSN / SAC Code
-                </label>
-                <select
-                  value={formData.defaultHsnCode}
-                  onChange={(e) => handleFieldChange('defaultHsnCode', e.target.value)}
-                  className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
-                    isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
-                  }`}
-                >
-                  <option value="998713">998713 - Computer, Peripheral & Hardware Repair</option>
-                  <option value="8471">8471 - Automatic Data Processing (Laptops/PCs)</option>
-                  <option value="8528">8528 - CCTV Monitors, Displays & Screen Units</option>
-                  <option value="8504">8504 - SMPS, Adapters, Power Transformers</option>
-                  <option value="8443">8443 - Printer Spares, Heads & Cartridges</option>
-                  <option value="8517">8517 - Networking, Routers, Modems</option>
-                </select>
-              </div>
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Workshop Official Phone
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.workshopPhone}
+                    onChange={(e) => handleFieldChange('workshopPhone', e.target.value)}
+                    className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
+                      isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
+                    }`}
+                  />
+                </div>
 
-              <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                  Default GST Tax Rate
-                </label>
-                <select
-                  value={formData.defaultGstPercent}
-                  onChange={(e) => handleFieldChange('defaultGstPercent', Number(e.target.value))}
-                  className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
-                    isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
-                  }`}
-                >
-                  <option value={0}>0% - Non-GST / Composition Invoice</option>
-                  <option value={5}>5% - Essential Hardware</option>
-                  <option value={12}>12% - Standard Components</option>
-                  <option value={18}>18% - IT Services & General Computer Spares</option>
-                </select>
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Official Email
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.workshopEmail}
+                    onChange={(e) => handleFieldChange('workshopEmail', e.target.value)}
+                    className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
+                      isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
+                    }`}
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Workshop Address (Madurai)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.workshopAddress}
+                    onChange={(e) => handleFieldChange('workshopAddress', e.target.value)}
+                    className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
+                      isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 flex items-center gap-1.5 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    <span>Workshop UPI ID (VPA for QR / Online Customer Payment)</span>
+                    {!canEditCritical && <Lock className="w-3 h-3 text-amber-500" />}
+                  </label>
+                  <div className="relative">
+                    <CreditCard className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
+                    <input
+                      type="text"
+                      disabled={!canEditCritical}
+                      value={formData.workshopUpiId}
+                      onChange={(e) => handleFieldChange('workshopUpiId', e.target.value)}
+                      placeholder="e.g. spidergridsolutions@okaxis"
+                      className={`w-full rounded-lg pl-9 pr-3 py-2 text-xs font-mono focus:outline-none ${
+                        !canEditCritical ? 'opacity-70 cursor-not-allowed bg-slate-100 dark:bg-slate-900 text-slate-500' :
+                        isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Invoice Number Prefix
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.invoicePrefix}
+                    onChange={(e) => handleFieldChange('invoicePrefix', e.target.value)}
+                    placeholder="SGS-INV-"
+                    className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
+                      isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Default HSN / SAC Code
+                  </label>
+                  <select
+                    value={formData.defaultHsnCode}
+                    onChange={(e) => handleFieldChange('defaultHsnCode', e.target.value)}
+                    className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
+                      isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
+                    }`}
+                  >
+                    <option value="998713">998713 - Computer, Peripheral & Hardware Repair</option>
+                    <option value="8471">8471 - Automatic Data Processing (Laptops/PCs)</option>
+                    <option value="8528">8528 - CCTV Monitors, Displays & Screen Units</option>
+                    <option value="8504">8504 - SMPS, Adapters, Power Transformers</option>
+                    <option value="8443">8443 - Printer Spares, Heads & Cartridges</option>
+                    <option value="8517">8517 - Networking, Routers, Modems</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 flex items-center gap-1.5 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    <span>Default GST Tax Rate</span>
+                    {!canEditCritical && <Lock className="w-3 h-3 text-amber-500" />}
+                  </label>
+                  <select
+                    disabled={!canEditCritical}
+                    value={formData.defaultGstPercent}
+                    onChange={(e) => handleFieldChange('defaultGstPercent', Number(e.target.value))}
+                    className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
+                      !canEditCritical ? 'opacity-70 cursor-not-allowed bg-slate-100 dark:bg-slate-900 text-slate-500' :
+                      isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
+                    }`}
+                  >
+                    <option value={0}>0% - Non-GST / Composition Invoice</option>
+                    <option value={5}>5% - Essential Hardware</option>
+                    <option value={12}>12% - Standard Components</option>
+                    <option value={18}>18% - IT Services & General Computer Spares</option>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -1054,52 +1188,205 @@ export const AdminDashboard: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Quotation Proposal Header & Footer Banners */}
+                <div className={`p-4 rounded-xl border space-y-3 sm:col-span-3 ${
+                  isDark ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold flex items-center gap-1.5 text-blue-600 dark:text-blue-400">
+                        <Layers className="w-4 h-4" />
+                        Quotation Proposal Header & Footer Banners
+                      </span>
+                      <p className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                        Custom full-width banner images printed at the top and bottom of customer A4 Quotations
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                    {/* Header Image */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className={`text-[11px] font-bold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                          Default Quotation Header Image
+                        </label>
+                        {formData.quotationHeaderImageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => handleFieldChange('quotationHeaderImageUrl', undefined)}
+                            className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                      <div className="p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center min-h-[60px] overflow-hidden">
+                        {formData.quotationHeaderImageUrl ? (
+                          <img 
+                            src={formData.quotationHeaderImageUrl} 
+                            alt="Header Preview" 
+                            className="max-h-14 w-auto object-contain rounded" 
+                          />
+                        ) : (
+                          <span className="text-[11px] text-slate-400">Standard Text & Logo Header Active</span>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={formData.quotationHeaderImageUrl || ''}
+                          onChange={(e) => handleFieldChange('quotationHeaderImageUrl', e.target.value)}
+                          placeholder="Header Image URL or Base64..."
+                          className={`flex-1 rounded-lg px-2.5 py-1 text-xs focus:outline-none ${
+                            isDark ? 'bg-slate-900 border border-slate-800 text-white' : 'bg-white border border-slate-300 text-slate-900'
+                          }`}
+                        />
+                        <label className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-blue-100 hover:bg-blue-200 text-blue-800 dark:bg-blue-900 dark:text-blue-200 cursor-pointer shrink-0">
+                          <Upload className="w-3 h-3" /> Upload
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onload = () => handleFieldChange('quotationHeaderImageUrl', reader.result as string);
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Footer Image */}
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className={`text-[11px] font-bold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                          Default Quotation Footer Image
+                        </label>
+                        {formData.quotationFooterImageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => handleFieldChange('quotationFooterImageUrl', undefined)}
+                            className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                      <div className="p-2 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center min-h-[60px] overflow-hidden">
+                        {formData.quotationFooterImageUrl ? (
+                          <img 
+                            src={formData.quotationFooterImageUrl} 
+                            alt="Footer Preview" 
+                            className="max-h-14 w-auto object-contain rounded" 
+                          />
+                        ) : (
+                          <span className="text-[11px] text-slate-400">Standard Terms & Sign Footer Active</span>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={formData.quotationFooterImageUrl || ''}
+                          onChange={(e) => handleFieldChange('quotationFooterImageUrl', e.target.value)}
+                          placeholder="Footer Image URL or Base64..."
+                          className={`flex-1 rounded-lg px-2.5 py-1 text-xs focus:outline-none ${
+                            isDark ? 'bg-slate-900 border border-slate-800 text-white' : 'bg-white border border-slate-300 text-slate-900'
+                          }`}
+                        />
+                        <label className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded bg-blue-100 hover:bg-blue-200 text-blue-800 dark:bg-blue-900 dark:text-blue-200 cursor-pointer shrink-0">
+                          <Upload className="w-3 h-3" /> Upload
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onload = () => handleFieldChange('quotationFooterImageUrl', reader.result as string);
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
               </div>
 
               {/* SGS Bank Account Details */}
               <div className="border-t pt-4 space-y-3">
-                <h3 className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                  SGS Bank Account Details
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    <span>SGS Bank Account Details</span>
+                    {!canEditCritical && <Lock className="w-3 h-3 text-amber-500" />}
+                  </h3>
+                  {!canEditCritical && (
+                    <span className="text-[10px] text-amber-500 font-semibold">Protected (Admin Only)</span>
+                  )}
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] text-slate-500 mb-1">Bank Name</label>
                     <input
                       type="text"
+                      disabled={!canEditCritical}
                       value={formData.bankName || ''}
                       onChange={(e) => handleFieldChange('bankName', e.target.value)}
                       placeholder="HDFC Bank"
-                      className={`w-full rounded-lg px-2.5 py-1.5 text-xs ${isDark ? 'bg-slate-950 border border-slate-800 text-white' : 'bg-slate-50 border border-slate-300 text-slate-900'}`}
+                      className={`w-full rounded-lg px-2.5 py-1.5 text-xs ${
+                        !canEditCritical ? 'opacity-70 cursor-not-allowed bg-slate-100 dark:bg-slate-900 text-slate-500' :
+                        isDark ? 'bg-slate-950 border border-slate-800 text-white' : 'bg-slate-50 border border-slate-300 text-slate-900'
+                      }`}
                     />
                   </div>
                   <div>
                     <label className="block text-[11px] text-slate-500 mb-1">Account Number</label>
                     <input
                       type="text"
+                      disabled={!canEditCritical}
                       value={formData.bankAccountNumber || ''}
                       onChange={(e) => handleFieldChange('bankAccountNumber', e.target.value)}
                       placeholder="50200084729103"
-                      className={`w-full rounded-lg px-2.5 py-1.5 text-xs font-mono ${isDark ? 'bg-slate-950 border border-slate-800 text-white' : 'bg-slate-50 border border-slate-300 text-slate-900'}`}
+                      className={`w-full rounded-lg px-2.5 py-1.5 text-xs font-mono ${
+                        !canEditCritical ? 'opacity-70 cursor-not-allowed bg-slate-100 dark:bg-slate-900 text-slate-500' :
+                        isDark ? 'bg-slate-950 border border-slate-800 text-white' : 'bg-slate-50 border border-slate-300 text-slate-900'
+                      }`}
                     />
                   </div>
                   <div>
                     <label className="block text-[11px] text-slate-500 mb-1">IFSC Code</label>
                     <input
                       type="text"
+                      disabled={!canEditCritical}
                       value={formData.bankIfsc || ''}
                       onChange={(e) => handleFieldChange('bankIfsc', e.target.value)}
                       placeholder="HDFC0001234"
-                      className={`w-full rounded-lg px-2.5 py-1.5 text-xs font-mono uppercase ${isDark ? 'bg-slate-950 border border-slate-800 text-white' : 'bg-slate-50 border border-slate-300 text-slate-900'}`}
+                      className={`w-full rounded-lg px-2.5 py-1.5 text-xs font-mono uppercase ${
+                        !canEditCritical ? 'opacity-70 cursor-not-allowed bg-slate-100 dark:bg-slate-900 text-slate-500' :
+                        isDark ? 'bg-slate-950 border border-slate-800 text-white' : 'bg-slate-50 border border-slate-300 text-slate-900'
+                      }`}
                     />
                   </div>
                   <div>
                     <label className="block text-[11px] text-slate-500 mb-1">Branch Name</label>
                     <input
                       type="text"
+                      disabled={!canEditCritical}
                       value={formData.bankBranch || ''}
                       onChange={(e) => handleFieldChange('bankBranch', e.target.value)}
                       placeholder="Anna Nagar, Madurai"
-                      className={`w-full rounded-lg px-2.5 py-1.5 text-xs ${isDark ? 'bg-slate-950 border border-slate-800 text-white' : 'bg-slate-50 border border-slate-300 text-slate-900'}`}
+                      className={`w-full rounded-lg px-2.5 py-1.5 text-xs ${
+                        !canEditCritical ? 'opacity-70 cursor-not-allowed bg-slate-100 dark:bg-slate-900 text-slate-500' :
+                        isDark ? 'bg-slate-950 border border-slate-800 text-white' : 'bg-slate-50 border border-slate-300 text-slate-900'
+                      }`}
                     />
                   </div>
                 </div>
@@ -1475,11 +1762,37 @@ export const AdminDashboard: React.FC = () => {
                 </button>
               </div>
               <textarea
-                rows={6}
+                rows={5}
                 value={formData.reviewMessageTemplate}
                 onChange={(e) => handleFieldChange('reviewMessageTemplate', e.target.value)}
                 className={`w-full rounded-xl p-3 text-xs font-mono focus:outline-none leading-relaxed ${
                   isDark ? 'bg-slate-950 border border-slate-800 text-slate-200 focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
+                }`}
+              />
+            </div>
+
+            {/* Template 4: Payment Pending Reminder Template */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className={`text-xs font-bold flex items-center gap-2 ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  <span>4. Payment Pending Reminder Template</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 font-normal">Sent for Pending Balance</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setPreviewTab('payment_pending')}
+                  className="text-xs text-rose-600 hover:underline cursor-pointer"
+                >
+                  Preview Below
+                </button>
+              </div>
+              <textarea
+                rows={6}
+                value={formData.paymentPendingMessageTemplate || ''}
+                onChange={(e) => handleFieldChange('paymentPendingMessageTemplate', e.target.value)}
+                placeholder="Payment pending reminder message..."
+                className={`w-full rounded-xl p-3 text-xs font-mono focus:outline-none leading-relaxed ${
+                  isDark ? 'bg-slate-950 border border-slate-800 text-slate-200 focus:border-rose-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-rose-600'
                 }`}
               />
             </div>
@@ -1498,6 +1811,10 @@ export const AdminDashboard: React.FC = () => {
                 <span><code>{`{status}`}</code></span>
                 <span><code>{`{technicianNotes}`}</code></span>
                 <span><code>{`{amount}`}</code></span>
+                <span><code>{`{paidAmount}`}</code></span>
+                <span><code>{`{pendingBalance}`}</code></span>
+                <span><code>{`{workshopUpiId}`}</code></span>
+                <span><code>{`{workshopPhone}`}</code></span>
                 <span><code>{`{googleReviewUrl}`}</code></span>
               </div>
             </div>
@@ -1548,6 +1865,14 @@ export const AdminDashboard: React.FC = () => {
                   >
                     ⭐ Review
                   </button>
+                  <button
+                    onClick={() => setPreviewTab('payment_pending')}
+                    className={`px-2 py-1 text-[11px] font-semibold rounded ${
+                      previewTab === 'payment_pending' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    💳 Pending
+                  </button>
                 </div>
               </div>
 
@@ -1576,6 +1901,386 @@ export const AdminDashboard: React.FC = () => {
                 >
                   Save & Apply Templates
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Tab: Allowed Users & Roles (RBAC via Firestore allowed_users) */}
+      {activeTab === 'users' && (
+        <div className="space-y-6">
+          
+          {/* Active Session & Role Status Banner */}
+          <div className={`p-6 rounded-2xl border ${
+            isAdmin 
+              ? (isDark ? 'bg-gradient-to-r from-emerald-950/40 via-slate-900 to-slate-900 border-emerald-800/60' : 'bg-gradient-to-r from-emerald-50 via-white to-white border-emerald-200')
+              : (isDark ? 'bg-gradient-to-r from-amber-950/40 via-slate-900 to-slate-900 border-amber-800/60' : 'bg-gradient-to-r from-amber-50 via-white to-white border-amber-200')
+          }`}>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 shadow-2xs ${
+                    isAdmin 
+                      ? 'bg-emerald-600 text-white' 
+                      : 'bg-amber-600 text-white'
+                  }`}>
+                    {isAdmin ? <ShieldCheck className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                    {isAdmin ? '👑 Administrator Mode' : '👤 Staff User Mode'}
+                  </span>
+                  <span className={`text-xs font-mono px-2 py-0.5 rounded ${
+                    isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-700'
+                  }`}>
+                    Active Email: {currentUserEmail}
+                  </span>
+                </div>
+                <h2 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  Role-Based Access Control (RBAC) via Firestore <code>allowed_users</code>
+                </h2>
+                <p className={`text-xs max-w-2xl ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                  {isAdmin ? (
+                    <>You have <strong>full permissions</strong>: Create, read, update, and delete any record, plus access to edit organizational firm details, bank accounts, and manage allowed users.</>
+                  ) : (
+                    <>You are in <strong>restricted staff mode</strong>: You can create and process Job Cards, customer invoices, and stock entries, but <strong>record deletion is locked</strong> and critical firm fields cannot be edited.</>
+                  )}
+                </p>
+              </div>
+
+              {/* Quick Testing Switcher */}
+              <div className={`p-3 rounded-xl border flex flex-col gap-2 shrink-0 ${
+                isDark ? 'bg-slate-950/80 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
+              }`}>
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <span className="font-semibold text-slate-500">Live Role Testing Switcher:</span>
+                  <button
+                    type="button"
+                    onClick={() => refreshAllowedUsers()}
+                    className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3 h-3" /> Refresh
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentUserEmail('spidergridsolutions@gmail.com');
+                      setCurrentUserRole('admin');
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      currentUserRole === 'admin'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : (isDark ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300')
+                    }`}
+                  >
+                    👑 Test as Admin
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentUserEmail('staff@spidergridsolutions.com');
+                      setCurrentUserRole('user');
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      currentUserRole === 'user'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : (isDark ? 'bg-slate-800 text-slate-400 hover:text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300')
+                    }`}
+                  >
+                    👤 Test as Staff (User)
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Form & Table Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            {/* Left: Authorize / Add User in Firestore */}
+            <div className={`lg:col-span-5 p-6 rounded-2xl border space-y-4 ${
+              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
+            }`}>
+              <div className="flex items-center justify-between border-b pb-3">
+                <div className="flex items-center gap-2">
+                  <Key className="w-5 h-5 text-blue-600" />
+                  <h3 className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                    Authorize User in Firestore
+                  </h3>
+                </div>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 font-semibold">
+                  allowed_users collection
+                </span>
+              </div>
+
+              {!isAdmin && (
+                <div className={`p-3 rounded-lg border text-xs flex items-center gap-2 ${
+                  isDark ? 'bg-amber-950/30 border-amber-800 text-amber-200' : 'bg-amber-50 border-amber-200 text-amber-900'
+                }`}>
+                  <Lock className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span>Only administrators can grant or change user roles.</span>
+                </div>
+              )}
+
+              <form onSubmit={handleSaveUser} className="space-y-3.5">
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Google Account / Login Email *
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    disabled={!isAdmin}
+                    value={newUserEmail}
+                    onChange={(e) => setNewUserEmail(e.target.value)}
+                    placeholder="e.g. employee@spidergridsolutions.com"
+                    className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
+                      !isAdmin ? 'opacity-60 cursor-not-allowed bg-slate-100 dark:bg-slate-950 text-slate-500' :
+                      isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
+                    }`}
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Matching email fetched from Firestore <code>allowed_users</code> collection determines active role.
+                  </p>
+                </div>
+
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Staff / User Full Name
+                  </label>
+                  <input
+                    type="text"
+                    disabled={!isAdmin}
+                    value={newUserDisplayName}
+                    onChange={(e) => setNewUserDisplayName(e.target.value)}
+                    placeholder="e.g. Priya - Service Coordinator"
+                    className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
+                      !isAdmin ? 'opacity-60 cursor-not-allowed bg-slate-100 dark:bg-slate-950 text-slate-500' :
+                      isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Assigned Role & Permissions *
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      disabled={!isAdmin}
+                      onClick={() => setNewUserRole('user')}
+                      className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
+                        newUserRole === 'user'
+                          ? 'border-amber-500 ring-2 ring-amber-500 bg-amber-50/20 shadow-xs'
+                          : (isDark ? 'border-slate-800 hover:border-slate-700 bg-slate-950' : 'border-slate-200 bg-slate-50')
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400">
+                        <UserCheck className="w-3.5 h-3.5" />
+                        <span>User (Staff)</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Create & edit operations. No deletes, no critical firm edits.
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={!isAdmin}
+                      onClick={() => setNewUserRole('admin')}
+                      className={`p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
+                        newUserRole === 'admin'
+                          ? 'border-emerald-500 ring-2 ring-emerald-500 bg-emerald-50/20 shadow-xs'
+                          : (isDark ? 'border-slate-800 hover:border-slate-700 bg-slate-950' : 'border-slate-200 bg-slate-50')
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                        <ShieldCheck className="w-3.5 h-3.5" />
+                        <span>Administrator</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        Full access: CRUD all records, manage users & firm settings.
+                      </p>
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Role Notes / Designation
+                  </label>
+                  <input
+                    type="text"
+                    disabled={!isAdmin}
+                    value={newUserNotes}
+                    onChange={(e) => setNewUserNotes(e.target.value)}
+                    placeholder="e.g. CCTV & Network Engineer"
+                    className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
+                      !isAdmin ? 'opacity-60 cursor-not-allowed bg-slate-100 dark:bg-slate-950 text-slate-500' :
+                      isDark ? 'bg-slate-950 border border-slate-800 text-white focus:border-blue-500' : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
+                    }`}
+                  />
+                </div>
+
+                {userOperationStatus && (
+                  <p className="text-xs font-medium text-blue-600 animate-in fade-in">
+                    {userOperationStatus}
+                  </p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={!isAdmin || isSavingUser}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{isSavingUser ? 'Saving...' : 'Authorize User in Firestore'}</span>
+                </button>
+              </form>
+            </div>
+
+            {/* Right: Allowed Users Directory Table */}
+            <div className={`lg:col-span-7 p-6 rounded-2xl border space-y-4 ${
+              isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
+            }`}>
+              <div className="flex items-center justify-between border-b pb-3">
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-blue-600" />
+                  <div>
+                    <h3 className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                      Authorized Users Directory
+                    </h3>
+                    <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Synced with Firestore collection <code>allowed_users</code>
+                    </p>
+                  </div>
+                </div>
+                <span className="text-xs font-mono font-semibold text-slate-400">
+                  {allowedUsers.length} user{allowedUsers.length === 1 ? '' : 's'} registered
+                </span>
+              </div>
+
+              <div className="space-y-2.5 max-h-[460px] overflow-y-auto pr-1">
+                {allowedUsers.map((u) => {
+                  const isCurrentActive = currentUserEmail.toLowerCase() === u.email.toLowerCase();
+                  const isRootAdmin = u.email.toLowerCase() === 'spidergridsolutions@gmail.com';
+                  const isUserAdmin = u.role === 'admin';
+
+                  return (
+                    <div
+                      key={u.email}
+                      className={`p-3.5 rounded-xl border transition-all ${
+                        isCurrentActive
+                          ? (isDark ? 'bg-blue-950/20 border-blue-800/80 ring-1 ring-blue-500/40' : 'bg-blue-50/70 border-blue-300 ring-1 ring-blue-400/40')
+                          : (isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50/80 border-slate-200')
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs ${
+                            isUserAdmin 
+                              ? 'bg-emerald-600 text-white' 
+                              : 'bg-amber-600 text-white'
+                          }`}>
+                            {isUserAdmin ? '👑' : '👤'}
+                          </div>
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                                {u.displayName || u.email.split('@')[0]}
+                              </span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                isUserAdmin 
+                                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' 
+                                  : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                              }`}>
+                                {isUserAdmin ? '👑 Admin' : '👤 Staff (User)'}
+                              </span>
+                              {isCurrentActive && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+                                  ● Active Session
+                                </span>
+                              )}
+                              {isRootAdmin && (
+                                <span className="text-[10px] font-semibold text-slate-400">
+                                  (Primary Organization Owner)
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs font-mono text-slate-500 dark:text-slate-400">
+                              {u.email}
+                            </p>
+                            {u.notes && (
+                              <p className="text-[11px] text-slate-400 dark:text-slate-500">
+                                {u.notes}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                          {/* Account Switcher */}
+                          {!isCurrentActive && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCurrentUserEmail(u.email);
+                                setCurrentUserRole(u.role);
+                              }}
+                              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-600 hover:bg-blue-100 border border-blue-200 dark:border-blue-900 cursor-pointer"
+                              title="Switch active user to test this role"
+                            >
+                              Log In As
+                            </button>
+                          )}
+
+                          {/* Toggle Role Button */}
+                          {isAdmin && !isRootAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleRole(u)}
+                              className={`px-2.5 py-1 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
+                                isUserAdmin
+                                  ? 'border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-300'
+                                  : 'border-emerald-300 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300'
+                              }`}
+                              title={`Switch to ${isUserAdmin ? 'User' : 'Admin'}`}
+                            >
+                              {isUserAdmin ? 'Demote to Staff' : 'Promote to Admin'}
+                            </button>
+                          )}
+
+                          {/* Delete User */}
+                          {isAdmin && !isRootAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteUser(u.email)}
+                              className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+                              title="Remove user from allowed_users"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Information Footnote */}
+              <div className={`p-3 rounded-xl border text-xs space-y-1.5 ${
+                isDark ? 'bg-slate-950/60 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
+              }`}>
+                <div className="flex items-center gap-1.5 font-bold text-blue-600 dark:text-blue-400">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Firestore Security & Rule Enforcement</span>
+                </div>
+                <p className="text-[11px] leading-relaxed">
+                  Roles are enforced in both the client UI (disabling delete operations and critical fields for <code>user</code> role) and through Firestore Security Rules where <code>allowed_users/{`{email}`}</code> defines access privileges.
+                </p>
               </div>
             </div>
           </div>

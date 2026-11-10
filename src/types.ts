@@ -102,6 +102,8 @@ export interface Customer {
   leadSourceId?: string;
   details: string;
   phoneBook: 'Yes' | 'No';
+  address?: string;
+  email?: string;
   mapUrl?: string; // Google Maps Location Link
   syncedToGoogleContacts?: boolean;
   // Per-client manual referral commission
@@ -130,6 +132,7 @@ export interface JobCard {
   devicePhotos: string[]; // Base64 data URLs
   estimatedCost: number;
   finalCost: number;
+  advancePaid?: number;
   technicianNotes?: string;
   partsUsed?: { itemName: string; qty: number; cost: number }[];
   updatedAt: string;
@@ -367,6 +370,7 @@ export interface AdminSettings {
   welcomeMessageTemplate: string;
   statusMessageTemplate: string;
   reviewMessageTemplate: string;
+  paymentPendingMessageTemplate?: string;
   quickServices: QuickServicePreset[];
   // SGS Billing Customization & Themes
   billingTheme: BillingTheme;
@@ -393,6 +397,8 @@ export interface AdminSettings {
   defaultOcrEngine?: 'paddleocr' | 'gemini'; // Default engine: paddleocr vs gemini
   // Manual Quotation Module Settings
   quotationBackgroundUrl?: string; // A4 Letterhead background image with SGS logo/header/footer
+  quotationHeaderImageUrl?: string; // Custom header banner image for Manual Quotation
+  quotationFooterImageUrl?: string; // Custom footer banner image for Manual Quotation
   quotationTerms?: string; // Default terms for manual quotations
 }
 
@@ -600,6 +606,11 @@ export interface ManualQuotation {
   customerNotes?: string;
   installationNotes?: string;
   
+  // Custom Header & Footer Image Banners
+  headerImageUrl?: string;
+  footerImageUrl?: string;
+  backgroundUrl?: string;
+
   // Version History
   version: number; // 1, 2, ...
   history: QuotationVersionSnapshot[];
@@ -607,6 +618,22 @@ export interface ManualQuotation {
   isArchived?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+// ==========================================
+// ROLE-BASED ACCESS CONTROL (RBAC) - FIRESTORE
+// ==========================================
+
+export type UserRole = 'admin' | 'user';
+
+export interface AllowedUser {
+  id?: string;
+  email: string;
+  role: UserRole;
+  displayName?: string;
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 // ==========================================

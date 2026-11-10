@@ -43,7 +43,8 @@ export const InventoryManager: React.FC = () => {
     linkInventoryToVendorBill,
     recordStockMovement, 
     activePriceCodeMapping,
-    theme 
+    theme,
+    canDelete
   } = useSgs();
   const isDark = theme === 'dark';
 
@@ -1638,14 +1639,17 @@ export const InventoryManager: React.FC = () => {
                   <div className={`flex items-center justify-between pt-4 border-t ${
                     isDark ? 'border-slate-800' : 'border-slate-200'
                   }`}>
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteItem(selectedItemForEdit)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Delete Item</span>
-                    </button>
+                    {canDelete ? (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteItem(selectedItemForEdit)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/50 cursor-pointer"
+                        title="Delete Item (Admin Only)"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete Item</span>
+                      </button>
+                    ) : <div />}
 
                     <div className="flex items-center gap-2">
                       {editSaveSuccess && (

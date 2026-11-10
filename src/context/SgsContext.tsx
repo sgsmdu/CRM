@@ -29,8 +29,17 @@ import {
   ManualQuotation,
   DigitChar,
   PriceCodeMapping,
-  PriceCodeMappingVersion
+  PriceCodeMappingVersion,
+  AllowedUser,
+  UserRole
 } from '../types';
+import { 
+  fetchUserRoleFromFirestore, 
+  subscribeToAllowedUsers, 
+  saveAllowedUserToFirestore, 
+  deleteAllowedUserFromFirestore, 
+  DEFAULT_ADMIN_EMAIL 
+} from '../services/firebase';
 import * as Acc from '../utils/accounting';
 import { 
   DEFAULT_PRICE_CODE_MAPPING, 
@@ -174,6 +183,8 @@ interface SgsContextType {
     statusUrl: string;
     reviewMessage: string;
     reviewUrl: string;
+    paymentPendingMessage: string;
+    paymentPendingUrl: string;
   };
 
   // Employee & Staff Allocation methods
@@ -238,6 +249,19 @@ interface SgsContextType {
   priceCodeMappingVersions: PriceCodeMappingVersion[];
   updatePriceCodeMapping: (newMapping: PriceCodeMapping, notes?: string) => { success: boolean; error?: string };
   resetPriceCodeMappingToDefault: () => void;
+
+  // Role-Based Access Control (RBAC via Firestore allowed_users)
+  currentUserEmail: string;
+  setCurrentUserEmail: (email: string) => Promise<void>;
+  currentUserRole: UserRole;
+  setCurrentUserRole: (role: UserRole) => void;
+  isAdmin: boolean;
+  canDelete: boolean;
+  canEditCritical: boolean;
+  allowedUsers: AllowedUser[];
+  refreshAllowedUsers: () => Promise<void>;
+  saveAllowedUser: (user: AllowedUser) => Promise<void>;
+  deleteAllowedUser: (email: string) => Promise<void>;
 }
 
 const STORAGE_KEY = 'spider_grid_solutions_db_v1';
@@ -358,9 +382,23 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const stored = localStorage.getItem(`${STORAGE_KEY}_admin_settings`);
       if (stored) {
         const parsed = JSON.parse(stored);
+        let workshopPhone = parsed.workshopPhone || DEFAULT_ADMIN_SETTINGS.workshopPhone;
+        if (!workshopPhone || workshopPhone.includes('9677776001')) {
+          workshopPhone = '+91 9176795665';
+        }
+        let pandiyanPhone = parsed.pandiyanPhone || DEFAULT_ADMIN_SETTINGS.pandiyanPhone;
+        if (!pandiyanPhone || pandiyanPhone.includes('9677776001')) {
+          pandiyanPhone = '+91 9176795665';
+        }
+
         return {
           ...DEFAULT_ADMIN_SETTINGS,
           ...parsed,
+          workshopPhone,
+          pandiyanPhone,
+          paymentPendingMessageTemplate: parsed.paymentPendingMessageTemplate || DEFAULT_ADMIN_SETTINGS.paymentPendingMessageTemplate,
+          quotationHeaderImageUrl: parsed.quotationHeaderImageUrl || '',
+          quotationFooterImageUrl: parsed.quotationFooterImageUrl || '',
           workshopLogoUrl: parsed.workshopLogoUrl || DEFAULT_ADMIN_SETTINGS.workshopLogoUrl,
           rubberStampUrl: parsed.rubberStampUrl || DEFAULT_ADMIN_SETTINGS.rubberStampUrl,
           pandiyanLogoUrl: parsed.pandiyanLogoUrl || DEFAULT_ADMIN_SETTINGS.pandiyanLogoUrl,
@@ -553,6 +591,118 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const setTheme = (newTheme: 'light' | 'dark') => {
     setThemeState(newTheme);
     localStorage.setItem('sgs_theme', newTheme);
+  };
+
+  // Role-Based Access Control (RBAC via Firestore allowed_users)
+  const [currentUserEmail, setCurrentUserEmailState] = useState<string>(() => {
+    try {
+      return localStorage.getItem('sgs_current_user_email') || DEFAULT_ADMIN_EMAIL;
+    } catch {
+      return DEFAULT_ADMIN_EMAIL;
+    }
+  });
+
+  const [currentUserRole, setCurrentUserRoleState] = useState<UserRole>(() => {
+    try {
+      const stored = localStorage.getItem('sgs_current_user_role');
+      if (stored === 'admin' || stored === 'user') return stored;
+      return 'admin';
+    } catch {
+      return 'admin';
+    }
+  });
+
+  const setCurrentUserRole = (role: UserRole) => {
+    setCurrentUserRoleState(role);
+    try {
+      localStorage.setItem('sgs_current_user_role', role);
+    } catch {}
+  };
+
+  const [allowedUsers, setAllowedUsers] = useState<AllowedUser[]>([
+    {
+      email: DEFAULT_ADMIN_EMAIL,
+      role: 'admin',
+      displayName: 'Spider Grid Admin',
+      notes: 'Primary Organization Admin'
+    }
+  ]);
+
+  // Subscribe to allowed_users in Firestore
+  useEffect(() => {
+    const unsub = subscribeToAllowedUsers(
+      (users) => {
+        if (users && users.length > 0) {
+          setAllowedUsers(users);
+          const currentClean = (currentUserEmail || '').trim().toLowerCase();
+          const match = users.find(u => u.email.trim().toLowerCase() === currentClean);
+          if (match) {
+            setCurrentUserRoleState(match.role);
+            try {
+              localStorage.setItem('sgs_current_user_role', match.role);
+            } catch {}
+          } else if (currentClean === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
+            setCurrentUserRoleState('admin');
+          }
+        }
+      },
+      (err) => {
+        console.warn('Realtime subscription notice for allowed_users:', err);
+      }
+    );
+    return () => unsub();
+  }, [currentUserEmail]);
+
+  const setCurrentUserEmail = async (email: string) => {
+    const clean = (email || '').trim().toLowerCase();
+    setCurrentUserEmailState(clean);
+    try {
+      localStorage.setItem('sgs_current_user_email', clean);
+    } catch {}
+
+    try {
+      const res = await fetchUserRoleFromFirestore(clean);
+      setCurrentUserRoleState(res.role);
+      try {
+        localStorage.setItem('sgs_current_user_role', res.role);
+      } catch {}
+    } catch (e) {
+      console.warn('Could not query role from Firestore, keeping fallback:', e);
+      if (clean === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
+        setCurrentUserRoleState('admin');
+      }
+    }
+  };
+
+  const isAdmin = currentUserRole === 'admin';
+  const canDelete = isAdmin;
+  const canEditCritical = isAdmin;
+
+  const refreshAllowedUsers = async () => {
+    try {
+      const res = await fetchUserRoleFromFirestore(currentUserEmail);
+      setCurrentUserRoleState(res.role);
+    } catch {}
+  };
+
+  const saveAllowedUser = async (user: AllowedUser) => {
+    await saveAllowedUserToFirestore(user);
+    setAllowedUsers(prev => {
+      const clean = user.email.trim().toLowerCase();
+      const filtered = prev.filter(u => u.email.trim().toLowerCase() !== clean);
+      return [...filtered, user];
+    });
+    if (user.email.trim().toLowerCase() === currentUserEmail.trim().toLowerCase()) {
+      setCurrentUserRoleState(user.role);
+      try {
+        localStorage.setItem('sgs_current_user_role', user.role);
+      } catch {}
+    }
+  };
+
+  const deleteAllowedUser = async (email: string) => {
+    await deleteAllowedUserFromFirestore(email);
+    setAllowedUsers(prev => prev.filter(u => u.email.trim().toLowerCase() !== email.trim().toLowerCase()));
   };
 
   // Sync to localStorage
@@ -2181,7 +2331,13 @@ Please update your diagnostic notes and call status upon inspection.
     };
 
     const replaceTags = (template: string) => {
-      const amountVal = (job.finalCost > 0 ? job.finalCost : job.estimatedCost).toLocaleString('en-IN');
+      const amountNum = job.finalCost > 0 ? job.finalCost : (job.estimatedCost || 0);
+      const paidNum = job.advancePaid || 0;
+      const pendingNum = Math.max(0, amountNum - paidNum);
+      const amountVal = amountNum.toLocaleString('en-IN');
+      const paidVal = paidNum.toLocaleString('en-IN');
+      const pendingVal = pendingNum.toLocaleString('en-IN');
+
       return template
         .replace(/{customerName}/g, job.customerName || 'Customer')
         .replace(/{jobId}/g, job.jobId || '')
@@ -2194,17 +2350,22 @@ Please update your diagnostic notes and call status upon inspection.
         .replace(/{status}/g, statusTitleMap[job.status] || job.status.toUpperCase())
         .replace(/{technicianNotes}/g, job.technicianNotes || 'Quality inspection in progress')
         .replace(/{amount}/g, amountVal)
+        .replace(/{paidAmount}/g, paidVal)
+        .replace(/{pendingBalance}/g, pendingVal)
+        .replace(/{workshopUpiId}/g, adminSettings.workshopUpiId || '9176795665@okbizaxis')
         .replace(/{googleReviewUrl}/g, adminSettings.googleReviewUrl || 'https://g.page/r/spidergridsolutions/review')
-        .replace(/{workshopPhone}/g, adminSettings.workshopPhone || '+91 9677776001');
+        .replace(/{workshopPhone}/g, adminSettings.workshopPhone || '+91 9176795665');
     };
 
     const welcomeMessage = replaceTags(adminSettings.welcomeMessageTemplate || DEFAULT_ADMIN_SETTINGS.welcomeMessageTemplate);
     const statusMessage = replaceTags(adminSettings.statusMessageTemplate || DEFAULT_ADMIN_SETTINGS.statusMessageTemplate);
     const reviewMessage = replaceTags(adminSettings.reviewMessageTemplate || DEFAULT_ADMIN_SETTINGS.reviewMessageTemplate);
+    const paymentPendingMessage = replaceTags(adminSettings.paymentPendingMessageTemplate || DEFAULT_ADMIN_SETTINGS.paymentPendingMessageTemplate || '');
 
     const welcomeUrl = `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(welcomeMessage)}`;
     const statusUrl = `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(statusMessage)}`;
     const reviewUrl = `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(reviewMessage)}`;
+    const paymentPendingUrl = `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(paymentPendingMessage)}`;
 
     return {
       welcomeMessage,
@@ -2213,6 +2374,8 @@ Please update your diagnostic notes and call status upon inspection.
       statusUrl,
       reviewMessage,
       reviewUrl,
+      paymentPendingMessage,
+      paymentPendingUrl,
     };
   };
 
@@ -2326,6 +2489,18 @@ Please update your diagnostic notes and call status upon inspection.
         theme,
         toggleTheme,
         setTheme,
+        // RBAC via Firestore allowed_users
+        currentUserEmail,
+        setCurrentUserEmail,
+        currentUserRole,
+        setCurrentUserRole,
+        isAdmin,
+        canDelete,
+        canEditCritical,
+        allowedUsers,
+        refreshAllowedUsers,
+        saveAllowedUser,
+        deleteAllowedUser,
       }}
     >
       {children}

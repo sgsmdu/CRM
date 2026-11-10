@@ -32,7 +32,8 @@ import {
   Layers,
   ChevronDown,
   ArrowLeft,
-  Save
+  Save,
+  MessageSquare
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { Invoice, InvoiceItem, CashFlowEntry, PaymentMode, BillingFirm, BillingTheme, PandiyanBillingTheme, InventoryItem, Customer } from '../types';
@@ -77,7 +78,9 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     addCashFlowEntry, 
     adminSettings, 
     inventory,
-    theme 
+    theme,
+    canDelete,
+    isAdmin
   } = useSgs();
   
   const isDark = theme === 'dark';
@@ -1034,6 +1037,36 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     }
   };
 
+  // WhatsApp Payment Reminder
+  const handleSendPaymentReminderWhatsApp = (inv: Invoice) => {
+    let cleanPhone = (inv.customerPhone || '').replace(/[^0-9]/g, '');
+    if (cleanPhone.length === 10) cleanPhone = `91${cleanPhone}`;
+    if (!cleanPhone) {
+      alert('Customer phone number is missing');
+      return;
+    }
+    const pending = Math.max(0, inv.grandTotal - (inv.paidAmount || 0));
+    const template = adminSettings.paymentPendingMessageTemplate || 
+      'Dear {customerName},\nThis is a friendly payment reminder from Spider Grid Solutions regarding Invoice #{jobId}.\n\n' +
+      '• Total Amount: ₹{amount}\n' +
+      '• Paid so far: ₹{paidAmount}\n' +
+      '• Outstanding Balance: ₹{pendingBalance}\n\n' +
+      'Kindly settle via UPI: {workshopUpiId} or contact {workshopPhone}.\nThank you for your business!';
+
+    const itemNames = (inv.items || []).map(i => i.description).slice(0, 2).join(', ');
+    const msg = template
+      .replace(/{customerName}/g, inv.customerName || 'Valued Customer')
+      .replace(/{jobId}/g, inv.invoiceNumber)
+      .replace(/{deviceBrand}/g, itemNames || 'Supplies / Service')
+      .replace(/{amount}/g, inv.grandTotal.toLocaleString('en-IN'))
+      .replace(/{paidAmount}/g, (inv.paidAmount || 0).toLocaleString('en-IN'))
+      .replace(/{pendingBalance}/g, pending.toLocaleString('en-IN'))
+      .replace(/{workshopUpiId}/g, adminSettings.workshopUpiId || '9176795665@okbizaxis')
+      .replace(/{workshopPhone}/g, adminSettings.workshopPhone || '+91 9176795665');
+
+    window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+  };
+
   // Submit quick payment update
   const handleSaveQuickPayment = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1553,13 +1586,25 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                                 <Copy className="w-4 h-4" />
                               </button>
 
-                              {!isCancelled && (
+                              {inv.paymentStatus !== 'paid' && !isCancelled && (
+                                <button
+                                  onClick={() => handleSendPaymentReminderWhatsApp(inv)}
+                                  className={`p-1.5 text-xs rounded transition-colors cursor-pointer ${
+                                    isDark ? 'text-emerald-400 hover:text-white hover:bg-emerald-900/60' : 'text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50'
+                                  }`}
+                                  title="Send WhatsApp Payment Pending Reminder"
+                                >
+                                  <MessageSquare className="w-4 h-4" />
+                                </button>
+                              )}
+
+                              {canDelete && !isCancelled && (
                                 <button
                                   onClick={() => handleCancelInvoice(inv.id)}
                                   className={`p-1.5 text-xs rounded transition-colors cursor-pointer ${
                                     isDark ? 'text-slate-500 hover:text-rose-400 hover:bg-slate-800' : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
                                   }`}
-                                  title="Cancel bill"
+                                  title="Cancel bill (Admin Only)"
                                 >
                                   <Ban className="w-4 h-4" />
                                 </button>
@@ -1988,11 +2033,23 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                   <Copy className="w-3.5 h-3.5" /> {viewingInvoice.type === 'quotation' ? 'Copy Quotation' : 'Duplicate'}
                 </button>
 
-                {viewingInvoice.status !== 'cancelled' && (
+                {viewingInvoice.paymentStatus !== 'paid' && viewingInvoice.status !== 'cancelled' && (
+                  <button
+                    type="button"
+                    onClick={() => handleSendPaymentReminderWhatsApp(viewingInvoice)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-emerald-600 hover:bg-emerald-50 border border-emerald-300 cursor-pointer"
+                    title="Send Payment Pending Reminder via WhatsApp"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" /> WhatsApp Reminder
+                  </button>
+                )}
+
+                {canDelete && viewingInvoice.status !== 'cancelled' && (
                   <button
                     type="button"
                     onClick={() => handleCancelInvoice(viewingInvoice.id)}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-rose-600 hover:bg-rose-50 border border-rose-300 cursor-pointer"
+                    title="Cancel Bill (Admin Only)"
                   >
                     <Ban className="w-3.5 h-3.5" /> Cancel Bill
                   </button>
@@ -3447,7 +3504,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                               {adminSettings.pandiyanFirmName || 'PANDIYAN COMPUTERS'}
                             </h2>
                             <p className="text-[11px] text-slate-700 font-medium">
-                              {adminSettings.pandiyanAddress || 'Shop No. 14, Simmakkal Main Road, Madurai - 625001'} · Phone: {adminSettings.pandiyanPhone || '+91 9677776001'}
+                              {adminSettings.pandiyanAddress || 'Shop No. 14, Simmakkal Main Road, Madurai - 625001'} · Phone: {adminSettings.pandiyanPhone || '+91 9176795665'}
                             </p>
                             {adminSettings.pandiyanEmail && (
                               <p className="text-[10px] text-slate-500 font-mono">
@@ -3485,7 +3542,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                               {adminSettings.workshopName || 'SPIDER GRID SOLUTIONS'}
                             </h2>
                             <p className="text-[11px] text-slate-600 font-medium">
-                              {adminSettings.workshopAddress || 'Madurai, Tamil Nadu'} · Phone: {adminSettings.workshopPhone || '+91 9677776001'}
+                              {adminSettings.workshopAddress || 'Madurai, Tamil Nadu'} · Phone: {adminSettings.workshopPhone || '+91 9176795665'}
                             </p>
                             {adminSettings.workshopGstin && (
                               <p className="text-[10px] font-mono text-slate-500">

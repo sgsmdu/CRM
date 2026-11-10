@@ -252,7 +252,7 @@ function SgsAppContent() {
             <span>·</span>
             <span>Madurai, Tamil Nadu</span>
             <span>·</span>
-            <span className="font-mono">Ph: 9677776001</span>
+            <span className="font-mono">Ph: 9176795665</span>
           </div>
 
           <div className="flex items-center gap-4">

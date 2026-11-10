@@ -34,7 +34,9 @@ import {
   Check,
   Sliders,
   Sparkles,
-  Info
+  Info,
+  Upload,
+  Image as ImageIcon
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { 
@@ -69,8 +71,12 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
     quotationProducts,
     quotationBrands,
     customers,
+    jobCards,
     adminSettings,
+    updateAdminSettings,
     theme,
+    canDelete,
+    isAdmin,
     addManualQuotation,
     updateManualQuotation,
     deleteManualQuotation,
@@ -134,6 +140,16 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
   const [customerNotes, setCustomerNotes] = useState('');
   const [installationNotes, setInstallationNotes] = useState('');
   const [activeModelTab, setActiveModelTab] = useState<'model1' | 'model2'>('model1');
+
+  // Custom Header & Footer Image State for Quotation
+  const [quotationHeaderImg, setQuotationHeaderImg] = useState<string>('');
+  const [quotationFooterImg, setQuotationFooterImg] = useState<string>('');
+
+  // Enhanced "Select Existing" States
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [selectExistingTab, setSelectExistingTab] = useState<'customer' | 'job' | 'quotation'>('customer');
+  const [selectedJobIdToLoad, setSelectedJobIdToLoad] = useState('');
+  const [selectedQtnIdToCopy, setSelectedQtnIdToCopy] = useState('');
 
   // Model 1 State
   const [model1Name, setModel1Name] = useState('Model 1: 4CH DVR + 2MP HD Camera Package');
@@ -213,6 +229,11 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
     setCustomerNotes('');
     setInstallationNotes('');
     setActiveModelTab('model1');
+    setQuotationHeaderImg(adminSettings.quotationHeaderImageUrl || '');
+    setQuotationFooterImg(adminSettings.quotationFooterImageUrl || '');
+    setCustomerSearchQuery('');
+    setSelectedJobIdToLoad('');
+    setSelectedQtnIdToCopy('');
 
     setModel1Name('Model 1: 4CH DVR + 2MP HD Camera Package');
     setModel1Items([]);
@@ -258,6 +279,11 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
     setCustomerNotes(qtn.customerNotes || '');
     setInstallationNotes(qtn.installationNotes || '');
     setActiveModelTab('model1');
+    setQuotationHeaderImg(qtn.headerImageUrl || adminSettings.quotationHeaderImageUrl || '');
+    setQuotationFooterImg(qtn.footerImageUrl || adminSettings.quotationFooterImageUrl || '');
+    setCustomerSearchQuery('');
+    setSelectedJobIdToLoad('');
+    setSelectedQtnIdToCopy('');
 
     setModel1Name(qtn.model1.name || 'Model 1');
     setModel1Items(JSON.parse(JSON.stringify(qtn.model1.items || [])));
@@ -295,15 +321,92 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
   const model1Calc = useMemo(() => calculateModelSummary(model1Items, model1Charges), [model1Items, model1Charges]);
   const model2Calc = useMemo(() => calculateModelSummary(model2Items, model2Charges), [model2Items, model2Charges]);
 
-  // Customer selection auto-fill
+  // Customer selection auto-fill (with email, phone, address)
   const handleSelectCustomer = (custId: string) => {
     setSelectedCustomerId(custId);
     const cust = customers.find(c => c.id === custId);
     if (cust) {
-      setCustomerName(cust.name);
-      setCustomerPhone(cust.phone);
-      setCustomerAddress(cust.area || '');
+      setCustomerName(cust.name || '');
+      setCustomerPhone(cust.phone || '');
+      setCustomerAddress(cust.area || cust.address || '');
+      setCustomerEmail((cust as any).email || '');
+      showToast(`Loaded customer: ${cust.name}`);
     }
+  };
+
+  // Job Card selection auto-fill
+  const handleSelectJobCard = (jobId: string) => {
+    setSelectedJobIdToLoad(jobId);
+    const job = jobCards.find(j => j.id === jobId || j.jobId === jobId);
+    if (job) {
+      setOriginatingJobId(job.jobId);
+      setCustomerName(job.customerName || '');
+      setCustomerPhone(job.customerPhone || '');
+      setCustomerAddress(job.customerArea || '');
+      const cust = customers.find(c => c.id === job.customerId || c.phone === job.customerPhone);
+      if (cust) {
+        setSelectedCustomerId(cust.id);
+        if ((cust as any).email) setCustomerEmail((cust as any).email);
+      }
+      showToast(`Loaded details from Job Card #${job.jobId} (${job.customerName})`);
+    }
+  };
+
+  // Copy Model items and charges from an existing Quotation
+  const handleCopyFromQuotation = (qtnId: string) => {
+    setSelectedQtnIdToCopy(qtnId);
+    const source = quotations.find(q => q.id === qtnId);
+    if (source) {
+      if (window.confirm(`Copy Model 1 & Model 2 items, charges and terms from Quotation #${source.quotationNumber} (${source.customerName})?`)) {
+        setModel1Name(source.model1.name);
+        setModel1Items(JSON.parse(JSON.stringify(source.model1.items || [])));
+        setModel1Charges({ ...source.model1.internalCharges });
+
+        setModel2Name(source.model2.name);
+        setModel2Items(JSON.parse(JSON.stringify(source.model2.items || [])));
+        setModel2Charges({ ...source.model2.internalCharges });
+
+        if (source.termsAndConditions) setTermsAndConditions(source.termsAndConditions);
+        if (source.paymentDetails) setPaymentDetails(source.paymentDetails);
+        if (source.customerNotes) setCustomerNotes(source.customerNotes);
+        if (source.installationNotes) setInstallationNotes(source.installationNotes);
+        if (source.headerImageUrl) setQuotationHeaderImg(source.headerImageUrl);
+        if (source.footerImageUrl) setQuotationFooterImg(source.footerImageUrl);
+        showToast(`Copied items & configuration from #${source.quotationNumber}!`);
+      }
+    }
+  };
+
+  // Image Upload Handler for Header & Footer Banners
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, target: 'header' | 'footer') => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      alert('File size exceeds 2MB. Please select an optimized banner image.');
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result as string;
+      if (result) {
+        if (target === 'header') {
+          setQuotationHeaderImg(result);
+          showToast('Header banner image updated for quotation!');
+        } else {
+          setQuotationFooterImg(result);
+          showToast('Footer banner image updated for quotation!');
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Save Current Header/Footer as Global Default in Admin Settings
+  const handleSaveImagesAsGlobalDefault = () => {
+    updateAdminSettings({
+      quotationHeaderImageUrl: quotationHeaderImg,
+      quotationFooterImageUrl: quotationFooterImg,
+    });
+    showToast('Header and Footer saved as global quotation defaults in Admin Settings!');
   };
 
   // Copy Model 1 to Model 2
@@ -460,6 +563,8 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
         advanceAmount: advanceAmount ? Number(advanceAmount) : undefined,
         customerNotes: customerNotes.trim() || undefined,
         installationNotes: installationNotes.trim() || undefined,
+        headerImageUrl: quotationHeaderImg.trim() || undefined,
+        footerImageUrl: quotationFooterImg.trim() || undefined,
       }, `Saved changes to quotation`);
 
       const updated = quotations.find(q => q.id === editingQuotationId);
@@ -479,6 +584,8 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
           advanceAmount,
           customerNotes,
           installationNotes,
+          headerImageUrl: quotationHeaderImg.trim() || undefined,
+          footerImageUrl: quotationFooterImg.trim() || undefined,
         });
       }
 
@@ -504,6 +611,8 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
         advanceAmount: advanceAmount ? Number(advanceAmount) : undefined,
         customerNotes: customerNotes.trim() || undefined,
         installationNotes: installationNotes.trim() || undefined,
+        headerImageUrl: quotationHeaderImg.trim() || undefined,
+        footerImageUrl: quotationFooterImg.trim() || undefined,
       });
 
       if (openPdf) {
@@ -541,7 +650,7 @@ Thank you for your enquiry with Spider Grid Solutions - Madurai. We have prepare
 • Free 30-day onsite service support from handover.
 
 Please review both options and let us know your preferred configuration!
-📞 Contact: +91 9677776001 | Madurai`;
+📞 Contact: ${adminSettings.workshopPhone || '+91 9176795665'} | Madurai`;
   };
 
   const handleShareWhatsApp = (q: ManualQuotation) => {
@@ -1032,19 +1141,21 @@ Please review both options and let us know your preferred configuration!
                                 <Sliders className="w-4 h-4" />
                               </button>
 
-                              {/* Delete / Archive */}
-                              <button
-                                onClick={() => {
-                                  if (window.confirm(`Are you sure you want to archive Quotation #${q.quotationNumber}? Historical records will be safely preserved.`)) {
-                                    deleteManualQuotation(q.id);
-                                    showToast(`Quotation #${q.quotationNumber} archived.`);
-                                  }
-                                }}
-                                className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-                                title="Archive Quotation"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {/* Delete / Archive - Admin Only */}
+                              {canDelete && (
+                                <button
+                                  onClick={() => {
+                                    if (window.confirm(`Are you sure you want to archive Quotation #${q.quotationNumber}? Historical records will be safely preserved.`)) {
+                                      deleteManualQuotation(q.id);
+                                      showToast(`Quotation #${q.quotationNumber} archived.`);
+                                    }
+                                  }}
+                                  className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                                  title="Archive Quotation (Admin Only)"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
 
                             </div>
                           </td>
@@ -1340,22 +1451,139 @@ Please review both options and let us know your preferred configuration!
                     <User className="w-3.5 h-3.5" /> Customer Details & Proposal Reference
                   </span>
                   
-                  {/* Select from existing CRM customers */}
-                  <div className="flex items-center gap-2">
-                    <span className="text-[11px] text-slate-400 font-semibold">Select Existing:</span>
-                    <select
-                      value={selectedCustomerId}
-                      onChange={(e) => handleSelectCustomer(e.target.value)}
-                      className={`text-xs rounded-lg px-2.5 py-1 focus:outline-none ${
-                        isDark ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-300 text-slate-800'
+                  {/* Select Existing Tab Switcher */}
+                  <div className="flex items-center gap-1.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setSelectExistingTab('customer')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                        selectExistingTab === 'customer'
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : isDark ? 'bg-slate-900 text-slate-300 hover:bg-slate-800' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
                       }`}
                     >
-                      <option value="">-- Choose Customer from Database --</option>
-                      {customers.map(c => (
-                        <option key={c.id} value={c.id}>{c.name} ({c.phone || c.area})</option>
-                      ))}
-                    </select>
+                      👤 Select Customer
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectExistingTab('job')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                        selectExistingTab === 'job'
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : isDark ? 'bg-slate-900 text-slate-300 hover:bg-slate-800' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                      }`}
+                    >
+                      📋 From Job Card
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectExistingTab('quotation')}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                        selectExistingTab === 'quotation'
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : isDark ? 'bg-slate-900 text-slate-300 hover:bg-slate-800' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                      }`}
+                    >
+                      📄 Copy From Quote
+                    </button>
                   </div>
+                </div>
+
+                {/* Select Existing Panels */}
+                <div className="p-2.5 rounded-lg border border-dashed border-slate-300 dark:border-slate-800 bg-slate-100/50 dark:bg-slate-900/40">
+                  {selectExistingTab === 'customer' && (
+                    <div className="space-y-2">
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <div className="relative flex-1">
+                          <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+                          <input
+                            type="text"
+                            value={customerSearchQuery}
+                            onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                            placeholder="Type to filter customer by name, phone or area..."
+                            className={`w-full pl-8 pr-2.5 py-1 text-xs rounded-lg border focus:outline-none ${
+                              isDark ? 'bg-slate-950 border-slate-700 text-white' : 'bg-white border-slate-300 text-slate-900'
+                            }`}
+                          />
+                        </div>
+                        <select
+                          value={selectedCustomerId}
+                          onChange={(e) => handleSelectCustomer(e.target.value)}
+                          className={`text-xs rounded-lg px-2.5 py-1.5 focus:outline-none flex-1 ${
+                            isDark ? 'bg-slate-950 border border-slate-700 text-white' : 'bg-white border border-slate-300 text-slate-800'
+                          }`}
+                        >
+                          <option value="">-- Click to choose from Customer Database ({customers.length}) --</option>
+                          {customers
+                            .filter(c => {
+                              if (!customerSearchQuery.trim()) return true;
+                              const q = customerSearchQuery.toLowerCase();
+                              return (
+                                (c.name && c.name.toLowerCase().includes(q)) ||
+                                (c.phone && c.phone.includes(q)) ||
+                                (c.area && c.area.toLowerCase().includes(q))
+                              );
+                            })
+                            .map(c => (
+                              <option key={c.id} value={c.id}>
+                                {c.name} {c.phone ? `· ${c.phone}` : ''} {c.area ? `(${c.area})` : ''}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                      {selectedCustomerId && (
+                        <p className="text-[11px] text-emerald-600 font-medium flex items-center gap-1">
+                          <Check className="w-3 h-3" /> Customer linked to database. Details auto-populated below.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {selectExistingTab === 'job' && (
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] text-slate-400 font-semibold block">
+                        Select an existing active or past Job Card to populate customer & link reference:
+                      </label>
+                      <select
+                        value={selectedJobIdToLoad}
+                        onChange={(e) => handleSelectJobCard(e.target.value)}
+                        className={`w-full text-xs rounded-lg px-2.5 py-1.5 focus:outline-none ${
+                          isDark ? 'bg-slate-950 border border-slate-700 text-white' : 'bg-white border border-slate-300 text-slate-800'
+                        }`}
+                      >
+                        <option value="">-- Select Job Card from Workshop Database ({jobCards.length}) --</option>
+                        {jobCards.map(j => (
+                          <option key={j.id} value={j.id}>
+                            #{j.jobId} · {j.customerName} ({j.customerPhone}) · {j.deviceBrand} - {j.status.toUpperCase()}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {selectExistingTab === 'quotation' && (
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] text-purple-400 font-semibold block">
+                        Select a past quotation to copy all Model 1 &amp; Model 2 equipment rows &amp; charges:
+                      </label>
+                      <select
+                        value={selectedQtnIdToCopy}
+                        onChange={(e) => handleCopyFromQuotation(e.target.value)}
+                        className={`w-full text-xs rounded-lg px-2.5 py-1.5 focus:outline-none ${
+                          isDark ? 'bg-slate-950 border border-slate-700 text-white' : 'bg-white border border-slate-300 text-slate-800'
+                        }`}
+                      >
+                        <option value="">-- Choose previous Quotation to copy items from ({quotations.length}) --</option>
+                        {quotations
+                          .filter(q => q.id !== editingQuotationId)
+                          .map(q => (
+                            <option key={q.id} value={q.id}>
+                              #{q.quotationNumber} · {q.customerName} ({q.date}) · Option 1: ₹{q.model1.finalModelTotal.toLocaleString('en-IN')} | Option 2: ₹{q.model2.finalModelTotal.toLocaleString('en-IN')}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
@@ -1383,7 +1611,7 @@ Please review both options and let us know your preferred configuration!
                       type="text"
                       value={customerPhone}
                       onChange={(e) => setCustomerPhone(e.target.value)}
-                      placeholder="e.g. 9677776001"
+                      placeholder="e.g. 9176795665"
                       className={`w-full rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none ${
                         isDark ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-300 text-slate-900'
                       }`}
@@ -1405,7 +1633,22 @@ Please review both options and let us know your preferred configuration!
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className={`block text-[11px] font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                      Email Address (Optional)
+                    </label>
+                    <input
+                      type="email"
+                      value={customerEmail}
+                      onChange={(e) => setCustomerEmail(e.target.value)}
+                      placeholder="e.g. client@example.com"
+                      className={`w-full rounded-lg px-3 py-1.5 text-xs focus:outline-none ${
+                        isDark ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-300 text-slate-900'
+                      }`}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 sm:col-span-2">
                     <div>
                       <label className={`block text-[11px] font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
                         Quote Date
@@ -1433,6 +1676,140 @@ Please review both options and let us know your preferred configuration!
                           isDark ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-300 text-slate-900'
                         }`}
                       />
+                    </div>
+                  </div>
+
+                  <div className="sm:col-span-2 flex items-end">
+                    {originatingJobId && (
+                      <div className="w-full flex items-center justify-between p-2 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300">
+                        <span>Linked Originating Job: <strong>#{originatingJobId}</strong></span>
+                        <button
+                          type="button"
+                          onClick={() => setOriginatingJobId(undefined)}
+                          className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                        >
+                          Unlink
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Custom Header & Footer Image Banners (User Request 3) */}
+                <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                      <ImageIcon className="w-3.5 h-3.5 text-blue-500" /> Custom Header &amp; Footer Image Banners (A4 Letterhead)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleSaveImagesAsGlobalDefault}
+                      className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 cursor-pointer flex items-center gap-1"
+                      title="Save these uploaded header and footer images as default for all future quotations"
+                    >
+                      <Check className="w-3 h-3" /> Save As Settings Default
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Header Image */}
+                    <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          Top Header Banner Image
+                        </label>
+                        {quotationHeaderImg && (
+                          <button
+                            type="button"
+                            onClick={() => setQuotationHeaderImg('')}
+                            className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                      
+                      {quotationHeaderImg ? (
+                        <div className="border rounded-lg p-1 bg-slate-50 dark:bg-slate-950 flex justify-center items-center h-20 overflow-hidden">
+                          <img src={quotationHeaderImg} alt="Header Preview" className="max-h-full max-w-full object-contain" />
+                        </div>
+                      ) : (
+                        <div className="border border-dashed rounded-lg p-2 text-center text-[10px] text-slate-400">
+                          Using default SGS Letterhead Header with Logo &amp; GSTIN
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <label className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 cursor-pointer hover:bg-blue-100">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload Header</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleImageUpload(e, 'header')}
+                            className="hidden"
+                          />
+                        </label>
+                        <input
+                          type="text"
+                          value={quotationHeaderImg}
+                          onChange={(e) => setQuotationHeaderImg(e.target.value)}
+                          placeholder="or paste Image URL"
+                          className={`flex-1 text-[11px] px-2 py-1 rounded-lg border outline-none ${
+                            isDark ? 'bg-slate-950 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Footer Image */}
+                    <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                          Bottom Footer Banner Image
+                        </label>
+                        {quotationFooterImg && (
+                          <button
+                            type="button"
+                            onClick={() => setQuotationFooterImg('')}
+                            className="text-[10px] text-rose-500 hover:underline cursor-pointer"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+
+                      {quotationFooterImg ? (
+                        <div className="border rounded-lg p-1 bg-slate-50 dark:bg-slate-950 flex justify-center items-center h-20 overflow-hidden">
+                          <img src={quotationFooterImg} alt="Footer Preview" className="max-h-full max-w-full object-contain" />
+                        </div>
+                      ) : (
+                        <div className="border border-dashed rounded-lg p-2 text-center text-[10px] text-slate-400">
+                          Using default SGS Letterhead Footer with Bank Details &amp; Address
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2">
+                        <label className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 cursor-pointer hover:bg-blue-100">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload Footer</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleImageUpload(e, 'footer')}
+                            className="hidden"
+                          />
+                        </label>
+                        <input
+                          type="text"
+                          value={quotationFooterImg}
+                          onChange={(e) => setQuotationFooterImg(e.target.value)}
+                          placeholder="or paste Image URL"
+                          className={`flex-1 text-[11px] px-2 py-1 rounded-lg border outline-none ${
+                            isDark ? 'bg-slate-950 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
+                          }`}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2139,16 +2516,32 @@ Please review both options and let us know your preferred configuration!
             <div className="p-2 sm:p-6 lg:p-8 overflow-y-auto overflow-x-auto flex-1 bg-slate-200/60 flex justify-start sm:justify-center print:p-0 print:bg-white" id="customerPdfContainer">
               
               {/* Single A4 Sheet Container */}
-              <div 
-                className="relative bg-white shadow-2xl rounded-sm w-full max-w-[794px] min-h-[1123px] text-slate-900 font-sans print:shadow-none print:w-full print:max-w-none overflow-hidden flex flex-col justify-between"
-                style={{
-                  backgroundImage: `url('${adminSettings.quotationBackgroundUrl || DEFAULT_SGS_QUOTATION_LETTERHEAD_BG}')`,
-                  backgroundSize: '100% 100%',
-                  backgroundRepeat: 'no-repeat',
-                }}
-              >
-                {/* Content Area with top padding below letterhead header and bottom padding above letterhead footer */}
-                <div className="pt-40 pb-24 px-10 space-y-6 flex-1 flex flex-col">
+              {(() => {
+                const previewHeaderImg = pdfPreviewQuotation.headerImageUrl || adminSettings.quotationHeaderImageUrl;
+                const previewFooterImg = pdfPreviewQuotation.footerImageUrl || adminSettings.quotationFooterImageUrl;
+
+                return (
+                  <div 
+                    className="relative bg-white shadow-2xl rounded-sm w-full max-w-[794px] min-h-[1123px] text-slate-900 font-sans print:shadow-none print:w-full print:max-w-none overflow-hidden flex flex-col justify-between"
+                    style={{
+                      backgroundImage: (!previewHeaderImg && !previewFooterImg) ? `url('${adminSettings.quotationBackgroundUrl || DEFAULT_SGS_QUOTATION_LETTERHEAD_BG}')` : undefined,
+                      backgroundSize: '100% 100%',
+                      backgroundRepeat: 'no-repeat',
+                    }}
+                  >
+                    {/* Custom Header Banner Image */}
+                    {previewHeaderImg && (
+                      <div className="w-full shrink-0 bg-white border-b border-slate-200">
+                        <img 
+                          src={previewHeaderImg} 
+                          alt="Quotation Letterhead Header" 
+                          className="w-full max-h-36 object-contain object-top" 
+                        />
+                      </div>
+                    )}
+
+                    {/* Content Area with dynamic top/bottom padding depending on custom header/footer */}
+                    <div className={`${previewHeaderImg ? 'pt-5' : 'pt-40'} ${previewFooterImg ? 'pb-5' : 'pb-24'} px-10 space-y-6 flex-1 flex flex-col`}>
                   
                   {/* Proposal Document Header Banner */}
                   <div className="flex items-center justify-between border-b pb-3 border-slate-300">
@@ -2346,9 +2739,21 @@ Please review both options and let us know your preferred configuration!
 
                 </div>
 
-                {/* Decorative Bottom Bar */}
-                <div className="h-3 w-full bg-blue-950 shrink-0" />
+                {/* Bottom Custom Footer Banner or Default Blue Accent Bar */}
+                {previewFooterImg ? (
+                  <div className="w-full shrink-0 bg-white border-t border-slate-200">
+                    <img 
+                      src={previewFooterImg} 
+                      alt="Quotation Letterhead Footer" 
+                      className="w-full max-h-24 object-contain object-bottom" 
+                    />
+                  </div>
+                ) : (
+                  <div className="h-3 w-full bg-blue-950 shrink-0" />
+                )}
               </div>
+            );
+          })()}
             </div>
 
           </div>

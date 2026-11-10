@@ -49,7 +49,8 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
     syncCustomerToContacts,
     generateVCard,
     downloadVCard,
-    theme 
+    theme,
+    canDelete
   } = useSgs();
 
   const isDark = theme === 'dark';
@@ -650,7 +651,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
                           {/* WhatsApp Direction Button */}
                           {cleanPhone && (
                             <a
-                              href={`https://wa.me/${cleanPhone.length === 10 ? '91' + cleanPhone : cleanPhone}?text=${encodeURIComponent(`Hello ${customer.name}, greetings from Spider Grid Solutions (SGS)! Here is our workshop location & directions in Madurai: https://maps.google.com/?q=Spider+Grid+Solutions+Madurai (Area: ${customer.area || 'Madurai'}). Call +91 9677776001 if you need navigation help!`)}`}
+                              href={`https://wa.me/${cleanPhone.length === 10 ? '91' + cleanPhone : cleanPhone}?text=${encodeURIComponent(`Hello ${customer.name}, greetings from Spider Grid Solutions (SGS)! Here is our workshop location & directions in Madurai: https://maps.google.com/?q=Spider+Grid+Solutions+Madurai (Area: ${customer.area || 'Madurai'}). Call +91 9176795665 if you need navigation help!`)}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
@@ -673,16 +674,18 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
                             <Edit2 className="w-3.5 h-3.5" />
                           </button>
 
-                          {/* Delete */}
-                          <button
-                            onClick={() => handleDelete(customer.id, customer.name)}
-                            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                              isDark ? 'text-slate-500 hover:text-rose-400 hover:bg-slate-800' : 'text-rose-500 hover:text-rose-700 hover:bg-rose-50'
-                            }`}
-                            title="Delete Record"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {/* Delete - Admin Only */}
+                          {canDelete && (
+                            <button
+                              onClick={() => handleDelete(customer.id, customer.name)}
+                              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                isDark ? 'text-slate-500 hover:text-rose-400 hover:bg-slate-800' : 'text-rose-500 hover:text-rose-700 hover:bg-rose-50'
+                              }`}
+                              title="Delete Record (Admin Only)"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -747,7 +750,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
                     type="tel"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="e.g. 9677776001"
+                    placeholder="e.g. 9176795665"
                     className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
                       isDark 
                         ? 'bg-slate-950 border border-slate-800 text-slate-200 focus:border-blue-500' 

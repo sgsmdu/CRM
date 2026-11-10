@@ -913,6 +913,28 @@ Your satisfaction is our top priority. If you were happy with our fast service a
 
 Thank you once again for trusting Spider Grid Solutions!
 Madurai | Phone: +91 9176795665`,
+  paymentPendingMessageTemplate: `*SPIDER GRID SOLUTIONS (SGS)*
+*Payment Pending Reminder* 🔔
+
+Dear {customerName},
+Greetings from Spider Grid Solutions! This is a gentle reminder regarding the pending balance for your service / equipment.
+
+*Bill & Service Details:*
+• Job / Bill Ref: *{jobId}*
+• Equipment / Item: *{deviceBrand}*
+• Total Bill Amount: *₹{amount}*
+• Paid Amount: *₹{paidAmount}*
+• *Pending Balance Due: ₹{pendingBalance}*
+
+Kindly arrange payment at your earliest convenience.
+
+*Payment Options:*
+• Google Pay / PhonePe / UPI: *{workshopUpiId}*
+• Cash at Workshop Counter
+
+Thank you for choosing Spider Grid Solutions!
+*Spider Grid Solutions*
+Madurai | Contact: {workshopPhone}`,
   quickServices: [
     { name: 'Computer / Laptop General Service & Dust Cleaning', hsn: '998713', rate: 500, cost: 50, category: 'laptop' },
     { name: 'OS Reinstallation & Driver Configuration', hsn: '998713', rate: 600, cost: 0, category: 'laptop' },

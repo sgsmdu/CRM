@@ -59,6 +59,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     deleteVendor, 
     inventory,
     adminSettings,
+    canDelete,
     theme 
   } = useSgs();
 
@@ -1055,13 +1056,15 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                               <Edit2 className="w-3 h-3 text-blue-500" />
                               <span>Edit Vendor</span>
                             </button>
-                            <button
-                              onClick={() => handleDeleteVendor(vendor.id, vendor.name)}
-                              className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              <span>Delete</span>
-                            </button>
+                            {canDelete && (
+                              <button
+                                onClick={() => handleDeleteVendor(vendor.id, vendor.name)}
+                                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Delete</span>
+                              </button>
+                            )}
                           </div>
 
                           <button
@@ -3309,20 +3312,22 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
               </div>
             </div>
 
-            <div className={`px-6 py-3 border-t flex justify-between gap-2 ${
+            <div className={`px-6 py-3 border-t flex ${canDelete ? 'justify-between' : 'justify-end'} gap-2 ${
               isDark ? 'border-slate-800 bg-slate-950/40' : 'border-slate-200 bg-slate-50'
             }`}>
-              <button
-                onClick={() => {
-                  if (window.confirm(`Delete bill #${viewingBill.invoiceNumber} from ${viewingBill.vendorName}?\n\nThe stock it added will be taken back and its payment entries removed from the cash book.`)) {
-                    deleteVendorBill(viewingBill.id);
-                    setViewingBill(null);
-                  }
-                }}
-                className="px-4 py-1.5 text-xs font-semibold rounded-lg text-rose-600 border border-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
-              >
-                Delete Bill
-              </button>
+              {canDelete && (
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Delete bill #${viewingBill.invoiceNumber} from ${viewingBill.vendorName}?\n\nThe stock it added will be taken back and its payment entries removed from the cash book.`)) {
+                      deleteVendorBill(viewingBill.id);
+                      setViewingBill(null);
+                    }
+                  }}
+                  className="px-4 py-1.5 text-xs font-semibold rounded-lg text-rose-600 border border-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                >
+                  Delete Bill
+                </button>
+              )}
               <button
                 onClick={() => setViewingBill(null)}
                 className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 cursor-pointer"

@@ -1896,7 +1896,7 @@ export const EmployeeManager: React.FC = () => {
                 <div>
                   <h2 className="text-lg font-bold tracking-tight text-blue-600">SPIDER GRID SOLUTIONS</h2>
                   <p className="text-xs text-slate-500">CCTV Surveillance, Computer Hardware & Networking Systems</p>
-                  <p className="text-xs text-slate-500">Madurai, Tamil Nadu · Ph: 9677776001</p>
+                  <p className="text-xs text-slate-500">Madurai, Tamil Nadu · Ph: 9176795665</p>
                 </div>
                 <div className="text-right">
                   <span className="inline-block px-2.5 py-1 rounded text-xs font-mono font-bold bg-purple-600/10 text-purple-600">

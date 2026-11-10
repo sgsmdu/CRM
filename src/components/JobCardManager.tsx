@@ -50,7 +50,8 @@ import {
   ArrowDown,
   CheckSquare,
   Square,
-  ListOrdered
+  ListOrdered,
+  CreditCard
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { JobCard, JobStatus, DeviceCategory, ServiceSalesType, Customer, JobTimelineEvent } from '../types';
@@ -99,7 +100,9 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
     submitWorkCompletion,
     closeJobCard,
     reopenJobCard,
-    theme 
+    theme,
+    canDelete,
+    isAdmin
   } = useSgs();
   
   const isDark = theme === 'dark';
@@ -223,7 +226,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
   const [activePhotoLightbox, setActivePhotoLightbox] = useState<string | null>(null);
 
   // WhatsApp Modal state
-  const [whatsAppTab, setWhatsAppTab] = useState<'welcome' | 'status' | 'review'>('welcome');
+  const [whatsAppTab, setWhatsAppTab] = useState<'welcome' | 'status' | 'review' | 'payment_pending'>('welcome');
   const [customNotes, setCustomNotes] = useState('');
   const [copiedNotification, setCopiedNotification] = useState(false);
 
@@ -509,6 +512,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
     if (!activeWaLinks) return '';
     if (whatsAppTab === 'welcome') return activeWaLinks.welcomeMessage;
     if (whatsAppTab === 'review') return activeWaLinks.reviewMessage;
+    if (whatsAppTab === 'payment_pending') return activeWaLinks.paymentPendingMessage;
     return customNotes ? `${activeWaLinks.statusMessage}\n\n*Tech Update:* ${customNotes}` : activeWaLinks.statusMessage;
   }, [activeWaLinks, whatsAppTab, customNotes]);
 
@@ -1613,20 +1617,41 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                       <span>WhatsApp Hub</span>
                     </button>
 
-                    {/* Delete Job */}
-                    <button
-                      onClick={() => {
-                        if (window.confirm(`Delete job card ${job.jobId} for ${job.customerName}?`)) {
-                          deleteJobCard(job.id);
-                        }
-                      }}
-                      className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                        isDark ? 'text-slate-500 hover:text-rose-400 hover:bg-slate-800' : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
-                      }`}
-                      title="Delete Job Card"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {/* Quick Payment Pending Reminder if balance remains */}
+                    {((job.finalCost > 0 ? job.finalCost : (job.estimatedCost || 0)) > (job.advancePaid || 0)) && (
+                      <button
+                        onClick={() => {
+                          setSelectedJobForWhatsApp(job);
+                          setWhatsAppTab('payment_pending');
+                        }}
+                        className={`flex items-center justify-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                          isDark 
+                            ? 'text-rose-300 hover:text-white bg-rose-950/60 hover:bg-rose-700 border border-rose-800' 
+                            : 'text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-300 shadow-xs'
+                        }`}
+                        title="Send Payment Pending Reminder via WhatsApp"
+                      >
+                        <CreditCard className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Pay Reminder</span>
+                      </button>
+                    )}
+
+                    {/* Delete Job - Admin Only */}
+                    {canDelete && (
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Delete job card ${job.jobId} for ${job.customerName}?`)) {
+                            deleteJobCard(job.id);
+                          }
+                        }}
+                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                          isDark ? 'text-slate-500 hover:text-rose-400 hover:bg-slate-800' : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                        }`}
+                        title="Delete Job Card (Admin Only)"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -2110,6 +2135,17 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                 >
                   3. ⭐ Google Review & Delivery
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setWhatsAppTab('payment_pending')}
+                  className={`flex-1 py-1.5 px-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer whitespace-nowrap ${
+                    whatsAppTab === 'payment_pending' 
+                      ? 'bg-rose-600 text-white shadow-xs' 
+                      : isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  4. 💳 Payment Pending
+                </button>
               </div>
 
               {whatsAppTab === 'status' && (
@@ -2140,7 +2176,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                   )}
                 </div>
                 <div className={`border rounded-xl p-3 text-xs font-mono whitespace-pre-wrap max-h-56 overflow-y-auto leading-relaxed border-l-4 ${
-                  whatsAppTab === 'review' ? 'border-l-amber-500' : 'border-l-emerald-500'
+                  whatsAppTab === 'review' ? 'border-l-amber-500' : (whatsAppTab === 'payment_pending' ? 'border-l-rose-500' : 'border-l-emerald-500')
                 } ${
                   isDark ? 'bg-slate-950 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-800'
                 }`}>
