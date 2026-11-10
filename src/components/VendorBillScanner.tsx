@@ -1233,8 +1233,8 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
           <div className={`rounded-xl border overflow-hidden ${
             isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-white'
           }`}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            <div className="overflow-x-auto scrollbar-thin">
+              <table className="w-full text-left text-xs min-w-[700px]">
                 <thead className={`border-b uppercase tracking-wider text-[11px] font-semibold ${
                   isDark ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
                 }`}>
@@ -1371,48 +1371,50 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                     <div className={`rounded-lg border overflow-hidden ${
                                       isDark ? 'border-slate-800 bg-slate-900/60' : 'border-slate-200 bg-white'
                                     }`}>
-                                      <table className="w-full text-xs">
-                                        <thead className={`border-b text-[10px] uppercase font-semibold ${
-                                          isDark ? 'bg-slate-900 text-slate-400 border-slate-800' : 'bg-slate-100 text-slate-600 border-slate-200'
-                                        }`}>
-                                          <tr>
-                                            <th className="py-2 px-3">Item Description</th>
-                                            <th className="py-2 px-3 text-center">Qty</th>
-                                            <th className="py-2 px-3 text-right">Unit Rate</th>
-                                            <th className="py-2 px-3 text-center">GST</th>
-                                            <th className="py-2 px-3 text-right">Total (Inc. GST)</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                          {bill.items && bill.items.length > 0 ? (
-                                            bill.items.map((item, idx) => (
-                                              <tr key={idx} className={isDark ? 'hover:bg-slate-800/40' : 'hover:bg-slate-50'}>
-                                                <td className="py-2 px-3 font-medium text-slate-800 dark:text-slate-200">
-                                                  {item.itemName}
-                                                </td>
-                                                <td className="py-2 px-3 text-center font-mono">
-                                                  {item.quantity}
-                                                </td>
-                                                <td className="py-2 px-3 text-right font-mono text-slate-500">
-                                                  ₹{item.grossUnitCost || item.unitCost}
-                                                </td>
-                                                <td className="py-2 px-3 text-center font-mono text-[11px] text-slate-500">
-                                                  {item.gstPercent || 0}%
-                                                </td>
-                                                <td className="py-2 px-3 text-right font-mono font-bold text-slate-900 dark:text-white">
-                                                  ₹{(item.totalWithGst || item.total).toLocaleString('en-IN')}
+                                      <div className="overflow-x-auto scrollbar-thin">
+                                        <table className="w-full text-xs min-w-[480px]">
+                                          <thead className={`border-b text-[10px] uppercase font-semibold ${
+                                            isDark ? 'bg-slate-900 text-slate-400 border-slate-800' : 'bg-slate-100 text-slate-600 border-slate-200'
+                                          }`}>
+                                            <tr>
+                                              <th className="py-2 px-3">Item Description</th>
+                                              <th className="py-2 px-3 text-center">Qty</th>
+                                              <th className="py-2 px-3 text-right">Unit Rate</th>
+                                              <th className="py-2 px-3 text-center">GST</th>
+                                              <th className="py-2 px-3 text-right">Total (Inc. GST)</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                            {bill.items && bill.items.length > 0 ? (
+                                              bill.items.map((item, idx) => (
+                                                <tr key={idx} className={isDark ? 'hover:bg-slate-800/40' : 'hover:bg-slate-50'}>
+                                                  <td className="py-2 px-3 font-medium text-slate-800 dark:text-slate-200">
+                                                    {item.itemName}
+                                                  </td>
+                                                  <td className="py-2 px-3 text-center font-mono">
+                                                    {item.quantity}
+                                                  </td>
+                                                  <td className="py-2 px-3 text-right font-mono text-slate-500">
+                                                    ₹{item.grossUnitCost || item.unitCost}
+                                                  </td>
+                                                  <td className="py-2 px-3 text-center font-mono text-[11px] text-slate-500">
+                                                    {item.gstPercent || 0}%
+                                                  </td>
+                                                  <td className="py-2 px-3 text-right font-mono font-bold text-slate-900 dark:text-white">
+                                                    ₹{(item.totalWithGst || item.total).toLocaleString('en-IN')}
+                                                  </td>
+                                                </tr>
+                                              ))
+                                            ) : (
+                                              <tr>
+                                                <td colSpan={5} className="py-3 text-center text-xs text-slate-400 italic">
+                                                  No itemized records available.
                                                 </td>
                                               </tr>
-                                            ))
-                                          ) : (
-                                            <tr>
-                                              <td colSpan={5} className="py-3 text-center text-xs text-slate-400 italic">
-                                                No itemized records available.
-                                              </td>
-                                            </tr>
-                                          )}
-                                        </tbody>
-                                      </table>
+                                            )}
+                                          </tbody>
+                                        </table>
+                                      </div>
                                     </div>
                                   </div>
 

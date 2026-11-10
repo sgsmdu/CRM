@@ -48,7 +48,7 @@ function SgsAppContent() {
   };
 
   return (
-    <div className={`min-h-screen flex transition-colors duration-150 ${
+    <div className={`min-h-screen flex transition-colors duration-150 w-full max-w-full overflow-x-hidden ${
       isDark 
         ? 'bg-[#080d1a] text-slate-100 selection:bg-blue-600 selection:text-white' 
         : 'bg-slate-50 text-slate-900 selection:bg-blue-600 selection:text-white'
@@ -70,7 +70,7 @@ function SgsAppContent() {
       />
 
       {/* Main Content Area (offset by left sidebar width) */}
-      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 ${
+      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 w-full max-w-full overflow-x-hidden ${
         isSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'
       }`}>
         {/* Top Header Bar */}
@@ -86,7 +86,7 @@ function SgsAppContent() {
         />
 
         {/* Main View Container */}
-        <main className="flex-1 w-full mx-auto px-4 lg:px-8 py-6 max-w-7xl">
+        <main className="flex-1 w-full mx-auto px-2.5 sm:px-4 lg:px-8 py-4 sm:py-6 max-w-7xl overflow-x-hidden">
         {activeTab === 'dashboard' && (
           <DashboardOverview
             onNavigate={setActiveTab}

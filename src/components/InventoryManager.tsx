@@ -823,8 +823,8 @@ export const InventoryManager: React.FC = () => {
           <div className={`rounded-xl border overflow-hidden mt-3 ${
             isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-white'
           }`}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            <div className="overflow-x-auto scrollbar-thin">
+              <table className="w-full text-left text-xs min-w-[850px]">
                 <thead className={`border-b uppercase tracking-wider text-[11px] font-semibold ${
                   isDark ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
                 }`}>
@@ -977,8 +977,8 @@ export const InventoryManager: React.FC = () => {
           <div className={`rounded-xl border overflow-hidden mt-3 ${
             isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-white'
           }`}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            <div className="overflow-x-auto scrollbar-thin">
+              <table className="w-full text-left text-xs min-w-[680px]">
                 <thead className={`border-b uppercase tracking-wider text-[11px] font-semibold ${
                   isDark ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
                 }`}>
@@ -1770,7 +1770,8 @@ export const InventoryManager: React.FC = () => {
                           </div>
 
                           <div className="border rounded-lg overflow-hidden text-xs">
-                            <table className="w-full text-left">
+                            <div className="overflow-x-auto scrollbar-thin">
+                              <table className="w-full text-left min-w-[360px]">
                               <thead className={`border-b text-[10px] font-semibold uppercase ${
                                 isDark ? 'bg-slate-900 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
                               }`}>
@@ -1806,7 +1807,8 @@ export const InventoryManager: React.FC = () => {
                                   );
                                 })}
                               </tbody>
-                            </table>
+                              </table>
+                            </div>
                           </div>
                         </div>
 
@@ -1916,7 +1918,8 @@ export const InventoryManager: React.FC = () => {
                       </div>
                     ) : (
                       <div className="border rounded-xl overflow-hidden text-xs">
-                        <table className="w-full text-left">
+                        <div className="overflow-x-auto scrollbar-thin">
+                          <table className="w-full text-left min-w-[420px]">
                           <thead className={`border-b text-[10px] font-semibold uppercase ${
                             isDark ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600'
                           }`}>
@@ -1947,6 +1950,7 @@ export const InventoryManager: React.FC = () => {
                           </tbody>
                         </table>
                       </div>
+                    </div>
                     )}
                   </div>
                 );

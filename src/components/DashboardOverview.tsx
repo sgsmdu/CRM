@@ -104,22 +104,29 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
             : 'bg-white border-blue-200/80 shadow-sm'
         }`}
       >
-        <div>
-          <div className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-1 ${
-            isDark ? 'text-indigo-400' : 'text-blue-700'
-          }`}>
-            <span style={{ width: '250px', height: '31.95px', textAlign: 'left', fontSize: '13px', lineHeight: '15px' }}>
-              Spider Grid Solutions Operations Command
-            </span>
-            <span>·</span>
-            <span>Madurai Tech Hub</span>
+        <div className="flex items-start sm:items-center gap-3 sm:gap-4">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-white dark:bg-slate-900 p-1.5 flex items-center justify-center border border-slate-200 dark:border-slate-800 shadow-sm shrink-0">
+            <img 
+              src="/assets/aistudio/Final_logo51_79c6a806.png" 
+              alt="Spider Grid Solutions" 
+              className="w-full h-full object-contain select-none" 
+            />
           </div>
-          <h1 className={`font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`} style={{ fontSize: '22px' }}>
-            Workshop CRM & Service Operations
-          </h1>
-          <p className={`text-xs mt-1 max-w-2xl ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-            Managing <strong className={isDark ? 'text-slate-200' : 'text-blue-900'}>{customers.length} Verified Customers</strong>, {activeJobs.length} active service & sales jobs, vendor invoices with Gemini OCR, and workshop cash flow.
-          </p>
+          <div>
+            <div className={`flex flex-wrap items-center gap-1.5 sm:gap-2 text-xs font-semibold uppercase tracking-wider mb-1 ${
+              isDark ? 'text-indigo-400' : 'text-blue-700'
+            }`}>
+              <span>Spider Grid Solutions Operations Command</span>
+              <span>·</span>
+              <span>Madurai Tech Hub</span>
+            </div>
+            <h1 className={`text-lg sm:text-xl md:text-2xl font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              Workshop CRM & Service Operations
+            </h1>
+            <p className={`text-xs mt-1 max-w-2xl ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+              Managing <strong className={isDark ? 'text-slate-200' : 'text-blue-900'}>{customers.length} Verified Customers</strong>, {activeJobs.length} active service & sales jobs, vendor invoices with Gemini OCR, and workshop cash flow.
+            </p>
+          </div>
         </div>
 
         {/* Quick Action Buttons */}

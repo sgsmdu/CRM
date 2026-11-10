@@ -139,8 +139,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Sidebar Container */}
       <aside 
-        className={`fixed top-0 bottom-0 left-0 z-50 flex flex-col transition-all duration-300 ease-in-out border-r ${
-          isCollapsed ? 'w-20' : 'w-64'
+        className={`fixed top-0 bottom-0 left-0 z-50 flex flex-col transition-all duration-300 ease-in-out border-r w-72 sm:w-80 max-w-[85vw] ${
+          isCollapsed ? 'lg:w-20' : 'lg:w-64'
         } ${
           isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         } ${
@@ -152,19 +152,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
           isDark ? 'border-slate-800' : 'border-slate-200'
         }`}>
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-500/25 font-bold text-lg tracking-wider shrink-0">
-              SGS
+            <div className="w-10 h-10 rounded-xl bg-white dark:bg-slate-900 p-1 flex items-center justify-center border border-slate-200 dark:border-slate-800 shadow-sm shrink-0">
+              <img 
+                src="/assets/aistudio/Final_logo51_79c6a806.png" 
+                alt="Spider Grid Solutions" 
+                className="w-full h-full object-contain select-none" 
+              />
             </div>
-            {!isCollapsed && (
-              <div className="flex flex-col min-w-0">
-                <span className="text-sm font-bold tracking-tight truncate">
-                  Spider Grid Solutions
-                </span>
-                <span className={`text-[10px] font-medium truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Operations & CRM · Madurai
-                </span>
-              </div>
-            )}
+            <div className={`flex flex-col min-w-0 ${isCollapsed ? 'lg:hidden' : ''}`}>
+              <span className="text-sm font-bold tracking-tight truncate">
+                Spider Grid Solutions
+              </span>
+              <span className={`text-[10px] font-medium truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                Operations & CRM · Madurai
+              </span>
+            </div>
           </div>
 
           {/* Desktop Collapse Toggle */}
@@ -181,7 +183,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {/* Mobile Close Button */}
           <button
             onClick={() => setIsMobileOpen(false)}
-            className="lg:hidden p-1.5 text-slate-400 hover:text-white"
+            className="lg:hidden p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800/50 cursor-pointer"
+            title="Close navigation"
           >
             <X className="w-5 h-5" />
           </button>
@@ -195,12 +198,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               setIsMobileOpen(false);
             }}
             className={`w-full flex items-center justify-center gap-2 py-2.5 px-3 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] rounded-xl transition-all shadow-md shadow-blue-600/25 cursor-pointer ${
-              isCollapsed ? 'px-0' : ''
+              isCollapsed ? 'lg:px-0' : ''
             }`}
             title="Create New Job Card"
           >
             <Plus className="w-4 h-4 shrink-0" />
-            {!isCollapsed && <span>New Job Card</span>}
+            <span className={isCollapsed ? 'lg:hidden' : ''}>New Job Card</span>
           </button>
         </div>
 
@@ -222,15 +225,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     : isDark
                     ? 'text-slate-300 hover:text-white hover:bg-slate-900/80'
                     : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
-                } ${isCollapsed ? 'justify-center px-0' : ''}`}
+                } ${isCollapsed ? 'lg:justify-center lg:px-0' : ''}`}
                 title={item.label}
               >
                 <Icon className="w-4 h-4 shrink-0" />
-                {!isCollapsed && (
-                  <span className="flex-1 text-left truncate">{item.label}</span>
-                )}
-                {!isCollapsed && item.count !== undefined && item.count > 0 && (
+                <span className={`flex-1 text-left truncate ${isCollapsed ? 'lg:hidden' : ''}`}>{item.label}</span>
+                {item.count !== undefined && item.count > 0 && (
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                    isCollapsed ? 'lg:hidden' : ''
+                  } ${
                     isActive ? 'bg-white/20 text-white' : (isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-700')
                   }`}>
                     {item.count}
@@ -243,11 +246,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* External Cloud Sync Integrations */}
         <div className={`p-3 border-t space-y-2 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
-          {!isCollapsed && (
-            <div className={`text-[10px] font-bold uppercase tracking-wider px-2 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-              Google Cloud Sync
-            </div>
-          )}
+          <div className={`text-[10px] font-bold uppercase tracking-wider px-2 ${isCollapsed ? 'lg:hidden' : ''} ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+            Google Cloud Sync
+          </div>
 
           {onOpenGoogleContactsModal && (
             <button
@@ -259,11 +260,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 isDark 
                   ? 'bg-blue-950/40 border-blue-900 text-blue-300 hover:bg-blue-900/60 hover:text-white' 
                   : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'
-              } ${isCollapsed ? 'justify-center px-0' : ''}`}
+              } ${isCollapsed ? 'lg:justify-center lg:px-0' : ''}`}
               title="Google Contacts Live Cloud Sync"
             >
               <Users className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-              {!isCollapsed && <span className="truncate">Google Contacts</span>}
+              <span className={`truncate ${isCollapsed ? 'lg:hidden' : ''}`}>Google Contacts</span>
             </button>
           )}
 
@@ -276,11 +277,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
               isDark 
                 ? 'bg-emerald-950/40 border-emerald-900 text-emerald-300 hover:bg-emerald-900/60 hover:text-white' 
                 : 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
-            } ${isCollapsed ? 'justify-center px-0' : ''}`}
+            } ${isCollapsed ? 'lg:justify-center lg:px-0' : ''}`}
             title="Google Sheets Database Sync"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-            {!isCollapsed && <span className="truncate">Google Sheets</span>}
+            <span className={`truncate ${isCollapsed ? 'lg:hidden' : ''}`}>Google Sheets</span>
           </button>
         </div>
 

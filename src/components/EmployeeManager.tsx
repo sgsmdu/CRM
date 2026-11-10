@@ -606,7 +606,8 @@ export const EmployeeManager: React.FC = () => {
           <div className={`rounded-2xl border overflow-hidden ${
             isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'
           }`}>
-            <table className="w-full text-left text-xs">
+            <div className="overflow-x-auto scrollbar-thin">
+              <table className="w-full text-left text-xs min-w-[620px]">
               <thead className={`border-b text-[11px] font-semibold uppercase ${
                 isDark ? 'bg-slate-950 text-slate-400 border-slate-800' : 'bg-slate-50 text-slate-600 border-slate-200'
               }`}>
@@ -725,7 +726,8 @@ export const EmployeeManager: React.FC = () => {
                   );
                 })}
               </tbody>
-            </table>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -765,7 +767,8 @@ export const EmployeeManager: React.FC = () => {
           <div className={`rounded-2xl border overflow-hidden ${
             isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'
           }`}>
-            <table className="w-full text-left text-xs">
+            <div className="overflow-x-auto scrollbar-thin">
+              <table className="w-full text-left text-xs min-w-[640px]">
               <thead className={`border-b text-[11px] font-semibold uppercase ${
                 isDark ? 'bg-slate-950 text-slate-400 border-slate-800' : 'bg-slate-50 text-slate-600 border-slate-200'
               }`}>
@@ -891,7 +894,8 @@ export const EmployeeManager: React.FC = () => {
                   );
                 })}
               </tbody>
-            </table>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -1930,50 +1934,52 @@ export const EmployeeManager: React.FC = () => {
                 <div className={`rounded-xl border overflow-hidden text-xs ${
                   isDark ? 'border-slate-800' : 'border-slate-200'
                 }`}>
-                  <table className="w-full text-left">
-                    <thead className={`border-b text-[11px] font-semibold uppercase ${
-                      isDark ? 'bg-slate-950 text-slate-400 border-slate-800' : 'bg-slate-50 text-slate-600 border-slate-200'
-                    }`}>
-                      <tr>
-                        <th className="py-2.5 px-3">Description</th>
-                        <th className="py-2.5 px-3 text-center">Days / Units</th>
-                        <th className="py-2.5 px-3 text-right">Rate</th>
-                        <th className="py-2.5 px-3 text-right">Amount (₹)</th>
-                      </tr>
-                    </thead>
-                    <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-100'}`}>
-                      <tr>
-                        <td className="py-2.5 px-3 font-semibold">Attendance Worked Days</td>
-                        <td className="py-2.5 px-3 text-center font-mono">
-                          {viewingWageSlip.summary.effectiveDays} Days ({viewingWageSlip.summary.presentCount} Full, {viewingWageSlip.summary.halfDayCount} Half)
-                        </td>
-                        <td className="py-2.5 px-3 text-right font-mono">₹{viewingWageSlip.emp.dailySalary}</td>
-                        <td className="py-2.5 px-3 text-right font-mono font-bold">₹{viewingWageSlip.gross.toLocaleString('en-IN')}</td>
-                      </tr>
-                      {viewingWageSlip.sal?.bonus && viewingWageSlip.sal.bonus > 0 ? (
+                  <div className="overflow-x-auto scrollbar-thin">
+                    <table className="w-full text-left min-w-[480px]">
+                      <thead className={`border-b text-[11px] font-semibold uppercase ${
+                        isDark ? 'bg-slate-950 text-slate-400 border-slate-800' : 'bg-slate-50 text-slate-600 border-slate-200'
+                      }`}>
                         <tr>
-                          <td className="py-2 px-3 text-emerald-600">Performance Bonus / Incentive</td>
-                          <td className="py-2 px-3 text-center font-mono">—</td>
-                          <td className="py-2 px-3 text-right font-mono">—</td>
-                          <td className="py-2 px-3 text-right font-mono font-semibold text-emerald-600">+₹{viewingWageSlip.sal.bonus.toLocaleString('en-IN')}</td>
+                          <th className="py-2.5 px-3">Description</th>
+                          <th className="py-2.5 px-3 text-center">Days / Units</th>
+                          <th className="py-2.5 px-3 text-right">Rate</th>
+                          <th className="py-2.5 px-3 text-right">Amount (₹)</th>
                         </tr>
-                      ) : null}
-                      {viewingWageSlip.sal?.advanceDeduction && viewingWageSlip.sal.advanceDeduction > 0 ? (
+                      </thead>
+                      <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-100'}`}>
                         <tr>
-                          <td className="py-2 px-3 text-rose-500">Advance Salary Deduction</td>
-                          <td className="py-2 px-3 text-center font-mono">—</td>
-                          <td className="py-2 px-3 text-right font-mono">—</td>
-                          <td className="py-2 px-3 text-right font-mono font-semibold text-rose-500">-₹{viewingWageSlip.sal.advanceDeduction.toLocaleString('en-IN')}</td>
+                          <td className="py-2.5 px-3 font-semibold">Attendance Worked Days</td>
+                          <td className="py-2.5 px-3 text-center font-mono">
+                            {viewingWageSlip.summary.effectiveDays} Days ({viewingWageSlip.summary.presentCount} Full, {viewingWageSlip.summary.halfDayCount} Half)
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono">₹{viewingWageSlip.emp.dailySalary}</td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold">₹{viewingWageSlip.gross.toLocaleString('en-IN')}</td>
                         </tr>
-                      ) : null}
-                      <tr className={isDark ? 'bg-slate-950/80 font-bold' : 'bg-slate-50 font-bold'}>
-                        <td colSpan={3} className="py-2.5 px-3 text-right">Net Payable for Month:</td>
-                        <td className="py-2.5 px-3 text-right font-mono text-purple-600 text-sm">
-                          ₹{viewingWageSlip.totalPayable.toLocaleString('en-IN')}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+                        {viewingWageSlip.sal?.bonus && viewingWageSlip.sal.bonus > 0 ? (
+                          <tr>
+                            <td className="py-2 px-3 text-emerald-600">Performance Bonus / Incentive</td>
+                            <td className="py-2 px-3 text-center font-mono">—</td>
+                            <td className="py-2 px-3 text-right font-mono">—</td>
+                            <td className="py-2 px-3 text-right font-mono font-semibold text-emerald-600">+₹{viewingWageSlip.sal.bonus.toLocaleString('en-IN')}</td>
+                          </tr>
+                        ) : null}
+                        {viewingWageSlip.sal?.advanceDeduction && viewingWageSlip.sal.advanceDeduction > 0 ? (
+                          <tr>
+                            <td className="py-2 px-3 text-rose-500">Advance Salary Deduction</td>
+                            <td className="py-2 px-3 text-center font-mono">—</td>
+                            <td className="py-2 px-3 text-right font-mono">—</td>
+                            <td className="py-2 px-3 text-right font-mono font-semibold text-rose-500">-₹{viewingWageSlip.sal.advanceDeduction.toLocaleString('en-IN')}</td>
+                          </tr>
+                        ) : null}
+                        <tr className={isDark ? 'bg-slate-950/80 font-bold' : 'bg-slate-50 font-bold'}>
+                          <td colSpan={3} className="py-2.5 px-3 text-right">Net Payable for Month:</td>
+                          <td className="py-2.5 px-3 text-right font-mono text-purple-600 text-sm">
+                            ₹{viewingWageSlip.totalPayable.toLocaleString('en-IN')}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
 
@@ -1991,52 +1997,54 @@ export const EmployeeManager: React.FC = () => {
                 <div className={`rounded-xl border overflow-hidden text-xs ${
                   isDark ? 'border-slate-800' : 'border-slate-200'
                 }`}>
-                  <table className="w-full text-left">
-                    <thead className={`border-b text-[10px] font-semibold uppercase ${
-                      isDark ? 'bg-slate-950 text-slate-400 border-slate-800' : 'bg-slate-50 text-slate-600 border-slate-200'
-                    }`}>
-                      <tr>
-                        <th className="py-2 px-3">Date</th>
-                        <th className="py-2 px-3">Mode</th>
-                        <th className="py-2 px-3">Reference #</th>
-                        <th className="py-2 px-3">Remarks</th>
-                        <th className="py-2 px-3 text-right">Amount Paid</th>
-                      </tr>
-                    </thead>
-                    <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-100'}`}>
-                      {viewingWageSlip.sal?.payments && viewingWageSlip.sal.payments.length > 0 ? (
-                        viewingWageSlip.sal.payments.map((p, pIdx) => (
-                          <tr key={p.id || pIdx}>
-                            <td className="py-2 px-3 font-mono">{p.paymentDate}</td>
-                            <td className="py-2 px-3 uppercase text-[10px] font-bold text-slate-500">{p.paymentMode}</td>
-                            <td className="py-2 px-3 font-mono text-slate-500">{p.referenceNumber || '—'}</td>
-                            <td className="py-2 px-3 text-slate-400 truncate max-w-[140px]">{p.notes || 'Salary Installment'}</td>
-                            <td className="py-2 px-3 text-right font-mono font-bold text-emerald-600">₹{p.amount.toLocaleString('en-IN')}</td>
-                          </tr>
-                        ))
-                      ) : viewingWageSlip.totalPaid > 0 ? (
+                  <div className="overflow-x-auto scrollbar-thin">
+                    <table className="w-full text-left min-w-[480px]">
+                      <thead className={`border-b text-[10px] font-semibold uppercase ${
+                        isDark ? 'bg-slate-950 text-slate-400 border-slate-800' : 'bg-slate-50 text-slate-600 border-slate-200'
+                      }`}>
                         <tr>
-                          <td className="py-2 px-3 font-mono">{viewingWageSlip.sal?.paymentDate || 'Paid'}</td>
-                          <td className="py-2 px-3 uppercase text-[10px] font-bold text-slate-500">{viewingWageSlip.sal?.paymentMode || 'UPI'}</td>
-                          <td className="py-2 px-3 font-mono text-slate-500">{viewingWageSlip.sal?.referenceNumber || '—'}</td>
-                          <td className="py-2 px-3 text-slate-400">Salary Payment</td>
-                          <td className="py-2 px-3 text-right font-mono font-bold text-emerald-600">₹{viewingWageSlip.totalPaid.toLocaleString('en-IN')}</td>
+                          <th className="py-2 px-3">Date</th>
+                          <th className="py-2 px-3">Mode</th>
+                          <th className="py-2 px-3">Reference #</th>
+                          <th className="py-2 px-3">Remarks</th>
+                          <th className="py-2 px-3 text-right">Amount Paid</th>
                         </tr>
-                      ) : (
-                        <tr>
-                          <td colSpan={5} className="py-4 text-center text-slate-400 italic">
-                            No payment installments recorded yet for this month.
+                      </thead>
+                      <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-100'}`}>
+                        {viewingWageSlip.sal?.payments && viewingWageSlip.sal.payments.length > 0 ? (
+                          viewingWageSlip.sal.payments.map((p, pIdx) => (
+                            <tr key={p.id || pIdx}>
+                              <td className="py-2 px-3 font-mono">{p.paymentDate}</td>
+                              <td className="py-2 px-3 uppercase text-[10px] font-bold text-slate-500">{p.paymentMode}</td>
+                              <td className="py-2 px-3 font-mono text-slate-500">{p.referenceNumber || '—'}</td>
+                              <td className="py-2 px-3 text-slate-400 truncate max-w-[140px]">{p.notes || 'Salary Installment'}</td>
+                              <td className="py-2 px-3 text-right font-mono font-bold text-emerald-600">₹{p.amount.toLocaleString('en-IN')}</td>
+                            </tr>
+                          ))
+                        ) : viewingWageSlip.totalPaid > 0 ? (
+                          <tr>
+                            <td className="py-2 px-3 font-mono">{viewingWageSlip.sal?.paymentDate || 'Paid'}</td>
+                            <td className="py-2 px-3 uppercase text-[10px] font-bold text-slate-500">{viewingWageSlip.sal?.paymentMode || 'UPI'}</td>
+                            <td className="py-2 px-3 font-mono text-slate-500">{viewingWageSlip.sal?.referenceNumber || '—'}</td>
+                            <td className="py-2 px-3 text-slate-400">Salary Payment</td>
+                            <td className="py-2 px-3 text-right font-mono font-bold text-emerald-600">₹{viewingWageSlip.totalPaid.toLocaleString('en-IN')}</td>
+                          </tr>
+                        ) : (
+                          <tr>
+                            <td colSpan={5} className="py-4 text-center text-slate-400 italic">
+                              No payment installments recorded yet for this month.
+                            </td>
+                          </tr>
+                        )}
+                        <tr className={isDark ? 'bg-slate-950/80 font-bold' : 'bg-slate-50 font-bold'}>
+                          <td colSpan={4} className="py-2.5 px-3 text-right">Total Paid So Far:</td>
+                          <td className="py-2.5 px-3 text-right font-mono text-emerald-600 text-sm">
+                            ₹{viewingWageSlip.totalPaid.toLocaleString('en-IN')}
                           </td>
                         </tr>
-                      )}
-                      <tr className={isDark ? 'bg-slate-950/80 font-bold' : 'bg-slate-50 font-bold'}>
-                        <td colSpan={4} className="py-2.5 px-3 text-right">Total Paid So Far:</td>
-                        <td className="py-2.5 px-3 text-right font-mono text-emerald-600 text-sm">
-                          ₹{viewingWageSlip.totalPaid.toLocaleString('en-IN')}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
 

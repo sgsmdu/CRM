@@ -1543,7 +1543,8 @@ Please review both options and let us know your preferred configuration!
                 <div className={`rounded-xl border overflow-hidden ${
                   isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-white border-slate-200'
                 }`}>
-                  <table className="w-full text-left text-xs">
+                  <div className="overflow-x-auto scrollbar-thin">
+                    <table className="w-full text-left text-xs min-w-[680px]">
                     <thead className={`border-b text-[11px] font-semibold uppercase ${
                       isDark ? 'bg-slate-950 text-slate-400 border-slate-800' : 'bg-slate-50 text-slate-600 border-slate-200'
                     }`}>
@@ -1669,6 +1670,7 @@ Please review both options and let us know your preferred configuration!
                     </tbody>
                   </table>
                 </div>
+              </div>
 
                 {/* 3. Internal Calculation Section (Requirement 8 - INTERNAL CRM ONLY) */}
                 <div className={`p-4 rounded-xl border space-y-4 ${
@@ -2134,7 +2136,7 @@ Please review both options and let us know your preferred configuration!
             </div>
 
             {/* A4 Paper Viewport with Fixed Letterhead Background */}
-            <div className="p-4 sm:p-8 overflow-y-auto flex-1 bg-slate-200/60 flex justify-center print:p-0 print:bg-white" id="customerPdfContainer">
+            <div className="p-2 sm:p-6 lg:p-8 overflow-y-auto overflow-x-auto flex-1 bg-slate-200/60 flex justify-start sm:justify-center print:p-0 print:bg-white" id="customerPdfContainer">
               
               {/* Single A4 Sheet Container */}
               <div 

@@ -34,6 +34,7 @@ import { useSgs } from '../context/SgsContext';
 import { AdminSettings, QuickServicePreset, DeviceCategory, BillingTheme, PandiyanBillingTheme } from '../types';
 import { 
   DEFAULT_SGS_LOGO_DATA_URL, 
+  OFFICIAL_SGS_LOGO_URL,
   DEFAULT_SGS_STAMP_DATA_URL, 
   DEFAULT_PANDIYAN_LOGO_DATA_URL, 
   DEFAULT_PANDIYAN_STAMP_DATA_URL,
@@ -900,11 +901,11 @@ export const AdminDashboard: React.FC = () => {
                     </span>
                     <button
                       type="button"
-                      onClick={() => handleFieldChange('workshopLogoUrl', DEFAULT_SGS_LOGO_DATA_URL)}
+                      onClick={() => handleFieldChange('workshopLogoUrl', OFFICIAL_SGS_LOGO_URL)}
                       className="text-[10px] font-semibold text-blue-600 hover:underline flex items-center gap-1 cursor-pointer"
-                      title="Reset to default high-res SVG logo"
+                      title="Reset to official Spider Grid Solutions logo"
                     >
-                      <RefreshCw className="w-2.5 h-2.5" /> Reset Default
+                      <RefreshCw className="w-2.5 h-2.5" /> Reset Official Logo
                     </button>
                   </div>
                   

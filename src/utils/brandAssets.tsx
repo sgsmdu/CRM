@@ -274,20 +274,23 @@ export const PANDIYAN_THEMES: Record<PandiyanBillingTheme, {
   },
 };
 
+export const OFFICIAL_SGS_LOGO_URL = '/assets/aistudio/Final_logo51_79c6a806.png';
+
 /**
  * React Component for SGS Logo with fallback
  */
-export const SgsLogo: React.FC<{ url?: string; className?: string; size?: 'sm' | 'md' | 'lg' }> = ({
+export const SgsLogo: React.FC<{ url?: string; className?: string; size?: 'sm' | 'md' | 'lg' | 'xl' }> = ({
   url,
   className = '',
   size = 'md',
 }) => {
-  const logoSrc = url || DEFAULT_SGS_LOGO_DATA_URL;
+  const logoSrc = url || OFFICIAL_SGS_LOGO_URL;
   const sizeClasses = {
     sm: 'h-8 max-w-[130px]',
     md: 'h-12 max-w-[190px]',
     lg: 'h-16 max-w-[260px]',
-  }[size];
+    xl: 'h-20 max-w-[320px]',
+  }[size] || 'h-12 max-w-[190px]';
 
   return (
     <img

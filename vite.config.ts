@@ -11,7 +11,7 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
+        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg', 'assets/aistudio/Final_logo51_79c6a806.png'],
         manifest: {
           id: '/',
           name: 'Spider Grid Solutions - Operations & CRM',
@@ -23,6 +23,12 @@ export default defineConfig(() => {
           start_url: '/',
           scope: '/',
           icons: [
+            {
+              src: '/assets/aistudio/Final_logo51_79c6a806.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any',
+            },
             {
               src: '/pwa-192x192.png',
               sizes: '192x192',

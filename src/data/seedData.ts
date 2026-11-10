@@ -1,6 +1,7 @@
 import { Customer, JobCard, InventoryItem, VendorBill, StockTransaction, Invoice, CashFlowEntry, AdminSettings, LeadSource, Vendor, Employee, AttendanceRecord, SalaryPayment, WorkAllocation } from '../types';
 import { 
   DEFAULT_SGS_LOGO_DATA_URL, 
+  OFFICIAL_SGS_LOGO_URL,
   DEFAULT_SGS_STAMP_DATA_URL, 
   DEFAULT_PANDIYAN_LOGO_DATA_URL, 
   DEFAULT_PANDIYAN_STAMP_DATA_URL,
@@ -850,7 +851,7 @@ export const SEED_CASH_FLOW: CashFlowEntry[] = [
 export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   workshopName: 'Spider Grid Solutions',
   workshopGstin: '33AABCS1429F1ZT',
-  workshopPhone: '+91 9677776001',
+  workshopPhone: '+91 9176795665',
   workshopEmail: 'spidergridsolutions@gmail.com',
   workshopAddress: 'Madurai, Tamil Nadu - 625001',
   workshopUpiId: 'spidergridsolutions@okaxis',
@@ -884,7 +885,7 @@ Our expert technician is attending to your equipment. We will keep you updated e
 Warm regards,
 *Spider Grid Solutions*
 Madurai, Tamil Nadu
-Contact: +91 9677776001 | spidergridsolutions@gmail.com`,
+Contact: +91 9176795665 | spidergridsolutions@gmail.com`,
   statusMessageTemplate: `*SPIDER GRID SOLUTIONS (SGS)*
 *Service Status Notification*
 
@@ -898,7 +899,7 @@ Here is the latest progress update for your equipment:
 • Total Amount: *₹{amount}*
 
 Thank you for choosing Spider Grid Solutions - Madurai.
-Contact: +91 9677776001`,
+Contact: +91 9176795665`,
   reviewMessageTemplate: `*SPIDER GRID SOLUTIONS (SGS)*
 *Job Completed & Thank You!* 🌟
 
@@ -911,7 +912,7 @@ Your satisfaction is our top priority. If you were happy with our fast service a
 {googleReviewUrl}
 
 Thank you once again for trusting Spider Grid Solutions!
-Madurai | Phone: +91 9677776001`,
+Madurai | Phone: +91 9176795665`,
   quickServices: [
     { name: 'Computer / Laptop General Service & Dust Cleaning', hsn: '998713', rate: 500, cost: 50, category: 'laptop' },
     { name: 'OS Reinstallation & Driver Configuration', hsn: '998713', rate: 600, cost: 0, category: 'laptop' },
@@ -924,7 +925,7 @@ Madurai | Phone: +91 9677776001`,
   ],
   // SGS Billing Themes & Letterhead Configuration
   billingTheme: 'modern_navy',
-  workshopLogoUrl: DEFAULT_SGS_LOGO_DATA_URL,
+  workshopLogoUrl: OFFICIAL_SGS_LOGO_URL,
   rubberStampUrl: DEFAULT_SGS_STAMP_DATA_URL,
   bankName: 'HDFC Bank - Madurai Main Branch',
   bankAccountNumber: '50200045812934',
@@ -934,7 +935,7 @@ Madurai | Phone: +91 9677776001`,
   authorizedSignatoryTitle: 'For SPIDER GRID SOLUTIONS (SGS) - Authorized Signatory',
   // Pandiyan Computers (Non-GST Firm)
   pandiyanFirmName: 'Pandiyan Computers',
-  pandiyanPhone: '+91 9677776001',
+  pandiyanPhone: '+91 9176795665',
   pandiyanAddress: 'Shop No. 14, Simmakkal Main Road, Madurai - 625001',
   pandiyanEmail: 'pandiyancomputers.mdu@gmail.com',
   pandiyanLogoUrl: DEFAULT_PANDIYAN_LOGO_DATA_URL,

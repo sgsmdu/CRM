@@ -1703,59 +1703,61 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                 <div className={`rounded-xl border overflow-hidden ${
                   isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-white'
                 }`}>
-                  <table className="w-full text-left text-xs">
-                    <thead className={`border-b text-[11px] font-semibold uppercase ${
-                      isDark ? 'bg-slate-950 text-slate-400 border-slate-800' : 'bg-slate-50 text-slate-600 border-slate-200'
-                    }`}>
-                      <tr>
-                        <th className="py-2.5 px-3">Description</th>
-                        {viewingInvoice.billingFirm !== 'pandiyan' && (
-                          <th className="py-2.5 px-2">HSN/SAC</th>
-                        )}
-                        <th className="py-2.5 px-2 text-center">Qty</th>
-                        <th className="py-2.5 px-2 text-right">Rate (₹)</th>
-                        {viewingInvoice.billingFirm !== 'pandiyan' && (
-                          <>
-                            <th className="py-2.5 px-2 text-center">GST %</th>
-                            <th className="py-2.5 px-2 text-right">GST (₹)</th>
-                          </>
-                        )}
-                        <th className="py-2.5 px-3 text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-100'}`}>
-                      {viewingInvoice.items.map((it, idx) => {
-                        const itGst = it.gstPercent !== undefined ? it.gstPercent : (viewingInvoice.billingFirm === 'pandiyan' ? 0 : viewingInvoice.gstPercent);
-                        const itTax = it.gstAmount ?? Math.round(((it.amount || (it.rate * it.quantity)) * itGst) / 100);
-                        const itTotal = it.totalWithGst ?? (it.amount + itTax);
-                        return (
-                          <tr key={idx}>
-                            <td className="py-2 px-3 font-semibold whitespace-pre-line">{it.description}</td>
-                            {viewingInvoice.billingFirm !== 'pandiyan' && (
-                              <td className="py-2 px-2 font-mono text-[11px] text-blue-600">
-                                {it.hsnCode || '998713'}
+                  <div className="overflow-x-auto scrollbar-thin">
+                    <table className="w-full text-left text-xs min-w-[540px]">
+                      <thead className={`border-b text-[11px] font-semibold uppercase ${
+                        isDark ? 'bg-slate-950 text-slate-400 border-slate-800' : 'bg-slate-50 text-slate-600 border-slate-200'
+                      }`}>
+                        <tr>
+                          <th className="py-2.5 px-3">Description</th>
+                          {viewingInvoice.billingFirm !== 'pandiyan' && (
+                            <th className="py-2.5 px-2">HSN/SAC</th>
+                          )}
+                          <th className="py-2.5 px-2 text-center">Qty</th>
+                          <th className="py-2.5 px-2 text-right">Rate (₹)</th>
+                          {viewingInvoice.billingFirm !== 'pandiyan' && (
+                            <>
+                              <th className="py-2.5 px-2 text-center">GST %</th>
+                              <th className="py-2.5 px-2 text-right">GST (₹)</th>
+                            </>
+                          )}
+                          <th className="py-2.5 px-3 text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-100'}`}>
+                        {viewingInvoice.items.map((it, idx) => {
+                          const itGst = it.gstPercent !== undefined ? it.gstPercent : (viewingInvoice.billingFirm === 'pandiyan' ? 0 : viewingInvoice.gstPercent);
+                          const itTax = it.gstAmount ?? Math.round(((it.amount || (it.rate * it.quantity)) * itGst) / 100);
+                          const itTotal = it.totalWithGst ?? (it.amount + itTax);
+                          return (
+                            <tr key={idx}>
+                              <td className="py-2 px-3 font-semibold whitespace-pre-line">{it.description}</td>
+                              {viewingInvoice.billingFirm !== 'pandiyan' && (
+                                <td className="py-2 px-2 font-mono text-[11px] text-blue-600">
+                                  {it.hsnCode || '998713'}
+                                </td>
+                              )}
+                              <td className="py-2 px-2 text-center font-mono">{it.quantity}</td>
+                              <td className="py-2 px-2 text-right font-mono">₹{it.rate.toLocaleString('en-IN')}</td>
+                              {viewingInvoice.billingFirm !== 'pandiyan' && (
+                                <>
+                                  <td className="py-2 px-2 text-center font-mono font-bold text-blue-600">
+                                    {itGst}%
+                                  </td>
+                                  <td className="py-2 px-2 text-right font-mono text-amber-600">
+                                    ₹{itTax.toLocaleString('en-IN')}
+                                  </td>
+                                </>
+                              )}
+                              <td className="py-2 px-3 text-right font-mono font-bold">
+                                ₹{itTotal.toLocaleString('en-IN')}
                               </td>
-                            )}
-                            <td className="py-2 px-2 text-center font-mono">{it.quantity}</td>
-                            <td className="py-2 px-2 text-right font-mono">₹{it.rate.toLocaleString('en-IN')}</td>
-                            {viewingInvoice.billingFirm !== 'pandiyan' && (
-                              <>
-                                <td className="py-2 px-2 text-center font-mono font-bold text-blue-600">
-                                  {itGst}%
-                                </td>
-                                <td className="py-2 px-2 text-right font-mono text-amber-600">
-                                  ₹{itTax.toLocaleString('en-IN')}
-                                </td>
-                              </>
-                            )}
-                            <td className="py-2 px-3 text-right font-mono font-bold">
-                              ₹{itTotal.toLocaleString('en-IN')}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
 
@@ -3529,51 +3531,53 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
               </div>
 
               {/* Items Table - With HSN column for SGS, without GST column for Pandiyan */}
-              <table className="w-full text-left text-xs border">
-                <thead className="bg-slate-100 border-b text-[11px] font-bold">
-                  <tr>
-                    <th className="py-2 px-3">Description</th>
-                    {printableInvoice.billingFirm !== 'pandiyan' && (
-                      <th className="py-2 px-2 text-center">HSN/SAC</th>
-                    )}
-                    <th className="py-2 px-2 text-center">Qty</th>
-                    <th className="py-2 px-2 text-right">Rate (₹)</th>
-                    {printableInvoice.billingFirm !== 'pandiyan' && (
-                      <>
-                        <th className="py-2 px-2 text-center">GST %</th>
-                        <th className="py-2 px-2 text-right">GST (₹)</th>
-                      </>
-                    )}
-                    <th className="py-2 px-3 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {printableInvoice.items.map((it, idx) => {
-                    const itGst = it.gstPercent !== undefined ? it.gstPercent : (printableInvoice.billingFirm === 'pandiyan' ? 0 : printableInvoice.gstPercent);
-                    const itTax = it.gstAmount ?? (((it.amount || (it.rate * it.quantity)) * itGst) / 100);
-                    const itTotal = it.totalWithGst ?? (it.amount + itTax);
-                    return (
-                      <tr key={idx}>
-                        <td className="py-2 px-3 font-semibold whitespace-pre-line">{it.description}</td>
-                        {printableInvoice.billingFirm !== 'pandiyan' && (
-                          <td className="py-2 px-2 text-center font-mono text-[11px] text-blue-700">
-                            {it.hsnCode || '998713'}
-                          </td>
-                        )}
-                        <td className="py-2 px-2 text-center font-mono">{it.quantity}</td>
-                        <td className="py-2 px-2 text-right font-mono">₹{it.rate.toLocaleString('en-IN')}</td>
-                        {printableInvoice.billingFirm !== 'pandiyan' && (
-                          <>
-                            <td className="py-2 px-2 text-center font-mono text-blue-700 font-bold">{itGst}%</td>
-                            <td className="py-2 px-2 text-right font-mono text-slate-700">₹{itTax.toFixed(2)}</td>
-                          </>
-                        )}
-                        <td className="py-2 px-3 text-right font-mono font-bold">₹{itTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <div className="overflow-x-auto scrollbar-thin">
+                <table className="w-full text-left text-xs border min-w-[500px]">
+                  <thead className="bg-slate-100 border-b text-[11px] font-bold">
+                    <tr>
+                      <th className="py-2 px-3">Description</th>
+                      {printableInvoice.billingFirm !== 'pandiyan' && (
+                        <th className="py-2 px-2 text-center">HSN/SAC</th>
+                      )}
+                      <th className="py-2 px-2 text-center">Qty</th>
+                      <th className="py-2 px-2 text-right">Rate (₹)</th>
+                      {printableInvoice.billingFirm !== 'pandiyan' && (
+                        <>
+                          <th className="py-2 px-2 text-center">GST %</th>
+                          <th className="py-2 px-2 text-right">GST (₹)</th>
+                        </>
+                      )}
+                      <th className="py-2 px-3 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {printableInvoice.items.map((it, idx) => {
+                      const itGst = it.gstPercent !== undefined ? it.gstPercent : (printableInvoice.billingFirm === 'pandiyan' ? 0 : printableInvoice.gstPercent);
+                      const itTax = it.gstAmount ?? (((it.amount || (it.rate * it.quantity)) * itGst) / 100);
+                      const itTotal = it.totalWithGst ?? (it.amount + itTax);
+                      return (
+                        <tr key={idx}>
+                          <td className="py-2 px-3 font-semibold whitespace-pre-line">{it.description}</td>
+                          {printableInvoice.billingFirm !== 'pandiyan' && (
+                            <td className="py-2 px-2 text-center font-mono text-[11px] text-blue-700">
+                              {it.hsnCode || '998713'}
+                            </td>
+                          )}
+                          <td className="py-2 px-2 text-center font-mono">{it.quantity}</td>
+                          <td className="py-2 px-2 text-right font-mono">₹{it.rate.toLocaleString('en-IN')}</td>
+                          {printableInvoice.billingFirm !== 'pandiyan' && (
+                            <>
+                              <td className="py-2 px-2 text-center font-mono text-blue-700 font-bold">{itGst}%</td>
+                              <td className="py-2 px-2 text-right font-mono text-slate-700">₹{itTax.toFixed(2)}</td>
+                            </>
+                          )}
+                          <td className="py-2 px-3 text-right font-mono font-bold">₹{itTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
 
               {/* Summary Totals */}
               <div className="flex justify-end pt-1">

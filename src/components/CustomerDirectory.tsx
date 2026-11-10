@@ -472,8 +472,8 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
       <div className={`rounded-xl border overflow-hidden ${
         isDark ? 'border-slate-800 bg-slate-900/60' : 'border-slate-200/90 bg-white shadow-xs'
       }`}>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+        <div className="overflow-x-auto scrollbar-thin">
+          <table className="w-full text-left text-xs min-w-[760px]">
             <thead className={`border-b font-semibold uppercase tracking-wider text-[11px] ${
               isDark ? 'bg-slate-950 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-700'
             }`}>
