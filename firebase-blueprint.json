@@ -1,0 +1,126 @@
+{
+  "entities": {
+    "AllowedUser": {
+      "title": "AllowedUser",
+      "description": "Authorized CRM user and RBAC permissions",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "description": "Google user email address" },
+        "role": { "type": "string", "enum": ["admin", "user"], "description": "Permission role" },
+        "displayName": { "type": "string", "description": "User display name" },
+        "notes": { "type": "string", "description": "Staff designation or notes" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "description": "Update timestamp" }
+      },
+      "required": ["email", "role"]
+    },
+    "JobCard": {
+      "title": "JobCard",
+      "description": "Hardware and service repair work order card",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "jobId": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "customerArea": { "type": "string" },
+        "category": { "type": "string" },
+        "deviceBrand": { "type": "string" },
+        "issueDescription": { "type": "string" },
+        "status": { "type": "string" },
+        "intakeDate": { "type": "string" },
+        "estimatedCost": { "type": "number" },
+        "finalCost": { "type": "number" },
+        "advancePaid": { "type": "number" },
+        "linkedVendorBillIds": { "type": "array" }
+      },
+      "required": ["id", "jobId", "customerName", "status"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "GST Tax invoice or Pandiyan computer estimate bill",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "date": { "type": "string" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "type": { "type": "string" },
+        "status": { "type": "string" },
+        "paymentStatus": { "type": "string" },
+        "grandTotal": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "items": { "type": "array" }
+      },
+      "required": ["id", "invoiceNumber", "customerName", "type"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Customer database entry",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "area": { "type": "string" }
+      },
+      "required": ["id", "name"]
+    },
+    "VendorBill": {
+      "title": "VendorBill",
+      "description": "Stock purchase bill from vendor",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceNumber": { "type": "string" },
+        "vendorName": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "linkedJobCardIds": { "type": "array" }
+      },
+      "required": ["id", "invoiceNumber", "vendorName"]
+    },
+    "ManualQuotation": {
+      "title": "ManualQuotation",
+      "description": "Manual sales proposal / quotation with up to 5 models",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "quotationNumber": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "quotationNumber", "customerName"]
+    }
+  },
+  "firestore": {
+    "/allowed_users/{email}": {
+      "schema": { "$ref": "#/entities/AllowedUser" },
+      "description": "Authorized CRM users with roles (admin or user)"
+    },
+    "/job_cards/{jobId}": {
+      "schema": { "$ref": "#/entities/JobCard" },
+      "description": "Workshop service & repair job cards"
+    },
+    "/invoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/Invoice" },
+      "description": "Customer billing invoices and receipts"
+    },
+    "/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/Customer" },
+      "description": "Customer directory"
+    },
+    "/vendor_bills/{billId}": {
+      "schema": { "$ref": "#/entities/VendorBill" },
+      "description": "Vendor purchase stock bills"
+    },
+    "/quotations/{quotationId}": {
+      "schema": { "$ref": "#/entities/ManualQuotation" },
+      "description": "Multi-model quotation proposals"
+    }
+  }
+}

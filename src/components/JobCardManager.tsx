@@ -51,7 +51,9 @@ import {
   CheckSquare,
   Square,
   ListOrdered,
-  CreditCard
+  CreditCard,
+  Link2,
+  Receipt
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { JobCard, JobStatus, DeviceCategory, ServiceSalesType, Customer, JobTimelineEvent } from '../types';
@@ -93,6 +95,8 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
     deleteJobCard, 
     toggleCallCompleted,
     addJobTimelineEvent,
+    toggleLinkJobAndVendorBill,
+    vendorBills,
     getWhatsAppLinks, 
     employees,
     updateJobPriority,
@@ -112,6 +116,10 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
 
   // "Show Job" Full Details & Management Modal (Module 2)
   const [detailedJob, setDetailedJob] = useState<JobCard | null>(null);
+
+  // Stock Invoice Linking Modal State
+  const [linkingJob, setLinkingJob] = useState<JobCard | null>(null);
+  const [linkBillSearch, setLinkBillSearch] = useState('');
 
   useEffect(() => {
     if (initialJobForDetails) {
@@ -1030,13 +1038,10 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                         <span className="text-[10px] text-slate-400 block capitalize">{job.category} {job.serialNumber ? `· S/N: ${job.serialNumber}` : ''}</span>
                       </div>
 
-                      {/* 3. Customer Name with Star Icon */}
+                      {/* 3. Customer Name */}
                       <div className="min-w-0">
                         <span className="text-[10px] uppercase font-bold text-slate-400 block sm:hidden">Customer</span>
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="inline-flex items-center justify-center p-0.5 rounded text-amber-500 bg-amber-500/15 border border-amber-500/30 shrink-0" title="Customer">
-                            <Star className="w-2.5 h-2.5 text-amber-500 fill-amber-400" />
-                          </span>
                           <span className={`font-bold truncate ${isDark ? 'text-slate-200' : 'text-slate-800'}`} title={job.customerName}>
                             {job.customerName}
                           </span>
@@ -1397,6 +1402,28 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                         </button>
                       )}
 
+                      {/* Link to Stock Invoice */}
+                      <button
+                        type="button"
+                        onClick={() => setLinkingJob(job)}
+                        className={`px-2.5 py-0.5 text-[11px] font-bold rounded-md border transition-all cursor-pointer flex items-center gap-1 ${
+                          (job.linkedVendorBillIds && job.linkedVendorBillIds.length > 0)
+                            ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
+                            : (isDark 
+                                ? 'bg-purple-950/40 border-purple-800 text-purple-300 hover:bg-purple-700 hover:text-white' 
+                                : 'bg-purple-50 border-purple-300 text-purple-800 hover:bg-purple-600 hover:text-white')
+                        }`}
+                        title="Link stock purchase invoices to this job card"
+                      >
+                        <Link2 className="w-3 h-3 text-purple-400" />
+                        <span>Link to Stock Invoice</span>
+                        {job.linkedVendorBillIds && job.linkedVendorBillIds.length > 0 && (
+                          <span className="ml-0.5 px-1.5 py-0.2 bg-black/20 text-white rounded text-[10px]">
+                            {job.linkedVendorBillIds.length}
+                          </span>
+                        )}
+                      </button>
+
                       {/* Pickup Note */}
                       <button
                         type="button"
@@ -1709,9 +1736,6 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-xs truncate">{customerName}</span>
-                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-amber-500 text-white flex items-center gap-0.5">
-                            <Star className="w-2.5 h-2.5 fill-white" /> Customer
-                          </span>
                         </div>
                         <p className={`text-[11px] ${isDark ? 'text-blue-300' : 'text-blue-700'}`}>
                           {customerPhone || 'No Phone'} · {customerArea || 'Madurai'}
@@ -2761,6 +2785,28 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                     <span>Manual Quote</span>
                   </button>
                 )}
+
+                {/* Link to Stock Invoice */}
+                <button
+                  type="button"
+                  onClick={() => setLinkingJob(job)}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                    (job.linkedVendorBillIds && job.linkedVendorBillIds.length > 0)
+                      ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
+                      : (isDark 
+                          ? 'bg-purple-950/50 border-purple-800 text-purple-300 hover:bg-purple-700 hover:text-white' 
+                          : 'bg-purple-50 border-purple-300 text-purple-800 hover:bg-purple-600 hover:text-white')
+                  }`}
+                  title="Link stock purchase invoices to this job card"
+                >
+                  <Link2 className="w-3.5 h-3.5" />
+                  <span>Link to Stock Invoice</span>
+                  {job.linkedVendorBillIds && job.linkedVendorBillIds.length > 0 && (
+                    <span className="px-1.5 py-0.2 bg-black/20 text-white rounded text-[10px]">
+                      {job.linkedVendorBillIds.length}
+                    </span>
+                  )}
+                </button>
               </div>
 
               {/* Modal Body Content (Scrollable) */}
@@ -2780,18 +2826,10 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                         <span className={`font-bold uppercase tracking-wider text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                           Customer Information
                         </span>
-                        {job.customerId && job.customerId.startsWith('cust-') && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 border border-amber-500/20 flex items-center gap-1">
-                            <Star className="w-2.5 h-2.5 fill-amber-500 text-amber-500" /> Customer
-                          </span>
-                        )}
                       </div>
 
                       <div className="space-y-1.5">
                         <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center justify-center p-1 rounded-md text-amber-500 bg-amber-500/15 border border-amber-500/30 shrink-0" title="Customer">
-                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
-                          </span>
                           <span className="text-sm font-bold">{job.customerName}</span>
                         </div>
 
@@ -2931,6 +2969,95 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                           Linked Invoice: <span className="font-mono font-bold">{job.invoiceId}</span>
                         </p>
                       )}
+                    </div>
+
+                    {/* Linked Stock Invoices Card */}
+                    <div className={`p-4 rounded-xl border space-y-3 ${
+                      isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                    }`}>
+                      <div className="flex items-center justify-between">
+                        <span className={`font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5 ${isDark ? 'text-purple-400' : 'text-purple-700'}`}>
+                          <Receipt className="w-3.5 h-3.5" />
+                          <span>Linked Stock Invoices ({(job.linkedVendorBillIds || []).length})</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setLinkingJob(job)}
+                          className="text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
+                        >
+                          <Link2 className="w-3 h-3" />
+                          <span>Link to Stock Invoice</span>
+                        </button>
+                      </div>
+
+                      {(() => {
+                        const linkedBills = vendorBills.filter(b => (job.linkedVendorBillIds || []).includes(b.id));
+                        if (linkedBills.length === 0) {
+                          return (
+                            <div className={`p-3 rounded-lg border border-dashed text-center text-xs ${
+                              isDark ? 'border-slate-800 text-slate-400 bg-slate-900/30' : 'border-slate-200 text-slate-500 bg-white'
+                            }`}>
+                              No stock purchase invoices linked yet.
+                              <div className="mt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setLinkingJob(job)}
+                                  className="text-purple-600 dark:text-purple-400 font-semibold hover:underline"
+                                >
+                                  + Link to Stock Invoice
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="space-y-2">
+                            {linkedBills.map(bill => {
+                              const buyerItems = bill.items && bill.items.length > 0
+                                ? bill.items.map(it => it.itemName).join(', ')
+                                : 'General Stock Items';
+
+                              return (
+                                <div
+                                  key={bill.id}
+                                  className={`p-2.5 rounded-lg border text-xs space-y-1.5 ${
+                                    isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-mono font-bold text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-950/60 px-2 py-0.5 rounded text-[11px]">
+                                        Invoice: {bill.invoiceNumber}
+                                      </span>
+                                      <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                        {bill.vendorName}
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleLinkJobAndVendorBill(job.id, bill.id)}
+                                      className="text-[10px] text-rose-500 hover:text-rose-700 hover:underline cursor-pointer"
+                                    >
+                                      Remove Link
+                                    </button>
+                                  </div>
+
+                                  <div className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-300">
+                                    <strong className="text-slate-400">Buyer Items Name: </strong>
+                                    <span className="font-medium text-slate-800 dark:text-slate-100">{buyerItems}</span>
+                                  </div>
+
+                                  <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800 font-mono">
+                                    <span>Date: {bill.invoiceDate || ''}</span>
+                                    <span className="font-bold text-slate-700 dark:text-slate-300">Total: ₹{bill.totalAmount.toLocaleString('en-IN')}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -3882,6 +4009,208 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal: Link to Stock Invoices */}
+      {linkingJob && (() => {
+        // Fetch fresh state of linkingJob in case links were just toggled
+        const currentJob = jobCards.find(j => j.id === linkingJob.id) || linkingJob;
+        const linkedIds = currentJob.linkedVendorBillIds || [];
+
+        const q = linkBillSearch.toLowerCase().trim();
+        const filteredBills = vendorBills.filter(bill => {
+          if (!q) return true;
+          const buyerItems = (bill.items || []).map(i => i.itemName).join(' ').toLowerCase();
+          return (
+            bill.invoiceNumber.toLowerCase().includes(q) ||
+            bill.vendorName.toLowerCase().includes(q) ||
+            buyerItems.includes(q)
+          );
+        });
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+            <div className={`border rounded-2xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+              isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+            }`}>
+              {/* Modal Header */}
+              <div className={`px-5 py-4 border-b flex items-center justify-between shrink-0 ${
+                isDark ? 'border-slate-800 bg-slate-950/70' : 'border-slate-200 bg-slate-50'
+              }`}>
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                    <Receipt className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold flex items-center gap-2">
+                      <span>Link to Stock Invoice</span>
+                      <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300">
+                        {currentJob.jobId}
+                      </span>
+                    </h3>
+                    <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Customer: <strong>{currentJob.customerName}</strong> · Device: {currentJob.deviceBrand || currentJob.category}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLinkingJob(null);
+                    setLinkBillSearch('');
+                  }}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-200 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Sub-header & Search */}
+              <div className={`p-4 border-b space-y-3 shrink-0 ${
+                isDark ? 'border-slate-800 bg-slate-900/60' : 'border-slate-100 bg-slate-50/50'
+              }`}>
+                <div className="relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={linkBillSearch}
+                    onChange={(e) => setLinkBillSearch(e.target.value)}
+                    placeholder="Search stock invoice #, buyer items name, or vendor..."
+                    className={`w-full pl-9 pr-4 py-2 text-xs rounded-xl border transition-colors outline-hidden ${
+                      isDark 
+                        ? 'bg-slate-950 border-slate-700 text-white placeholder-slate-500 focus:border-purple-500' 
+                        : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-purple-600'
+                    }`}
+                  />
+                  {linkBillSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setLinkBillSearch('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                  <span>Click any invoice to link or unlink. You can link multiple stock invoices.</span>
+                  <span className="font-semibold text-purple-600 dark:text-purple-400">
+                    {linkedIds.length} Linked
+                  </span>
+                </div>
+              </div>
+
+              {/* Invoices List */}
+              <div className="p-4 overflow-y-auto space-y-2.5 flex-1">
+                {vendorBills.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-slate-400 space-y-1">
+                    <Receipt className="w-8 h-8 text-slate-500 mx-auto opacity-50" />
+                    <p className="font-semibold text-slate-600 dark:text-slate-300">No stock purchase invoices found</p>
+                    <p>Add or scan vendor bills in the Stock module first to link them to job cards.</p>
+                  </div>
+                ) : filteredBills.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-slate-400">
+                    No stock invoices match "<span className="font-semibold text-slate-600 dark:text-slate-300">{linkBillSearch}</span>".
+                  </div>
+                ) : (
+                  filteredBills.map(bill => {
+                    const isLinked = linkedIds.includes(bill.id);
+                    const buyerItems = bill.items && bill.items.length > 0
+                      ? bill.items.map(i => i.itemName).join(', ')
+                      : 'General Spares / Items';
+
+                    return (
+                      <div
+                        key={bill.id}
+                        onClick={() => toggleLinkJobAndVendorBill(currentJob.id, bill.id)}
+                        className={`p-3.5 rounded-xl border transition-all cursor-pointer flex items-start gap-3 ${
+                          isLinked
+                            ? (isDark 
+                                ? 'bg-purple-950/40 border-purple-600/70 ring-1 ring-purple-500/50' 
+                                : 'bg-purple-50 border-purple-400 ring-1 ring-purple-300')
+                            : (isDark 
+                                ? 'bg-slate-950/60 border-slate-800 hover:border-slate-700' 
+                                : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs')
+                        }`}
+                      >
+                        {/* Checkbox */}
+                        <div className="pt-0.5 shrink-0">
+                          <input
+                            type="checkbox"
+                            checked={isLinked}
+                            onChange={() => {}} // handled by parent div onClick
+                            className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 cursor-pointer pointer-events-none"
+                          />
+                        </div>
+
+                        {/* Bill Info */}
+                        <div className="space-y-1.5 flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-xs text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-950/70 px-2 py-0.5 rounded">
+                                Invoice #{bill.invoiceNumber}
+                              </span>
+                              <span className="font-semibold text-xs text-slate-900 dark:text-white">
+                                {bill.vendorName}
+                              </span>
+                            </div>
+
+                            <span className="font-mono font-bold text-xs text-slate-900 dark:text-white">
+                              ₹{bill.totalAmount.toLocaleString('en-IN')}
+                            </span>
+                          </div>
+
+                          {/* Buyer Items Name */}
+                          <div className="text-xs leading-relaxed">
+                            <span className={`font-semibold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                              Buyer Items: 
+                            </span>{' '}
+                            <span className="font-medium text-slate-800 dark:text-slate-100">
+                              {buyerItems}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-100 dark:border-slate-800/60 font-mono">
+                            <span>Date: {bill.invoiceDate || ''}</span>
+                            <span className={`uppercase font-bold text-[10px] px-1.5 py-0.2 rounded ${
+                              bill.paymentStatus === 'paid'
+                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                            }`}>
+                              {bill.paymentStatus}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className={`px-5 py-3 border-t flex items-center justify-between shrink-0 ${
+                isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'
+              }`}>
+                <div className="text-xs text-slate-500">
+                  <strong className="text-purple-600 dark:text-purple-400">{linkedIds.length}</strong> invoices linked
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLinkingJob(null);
+                    setLinkBillSearch('');
+                  }}
+                  className="px-4 py-1.5 text-xs font-bold rounded-lg bg-purple-600 hover:bg-purple-700 text-white cursor-pointer transition-colors shadow-xs"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

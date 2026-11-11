@@ -139,9 +139,16 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
   const [advanceAmount, setAdvanceAmount] = useState<number | undefined>(undefined);
   const [customerNotes, setCustomerNotes] = useState('');
   const [installationNotes, setInstallationNotes] = useState('');
-  const [activeModelTab, setActiveModelTab] = useState<'model1' | 'model2'>('model1');
+  
+  // Manual Quotation Title / Subject
+  const [quotationTitle, setQuotationTitle] = useState('');
 
-  // Custom Header & Footer Image State for Quotation
+  // Active Models Count (1 to 5, defaults to 1 as requested)
+  const [activeModelsCount, setActiveModelsCount] = useState<number>(1);
+  type ModelKey = 'model1' | 'model2' | 'model3' | 'model4' | 'model5';
+  const [activeModelTab, setActiveModelTab] = useState<ModelKey>('model1');
+
+  // Custom Header & Footer Image State for Quotation (read from adminSettings)
   const [quotationHeaderImg, setQuotationHeaderImg] = useState<string>('');
   const [quotationFooterImg, setQuotationFooterImg] = useState<string>('');
 
@@ -151,33 +158,44 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
   const [selectedJobIdToLoad, setSelectedJobIdToLoad] = useState('');
   const [selectedQtnIdToCopy, setSelectedQtnIdToCopy] = useState('');
 
-  // Model 1 State
-  const [model1Name, setModel1Name] = useState('Model 1: 4CH DVR + 2MP HD Camera Package');
-  const [model1Items, setModel1Items] = useState<QuotationItem[]>([]);
-  const [model1Charges, setModel1Charges] = useState<QuotationModelInternalCharges>({
-    installation: 1500,
-    helperFees: 500,
+  // Default empty internal charges
+  const defaultCharges = (): QuotationModelInternalCharges => ({
+    installation: 0,
+    helperFees: 0,
     commission: 0,
-    margin: 2000,
-    petrolVisit: 300,
+    margin: 0,
+    petrolVisit: 0,
     customerReduction: 0,
   });
 
+  // Model 1 State (Clean default: starts with Model 1 only, no prefilled packages)
+  const [model1Name, setModel1Name] = useState('Model 1');
+  const [model1Items, setModel1Items] = useState<QuotationItem[]>([]);
+  const [model1Charges, setModel1Charges] = useState<QuotationModelInternalCharges>(defaultCharges());
+
   // Model 2 State
-  const [model2Name, setModel2Name] = useState('Model 2: 4CH DVR + 5MP 3K Camera Package');
+  const [model2Name, setModel2Name] = useState('Model 2');
   const [model2Items, setModel2Items] = useState<QuotationItem[]>([]);
-  const [model2Charges, setModel2Charges] = useState<QuotationModelInternalCharges>({
-    installation: 1800,
-    helperFees: 600,
-    commission: 0,
-    margin: 2500,
-    petrolVisit: 300,
-    customerReduction: 0,
-  });
+  const [model2Charges, setModel2Charges] = useState<QuotationModelInternalCharges>(defaultCharges());
+
+  // Model 3 State
+  const [model3Name, setModel3Name] = useState('Model 3');
+  const [model3Items, setModel3Items] = useState<QuotationItem[]>([]);
+  const [model3Charges, setModel3Charges] = useState<QuotationModelInternalCharges>(defaultCharges());
+
+  // Model 4 State
+  const [model4Name, setModel4Name] = useState('Model 4');
+  const [model4Items, setModel4Items] = useState<QuotationItem[]>([]);
+  const [model4Charges, setModel4Charges] = useState<QuotationModelInternalCharges>(defaultCharges());
+
+  // Model 5 State
+  const [model5Name, setModel5Name] = useState('Model 5');
+  const [model5Items, setModel5Items] = useState<QuotationItem[]>([]);
+  const [model5Charges, setModel5Charges] = useState<QuotationModelInternalCharges>(defaultCharges());
 
   // Product Picker Drawer
   const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
-  const [pickerTargetModel, setPickerTargetModel] = useState<'model1' | 'model2'>('model1');
+  const [pickerTargetModel, setPickerTargetModel] = useState<ModelKey>('model1');
   const [pickerCategory, setPickerCategory] = useState<string>('all');
   const [pickerSubcategory, setPickerSubcategory] = useState<string>('all');
   const [pickerSearch, setPickerSearch] = useState('');
@@ -194,10 +212,11 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
 
   const handleOpenCreateFromJobCard = (job: JobCard) => {
     resetEditorForm();
-    setOriginatingJobId(job.id);
+    setOriginatingJobId(job.jobId || job.id);
     setCustomerName(job.customerName || '');
     setCustomerPhone(job.customerPhone || '');
     setCustomerAddress(job.customerArea || '');
+    setQuotationTitle(`Proposal for Job #${job.jobId || job.id} (${job.deviceBrand || job.category})`);
     
     // Check if matched customer in database
     const matched = customers.find(c => 
@@ -207,6 +226,7 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
     if (matched) {
       setSelectedCustomerId(matched.id);
       if (!job.customerArea && matched.area) setCustomerAddress(matched.area);
+      if ((matched as any).email) setCustomerEmail((matched as any).email);
     }
 
     setIsEditorOpen(true);
@@ -220,6 +240,7 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
     setCustomerPhone('');
     setCustomerAddress('');
     setCustomerEmail('');
+    setQuotationTitle('');
     setOriginatingJobId(undefined);
     setQuotationDate(new Date().toISOString().split('T')[0]);
     setValidityDays(7);
@@ -228,6 +249,9 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
     setAdvanceAmount(undefined);
     setCustomerNotes('');
     setInstallationNotes('');
+    
+    // Default to Model 1 only
+    setActiveModelsCount(1);
     setActiveModelTab('model1');
     setQuotationHeaderImg(adminSettings.quotationHeaderImageUrl || '');
     setQuotationFooterImg(adminSettings.quotationFooterImageUrl || '');
@@ -235,27 +259,25 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
     setSelectedJobIdToLoad('');
     setSelectedQtnIdToCopy('');
 
-    setModel1Name('Model 1: 4CH DVR + 2MP HD Camera Package');
+    setModel1Name('Model 1');
     setModel1Items([]);
-    setModel1Charges({
-      installation: 1500,
-      helperFees: 500,
-      commission: 0,
-      margin: 2000,
-      petrolVisit: 300,
-      customerReduction: 0,
-    });
+    setModel1Charges(defaultCharges());
 
-    setModel2Name('Model 2: 4CH DVR + 5MP 3K Camera Package');
+    setModel2Name('Model 2');
     setModel2Items([]);
-    setModel2Charges({
-      installation: 1800,
-      helperFees: 600,
-      commission: 0,
-      margin: 2500,
-      petrolVisit: 300,
-      customerReduction: 0,
-    });
+    setModel2Charges(defaultCharges());
+
+    setModel3Name('Model 3');
+    setModel3Items([]);
+    setModel3Charges(defaultCharges());
+
+    setModel4Name('Model 4');
+    setModel4Items([]);
+    setModel4Charges(defaultCharges());
+
+    setModel5Name('Model 5');
+    setModel5Items([]);
+    setModel5Charges(defaultCharges());
   };
 
   const handleStartNewQuotation = () => {
@@ -270,6 +292,7 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
     setCustomerPhone(qtn.customerPhone || '');
     setCustomerAddress(qtn.customerAddress || '');
     setCustomerEmail(qtn.customerEmail || '');
+    setQuotationTitle(qtn.title || '');
     setOriginatingJobId(qtn.jobCardId);
     setQuotationDate(qtn.date || new Date().toISOString().split('T')[0]);
     setValidityDays(qtn.validityDays || 7);
@@ -278,6 +301,7 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
     setAdvanceAmount(qtn.advanceAmount);
     setCustomerNotes(qtn.customerNotes || '');
     setInstallationNotes(qtn.installationNotes || '');
+    setActiveModelsCount(qtn.activeModelsCount || (qtn.model2?.items?.length ? 2 : 1));
     setActiveModelTab('model1');
     setQuotationHeaderImg(qtn.headerImageUrl || adminSettings.quotationHeaderImageUrl || '');
     setQuotationFooterImg(qtn.footerImageUrl || adminSettings.quotationFooterImageUrl || '');
@@ -285,13 +309,30 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
     setSelectedJobIdToLoad('');
     setSelectedQtnIdToCopy('');
 
-    setModel1Name(qtn.model1.name || 'Model 1');
-    setModel1Items(JSON.parse(JSON.stringify(qtn.model1.items || [])));
-    setModel1Charges({ ...qtn.model1.internalCharges });
+    setModel1Name(qtn.model1?.name || 'Model 1');
+    setModel1Items(JSON.parse(JSON.stringify(qtn.model1?.items || [])));
+    setModel1Charges({ ...defaultCharges(), ...(qtn.model1?.internalCharges || {}) });
 
-    setModel2Name(qtn.model2.name || 'Model 2');
-    setModel2Items(JSON.parse(JSON.stringify(qtn.model2.items || [])));
-    setModel2Charges({ ...qtn.model2.internalCharges });
+    if (qtn.model2) {
+      setModel2Name(qtn.model2.name || 'Model 2');
+      setModel2Items(JSON.parse(JSON.stringify(qtn.model2.items || [])));
+      setModel2Charges({ ...defaultCharges(), ...(qtn.model2.internalCharges || {}) });
+    }
+    if (qtn.model3) {
+      setModel3Name(qtn.model3.name || 'Model 3');
+      setModel3Items(JSON.parse(JSON.stringify(qtn.model3.items || [])));
+      setModel3Charges({ ...defaultCharges(), ...(qtn.model3.internalCharges || {}) });
+    }
+    if (qtn.model4) {
+      setModel4Name(qtn.model4.name || 'Model 4');
+      setModel4Items(JSON.parse(JSON.stringify(qtn.model4.items || [])));
+      setModel4Charges({ ...defaultCharges(), ...(qtn.model4.internalCharges || {}) });
+    }
+    if (qtn.model5) {
+      setModel5Name(qtn.model5.name || 'Model 5');
+      setModel5Items(JSON.parse(JSON.stringify(qtn.model5.items || [])));
+      setModel5Charges({ ...defaultCharges(), ...(qtn.model5.internalCharges || {}) });
+    }
 
     setIsEditorOpen(true);
   };
@@ -320,6 +361,20 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
 
   const model1Calc = useMemo(() => calculateModelSummary(model1Items, model1Charges), [model1Items, model1Charges]);
   const model2Calc = useMemo(() => calculateModelSummary(model2Items, model2Charges), [model2Items, model2Charges]);
+  const model3Calc = useMemo(() => calculateModelSummary(model3Items, model3Charges), [model3Items, model3Charges]);
+  const model4Calc = useMemo(() => calculateModelSummary(model4Items, model4Charges), [model4Items, model4Charges]);
+  const model5Calc = useMemo(() => calculateModelSummary(model5Items, model5Charges), [model5Items, model5Charges]);
+
+  // Model accessor helper
+  const getModelData = (key: ModelKey) => {
+    switch (key) {
+      case 'model1': return { name: model1Name, items: model1Items, charges: model1Charges, calc: model1Calc, setName: setModel1Name, setItems: setModel1Items, setCharges: setModel1Charges };
+      case 'model2': return { name: model2Name, items: model2Items, charges: model2Charges, calc: model2Calc, setName: setModel2Name, setItems: setModel2Items, setCharges: setModel2Charges };
+      case 'model3': return { name: model3Name, items: model3Items, charges: model3Charges, calc: model3Calc, setName: setModel3Name, setItems: setModel3Items, setCharges: setModel3Charges };
+      case 'model4': return { name: model4Name, items: model4Items, charges: model4Charges, calc: model4Calc, setName: setModel4Name, setItems: setModel4Items, setCharges: setModel4Charges };
+      case 'model5': return { name: model5Name, items: model5Items, charges: model5Charges, calc: model5Calc, setName: setModel5Name, setItems: setModel5Items, setCharges: setModel5Charges };
+    }
+  };
 
   // Customer selection auto-fill (with email, phone, address)
   const handleSelectCustomer = (custId: string) => {
@@ -352,78 +407,68 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
     }
   };
 
-  // Copy Model items and charges from an existing Quotation
+  // Copy Model items and charges from an existing Quotation (Fixed iframe blocking bug: removed window.confirm)
   const handleCopyFromQuotation = (qtnId: string) => {
     setSelectedQtnIdToCopy(qtnId);
     const source = quotations.find(q => q.id === qtnId);
-    if (source) {
-      if (window.confirm(`Copy Model 1 & Model 2 items, charges and terms from Quotation #${source.quotationNumber} (${source.customerName})?`)) {
-        setModel1Name(source.model1.name);
-        setModel1Items(JSON.parse(JSON.stringify(source.model1.items || [])));
-        setModel1Charges({ ...source.model1.internalCharges });
+    if (!source) return;
 
-        setModel2Name(source.model2.name);
-        setModel2Items(JSON.parse(JSON.stringify(source.model2.items || [])));
-        setModel2Charges({ ...source.model2.internalCharges });
+    if (source.title) setQuotationTitle(source.title);
+    const count = source.activeModelsCount || (source.model2?.items?.length ? 2 : 1);
+    setActiveModelsCount(count);
 
-        if (source.termsAndConditions) setTermsAndConditions(source.termsAndConditions);
-        if (source.paymentDetails) setPaymentDetails(source.paymentDetails);
-        if (source.customerNotes) setCustomerNotes(source.customerNotes);
-        if (source.installationNotes) setInstallationNotes(source.installationNotes);
-        if (source.headerImageUrl) setQuotationHeaderImg(source.headerImageUrl);
-        if (source.footerImageUrl) setQuotationFooterImg(source.footerImageUrl);
-        showToast(`Copied items & configuration from #${source.quotationNumber}!`);
-      }
+    if (source.model1) {
+      setModel1Name(source.model1.name || 'Model 1');
+      setModel1Items(JSON.parse(JSON.stringify(source.model1.items || [])));
+      setModel1Charges({ ...defaultCharges(), ...(source.model1.internalCharges || {}) });
     }
-  };
 
-  // Image Upload Handler for Header & Footer Banners
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, target: 'header' | 'footer') => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 2 * 1024 * 1024) {
-      alert('File size exceeds 2MB. Please select an optimized banner image.');
+    if (source.model2) {
+      setModel2Name(source.model2.name || 'Model 2');
+      setModel2Items(JSON.parse(JSON.stringify(source.model2.items || [])));
+      setModel2Charges({ ...defaultCharges(), ...(source.model2.internalCharges || {}) });
     }
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result as string;
-      if (result) {
-        if (target === 'header') {
-          setQuotationHeaderImg(result);
-          showToast('Header banner image updated for quotation!');
-        } else {
-          setQuotationFooterImg(result);
-          showToast('Footer banner image updated for quotation!');
-        }
-      }
-    };
-    reader.readAsDataURL(file);
+
+    if (source.model3) {
+      setModel3Name(source.model3.name || 'Model 3');
+      setModel3Items(JSON.parse(JSON.stringify(source.model3.items || [])));
+      setModel3Charges({ ...defaultCharges(), ...(source.model3.internalCharges || {}) });
+    }
+
+    if (source.model4) {
+      setModel4Name(source.model4.name || 'Model 4');
+      setModel4Items(JSON.parse(JSON.stringify(source.model4.items || [])));
+      setModel4Charges({ ...defaultCharges(), ...(source.model4.internalCharges || {}) });
+    }
+
+    if (source.model5) {
+      setModel5Name(source.model5.name || 'Model 5');
+      setModel5Items(JSON.parse(JSON.stringify(source.model5.items || [])));
+      setModel5Charges({ ...defaultCharges(), ...(source.model5.internalCharges || {}) });
+    }
+
+    if (source.termsAndConditions) setTermsAndConditions(source.termsAndConditions);
+    if (source.paymentDetails) setPaymentDetails(source.paymentDetails);
+    if (source.customerNotes) setCustomerNotes(source.customerNotes);
+    if (source.installationNotes) setInstallationNotes(source.installationNotes);
+    showToast(`Copied items & configuration from Quotation #${source.quotationNumber}!`);
   };
 
-  // Save Current Header/Footer as Global Default in Admin Settings
-  const handleSaveImagesAsGlobalDefault = () => {
-    updateAdminSettings({
-      quotationHeaderImageUrl: quotationHeaderImg,
-      quotationFooterImageUrl: quotationFooterImg,
-    });
-    showToast('Header and Footer saved as global quotation defaults in Admin Settings!');
-  };
+  // Copy any Model into another Model (e.g. Model 1 into Model 2, Model 1 into Model 3, etc.)
+  const handleCopyModel = (fromKey: ModelKey, toKey: ModelKey) => {
+    const from = getModelData(fromKey);
+    const to = getModelData(toKey);
 
-  // Copy Model 1 to Model 2
-  const handleCopyModel1ToModel2 = () => {
-    setModel2Name(`${model1Name} (Copy)`);
-    setModel2Items(JSON.parse(JSON.stringify(model1Items)));
-    setModel2Charges({ ...model1Charges });
-    showToast('Model 1 items and internal charges copied to Model 2 successfully!');
+    to.setName(`${from.name} (Copy)`);
+    to.setItems(JSON.parse(JSON.stringify(from.items)));
+    to.setCharges({ ...from.charges });
+    showToast(`Copied ${fromKey.toUpperCase()} items & charges into ${toKey.toUpperCase()} successfully!`);
   };
 
   // Add Item to a Model
-  const handleAddItemToModel = (model: 'model1' | 'model2', item: QuotationItem) => {
-    if (model === 'model1') {
-      setModel1Items(prev => [...prev, item]);
-    } else {
-      setModel2Items(prev => [...prev, item]);
-    }
+  const handleAddItemToModel = (modelKey: ModelKey, item: QuotationItem) => {
+    const m = getModelData(modelKey);
+    m.setItems(prev => [...prev, item]);
   };
 
   // Add Product from Catalogue
@@ -448,11 +493,11 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
 
     handleAddItemToModel(pickerTargetModel, newItem);
     setIsProductPickerOpen(false);
-    showToast(`Added "${prod.name}" to ${pickerTargetModel === 'model1' ? 'Model 1' : 'Model 2'}`);
+    showToast(`Added "${prod.name}" to ${pickerTargetModel.toUpperCase()}`);
   };
 
   // Add Manual Custom Item Row
-  const handleAddCustomRow = (model: 'model1' | 'model2', isService = false) => {
+  const handleAddCustomRow = (modelKey: ModelKey, isService = false) => {
     const newItem: QuotationItem = {
       id: `qit-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       description: isService ? 'Installation & Onsite Configuration' : 'Custom Equipment',
@@ -463,18 +508,18 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
       itemTotal: isService ? 0 : 500,
       isService,
     };
-    handleAddItemToModel(model, newItem);
+    handleAddItemToModel(modelKey, newItem);
   };
 
-  // Update item field in Model 1 or Model 2
+  // Update item field in any Model
   const handleUpdateItem = (
-    model: 'model1' | 'model2',
+    modelKey: ModelKey,
     index: number,
     field: keyof QuotationItem,
     value: any
   ) => {
-    const setter = model === 'model1' ? setModel1Items : setModel2Items;
-    setter(prev => {
+    const m = getModelData(modelKey);
+    m.setItems(prev => {
       const updated = [...prev];
       const it = { ...updated[index] };
 
@@ -487,7 +532,6 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
         it.unitPrice = price;
         it.itemTotal = round2((it.quantity || 1) * price);
 
-        // Update latest quotation price in catalogue if linked to catalogue product
         if (it.productId) {
           updateProductLatestPrice(it.productId, price);
         }
@@ -509,9 +553,9 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
     });
   };
 
-  const handleRemoveItem = (model: 'model1' | 'model2', index: number) => {
-    const setter = model === 'model1' ? setModel1Items : setModel2Items;
-    setter(prev => prev.filter((_, i) => i !== index));
+  const handleRemoveItem = (modelKey: ModelKey, index: number) => {
+    const m = getModelData(modelKey);
+    m.setItems(prev => prev.filter((_, i) => i !== index));
   };
 
   // Save Quotation (Draft or Complete)
@@ -534,18 +578,47 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
       finalModelTotal: model1Calc.finalModelTotal,
     };
 
-    const model2: QuotationProposalModel = {
+    const model2: QuotationProposalModel | undefined = activeModelsCount >= 2 ? {
       name: model2Name.trim() || 'Model 2',
       items: model2Items,
       internalCharges: model2Charges,
       totalItemRate: model2Calc.totalItemRate,
       totalDisplayAmount: model2Calc.totalDisplayAmount,
       finalModelTotal: model2Calc.finalModelTotal,
-    };
+    } : undefined;
+
+    const model3: QuotationProposalModel | undefined = activeModelsCount >= 3 ? {
+      name: model3Name.trim() || 'Model 3',
+      items: model3Items,
+      internalCharges: model3Charges,
+      totalItemRate: model3Calc.totalItemRate,
+      totalDisplayAmount: model3Calc.totalDisplayAmount,
+      finalModelTotal: model3Calc.finalModelTotal,
+    } : undefined;
+
+    const model4: QuotationProposalModel | undefined = activeModelsCount >= 4 ? {
+      name: model4Name.trim() || 'Model 4',
+      items: model4Items,
+      internalCharges: model4Charges,
+      totalItemRate: model4Calc.totalItemRate,
+      totalDisplayAmount: model4Calc.totalDisplayAmount,
+      finalModelTotal: model4Calc.finalModelTotal,
+    } : undefined;
+
+    const model5: QuotationProposalModel | undefined = activeModelsCount >= 5 ? {
+      name: model5Name.trim() || 'Model 5',
+      items: model5Items,
+      internalCharges: model5Charges,
+      totalItemRate: model5Calc.totalItemRate,
+      totalDisplayAmount: model5Calc.totalDisplayAmount,
+      finalModelTotal: model5Calc.finalModelTotal,
+    } : undefined;
 
     if (editingQuotationId) {
       // Editing existing quotation creates an immutable new version snapshot!
       updateManualQuotation(editingQuotationId, {
+        title: quotationTitle.trim() || undefined,
+        activeModelsCount,
         customerId: selectedCustomerId || undefined,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
@@ -557,20 +630,23 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
         validUntil: validUntilStr,
         model1,
         model2,
+        model3,
+        model4,
+        model5,
         status: targetStatus || 'Draft',
         termsAndConditions,
         paymentDetails: paymentDetails.trim() || undefined,
         advanceAmount: advanceAmount ? Number(advanceAmount) : undefined,
         customerNotes: customerNotes.trim() || undefined,
         installationNotes: installationNotes.trim() || undefined,
-        headerImageUrl: quotationHeaderImg.trim() || undefined,
-        footerImageUrl: quotationFooterImg.trim() || undefined,
       }, `Saved changes to quotation`);
 
       const updated = quotations.find(q => q.id === editingQuotationId);
       if (updated && openPdf) {
         setPdfPreviewQuotation({
           ...updated,
+          title: quotationTitle.trim() || undefined,
+          activeModelsCount,
           customerName: customerName.trim(),
           customerPhone: customerPhone.trim(),
           customerAddress: customerAddress.trim(),
@@ -579,20 +655,23 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
           validUntil: validUntilStr,
           model1,
           model2,
+          model3,
+          model4,
+          model5,
           termsAndConditions,
           paymentDetails,
           advanceAmount,
           customerNotes,
           installationNotes,
-          headerImageUrl: quotationHeaderImg.trim() || undefined,
-          footerImageUrl: quotationFooterImg.trim() || undefined,
         });
       }
 
-      showToast(`Quotation #${updated?.quotationNumber || editingQuotationId} updated (New Version created)!`);
+      showToast(`Quotation #${updated?.quotationNumber || editingQuotationId} updated!`);
     } else {
       // New quotation
       const created = addManualQuotation({
+        title: quotationTitle.trim() || undefined,
+        activeModelsCount,
         customerId: selectedCustomerId || undefined,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
@@ -604,6 +683,9 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
         validUntil: validUntilStr,
         model1,
         model2,
+        model3,
+        model4,
+        model5,
         status: targetStatus || 'Draft',
         selectedModel: 'Not Decided',
         termsAndConditions,
@@ -611,8 +693,6 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
         advanceAmount: advanceAmount ? Number(advanceAmount) : undefined,
         customerNotes: customerNotes.trim() || undefined,
         installationNotes: installationNotes.trim() || undefined,
-        headerImageUrl: quotationHeaderImg.trim() || undefined,
-        footerImageUrl: quotationFooterImg.trim() || undefined,
       });
 
       if (openPdf) {
@@ -627,21 +707,31 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
 
   // WhatsApp Share Message Generator
   const generateWhatsAppMessage = (q: ManualQuotation) => {
+    const modelsList: QuotationProposalModel[] = [
+      q.model1,
+      q.model2,
+      q.model3,
+      q.model4,
+      q.model5
+    ].filter(Boolean) as QuotationProposalModel[];
+
+    const activeList = modelsList.slice(0, q.activeModelsCount || (q.model2 ? 2 : 1));
+
+    const modelSummaries = activeList.map((m, idx) => {
+      return `*OPTION ${idx + 1}: ${m.name}*
+• Equipment Packages: ${m.items?.length || 0} items
+• Total Proposal Amount: *₹${(m.finalModelTotal || 0).toLocaleString('en-IN')}*`;
+    }).join('\n\n');
+
     return `*SPIDER GRID SOLUTIONS (SGS)*
-*Quotation Ref: ${q.quotationNumber}*
-📅 Date: ${q.date} (Valid for ${q.validityDays || 7} Days)
+*QUOTATION REF: ${q.quotationNumber}*
+${q.title ? `📌 *Subject: ${q.title}*\n` : ''}📅 Date: ${q.date} (Valid for ${q.validityDays || 7} Days)
 
 Dear *${q.customerName}*,
-Thank you for your enquiry with Spider Grid Solutions - Madurai. We have prepared two tailored CCTV / Security proposals for your premises:
+Thank you for your enquiry with Spider Grid Solutions - Madurai. We have prepared comparative proposal options for your premises:
 
 ━━━━━━━━━━━━━━━━━━━━━
-*OPTION 1: ${q.model1.name}*
-• Equipment Packages: ${q.model1.items.length} items
-• Total Proposal Amount: *₹${q.model1.finalModelTotal.toLocaleString('en-IN')}*
-
-*OPTION 2: ${q.model2.name}*
-• Equipment Packages: ${q.model2.items.length} items
-• Total Proposal Amount: *₹${q.model2.finalModelTotal.toLocaleString('en-IN')}*
+${modelSummaries}
 ━━━━━━━━━━━━━━━━━━━━━
 
 *Proposal Terms:*
@@ -649,7 +739,7 @@ Thank you for your enquiry with Spider Grid Solutions - Madurai. We have prepare
 • Standard installation included.
 • Free 30-day onsite service support from handover.
 
-Please review both options and let us know your preferred configuration!
+Please review the proposal options and let us know your preferred configuration!
 📞 Contact: ${adminSettings.workshopPhone || '+91 9176795665'} | Madurai`;
   };
 
@@ -1578,7 +1668,7 @@ Please review both options and let us know your preferred configuration!
                           .filter(q => q.id !== editingQuotationId)
                           .map(q => (
                             <option key={q.id} value={q.id}>
-                              #{q.quotationNumber} · {q.customerName} ({q.date}) · Option 1: ₹{q.model1.finalModelTotal.toLocaleString('en-IN')} | Option 2: ₹{q.model2.finalModelTotal.toLocaleString('en-IN')}
+                              #{q.quotationNumber} · {q.customerName} ({q.date}) {q.title ? `[${q.title}] ` : ''}· Model 1: ₹{(q.model1?.finalModelTotal || 0).toLocaleString('en-IN')}{q.model2 ? ` | Model 2: ₹${(q.model2.finalModelTotal || 0).toLocaleString('en-IN')}` : ''}
                             </option>
                           ))}
                       </select>
@@ -1695,172 +1785,114 @@ Please review both options and let us know your preferred configuration!
                   </div>
                 </div>
 
-                {/* Custom Header & Footer Image Banners (User Request 3) */}
-                <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                      <ImageIcon className="w-3.5 h-3.5 text-blue-500" /> Custom Header &amp; Footer Image Banners (A4 Letterhead)
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleSaveImagesAsGlobalDefault}
-                      className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 cursor-pointer flex items-center gap-1"
-                      title="Save these uploaded header and footer images as default for all future quotations"
-                    >
-                      <Check className="w-3 h-3" /> Save As Settings Default
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {/* Header Image */}
-                    <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                          Top Header Banner Image
-                        </label>
-                        {quotationHeaderImg && (
-                          <button
-                            type="button"
-                            onClick={() => setQuotationHeaderImg('')}
-                            className="text-[10px] text-rose-500 hover:underline cursor-pointer"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                      
-                      {quotationHeaderImg ? (
-                        <div className="border rounded-lg p-1 bg-slate-50 dark:bg-slate-950 flex justify-center items-center h-20 overflow-hidden">
-                          <img src={quotationHeaderImg} alt="Header Preview" className="max-h-full max-w-full object-contain" />
-                        </div>
-                      ) : (
-                        <div className="border border-dashed rounded-lg p-2 text-center text-[10px] text-slate-400">
-                          Using default SGS Letterhead Header with Logo &amp; GSTIN
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-2">
-                        <label className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 cursor-pointer hover:bg-blue-100">
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>Upload Header</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleImageUpload(e, 'header')}
-                            className="hidden"
-                          />
-                        </label>
-                        <input
-                          type="text"
-                          value={quotationHeaderImg}
-                          onChange={(e) => setQuotationHeaderImg(e.target.value)}
-                          placeholder="or paste Image URL"
-                          className={`flex-1 text-[11px] px-2 py-1 rounded-lg border outline-none ${
-                            isDark ? 'bg-slate-950 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
-                          }`}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Footer Image */}
-                    <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                          Bottom Footer Banner Image
-                        </label>
-                        {quotationFooterImg && (
-                          <button
-                            type="button"
-                            onClick={() => setQuotationFooterImg('')}
-                            className="text-[10px] text-rose-500 hover:underline cursor-pointer"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </div>
-
-                      {quotationFooterImg ? (
-                        <div className="border rounded-lg p-1 bg-slate-50 dark:bg-slate-950 flex justify-center items-center h-20 overflow-hidden">
-                          <img src={quotationFooterImg} alt="Footer Preview" className="max-h-full max-w-full object-contain" />
-                        </div>
-                      ) : (
-                        <div className="border border-dashed rounded-lg p-2 text-center text-[10px] text-slate-400">
-                          Using default SGS Letterhead Footer with Bank Details &amp; Address
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-2">
-                        <label className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 cursor-pointer hover:bg-blue-100">
-                          <Upload className="w-3.5 h-3.5" />
-                          <span>Upload Footer</span>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleImageUpload(e, 'footer')}
-                            className="hidden"
-                          />
-                        </label>
-                        <input
-                          type="text"
-                          value={quotationFooterImg}
-                          onChange={(e) => setQuotationFooterImg(e.target.value)}
-                          placeholder="or paste Image URL"
-                          className={`flex-1 text-[11px] px-2 py-1 rounded-lg border outline-none ${
-                            isDark ? 'bg-slate-950 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-900'
-                          }`}
-                        />
-                      </div>
-                    </div>
-                  </div>
+                {/* Manual Quotation Title / Subject */}
+                <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800">
+                  <label className={`block text-xs font-bold uppercase tracking-wider mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Quotation Title / Subject
+                  </label>
+                  <input
+                    type="text"
+                    value={quotationTitle}
+                    onChange={(e) => setQuotationTitle(e.target.value)}
+                    placeholder="e.g. CCTV Surveillance System Proposal / Computer Networking Specification"
+                    className={`w-full rounded-xl px-3 py-2 text-xs font-medium focus:outline-none ${
+                      isDark ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-300 text-slate-900'
+                    }`}
+                  />
+                  <p className={`text-[10px] mt-1 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                    A4 letterhead header and footer banners are managed in Admin Settings and automatically apply to this quotation.
+                  </p>
                 </div>
               </div>
 
-              {/* 2. Model 1 vs Model 2 Workspace Navigation */}
+              {/* 2. Dynamic Models Workspace (Model 1, 2, 3, 4, 5) */}
               <div className="space-y-4">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b pb-2">
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setActiveModelTab('model1')}
-                      className={`px-4 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-2 ${
-                        activeModelTab === 'model1'
-                          ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25 ring-2 ring-blue-500'
-                          : isDark ? 'bg-slate-800 text-slate-300 hover:text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
-                    >
-                      <span>Model 1</span>
-                      <span className="font-mono text-[11px] px-1.5 py-0.2 rounded bg-black/30 text-white">
-                        ₹{model1Calc.finalModelTotal.toLocaleString('en-IN')}
-                      </span>
-                    </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {Array.from({ length: activeModelsCount }).map((_, idx) => {
+                      const key = `model${idx + 1}` as ModelKey;
+                      const m = getModelData(key);
+                      const isActive = activeModelTab === key;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setActiveModelTab(key)}
+                          className={`px-3.5 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-2 ${
+                            isActive
+                              ? 'bg-blue-600 text-white shadow-md shadow-blue-500/25 ring-2 ring-blue-500'
+                              : isDark ? 'bg-slate-800 text-slate-300 hover:text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          <span>{m.name || `Model ${idx + 1}`}</span>
+                          <span className="font-mono text-[11px] px-1.5 py-0.2 rounded bg-black/30 text-white">
+                            ₹{m.calc.finalModelTotal.toLocaleString('en-IN')}
+                          </span>
+                        </button>
+                      );
+                    })}
 
-                    <button
-                      type="button"
-                      onClick={() => setActiveModelTab('model2')}
-                      className={`px-4 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-2 ${
-                        activeModelTab === 'model2'
-                          ? 'bg-purple-600 text-white shadow-md shadow-purple-500/25 ring-2 ring-purple-500'
-                          : isDark ? 'bg-slate-800 text-slate-300 hover:text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
-                    >
-                      <span>Model 2</span>
-                      <span className="font-mono text-[11px] px-1.5 py-0.2 rounded bg-black/30 text-white">
-                        ₹{model2Calc.finalModelTotal.toLocaleString('en-IN')}
-                      </span>
-                    </button>
+                    {/* Add Model Button (up to 5 models) */}
+                    {activeModelsCount < 5 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = activeModelsCount + 1;
+                          setActiveModelsCount(next);
+                          setActiveModelTab(`model${next}` as ModelKey);
+                          showToast(`Activated Model ${next} option!`);
+                        }}
+                        className="px-3 py-1.5 text-xs font-bold rounded-xl border border-dashed border-blue-400 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/40 cursor-pointer flex items-center gap-1"
+                        title="Add another model option (Model 1 to 5)"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add Model {activeModelsCount + 1}</span>
+                      </button>
+                    )}
+
+                    {/* Remove highest Model button if > 1 */}
+                    {activeModelsCount > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = activeModelsCount - 1;
+                          setActiveModelsCount(next);
+                          if (activeModelTab === `model${activeModelsCount}`) {
+                            setActiveModelTab(`model${next}` as ModelKey);
+                          }
+                          showToast(`Model ${activeModelsCount} removed.`);
+                        }}
+                        className="px-2 py-1 text-[11px] font-semibold text-rose-500 hover:underline cursor-pointer"
+                        title={`Remove Model ${activeModelsCount}`}
+                      >
+                        Remove Model {activeModelsCount}
+                      </button>
+                    )}
                   </div>
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleCopyModel1ToModel2}
-                      className="px-3 py-1.5 text-xs font-bold rounded-xl bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800 transition-colors cursor-pointer flex items-center gap-1.5"
-                      title="Copy all items, prices, and internal charges from Model 1 into Model 2"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      <span>Copy Model 1 → Model 2</span>
-                    </button>
+                  {/* Actions for current active model */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Copy From Another Model */}
+                    {activeModelsCount > 1 && (
+                      <div className="flex items-center gap-1 text-xs">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Copy From:</span>
+                        {Array.from({ length: activeModelsCount }).map((_, idx) => {
+                          const srcKey = `model${idx + 1}` as ModelKey;
+                          if (srcKey === activeModelTab) return null;
+                          return (
+                            <button
+                              key={srcKey}
+                              type="button"
+                              onClick={() => handleCopyModel(srcKey, activeModelTab)}
+                              className="px-2 py-1 text-[11px] font-bold rounded-lg bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800 transition-colors cursor-pointer"
+                              title={`Copy items & charges from Model ${idx + 1} into ${activeModelTab.toUpperCase()}`}
+                            >
+                              Model {idx + 1}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
 
                     <button
                       type="button"
@@ -1897,19 +1929,16 @@ Please review both options and let us know your preferred configuration!
                   </div>
                 </div>
 
-                {/* Active Model Title */}
+                {/* Active Model Package Title */}
                 <div>
                   <label className={`block text-[11px] font-semibold mb-1 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                    {activeModelTab === 'model1' ? 'Model 1 Package Title' : 'Model 2 Package Title'}
+                    {getModelData(activeModelTab).name} Package Title
                   </label>
                   <input
                     type="text"
-                    value={activeModelTab === 'model1' ? model1Name : model2Name}
-                    onChange={(e) => {
-                      if (activeModelTab === 'model1') setModel1Name(e.target.value);
-                      else setModel2Name(e.target.value);
-                    }}
-                    placeholder="e.g. Model 1: 4CH DVR + 2MP Camera Package"
+                    value={getModelData(activeModelTab).name}
+                    onChange={(e) => getModelData(activeModelTab).setName(e.target.value)}
+                    placeholder={`e.g. ${activeModelTab.toUpperCase()} Package Title`}
                     className={`w-full rounded-xl px-3 py-2 text-xs font-bold focus:outline-none ${
                       isDark ? 'bg-slate-950 border border-slate-800 text-white' : 'bg-slate-50 border border-slate-200 text-slate-900'
                     }`}
@@ -1937,10 +1966,10 @@ Please review both options and let us know your preferred configuration!
                       </tr>
                     </thead>
                     <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-100'}`}>
-                      {(activeModelTab === 'model1' ? model1Items : model2Items).length === 0 ? (
+                      {getModelData(activeModelTab).items.length === 0 ? (
                         <tr>
                           <td colSpan={8} className="py-8 text-center text-slate-400">
-                            No equipment items in {activeModelTab === 'model1' ? 'Model 1' : 'Model 2'} yet.
+                            No equipment items in {getModelData(activeModelTab).name} yet.
                             <br />
                             <span className="text-[11px] text-blue-500 font-semibold cursor-pointer" onClick={() => {
                               setPickerTargetModel(activeModelTab);
@@ -1951,7 +1980,7 @@ Please review both options and let us know your preferred configuration!
                           </td>
                         </tr>
                       ) : (
-                        (activeModelTab === 'model1' ? model1Items : model2Items).map((it, idx) => (
+                        getModelData(activeModelTab).items.map((it, idx) => (
                           <tr key={it.id || idx} className={isDark ? 'hover:bg-slate-900/60' : 'hover:bg-slate-50'}>
                             
                             {/* Description */}
@@ -1966,7 +1995,7 @@ Please review both options and let us know your preferred configuration!
                               />
                             </td>
 
-                            {/* Brand (Custom entry allowed) */}
+                            {/* Brand */}
                             <td className="py-2 px-2">
                               <input
                                 type="text"
@@ -2006,12 +2035,12 @@ Please review both options and let us know your preferred configuration!
                               />
                             </td>
 
-                            {/* Unit (Nos only) */}
+                            {/* Unit (Nos) */}
                             <td className="py-2 px-2 text-center font-mono text-slate-400 font-semibold">
                               Nos
                             </td>
 
-                            {/* Unit Price (Manual Entry, remembered into catalogue) */}
+                            {/* Unit Price */}
                             <td className="py-2 px-2 text-right">
                               <input
                                 type="number"
@@ -2049,7 +2078,7 @@ Please review both options and let us know your preferred configuration!
                 </div>
               </div>
 
-                {/* 3. Internal Calculation Section (Requirement 8 - INTERNAL CRM ONLY) */}
+                {/* 3. Internal Calculation Section (Hidden on Customer Proposal) */}
                 <div className={`p-4 rounded-xl border space-y-4 ${
                   isDark ? 'bg-amber-950/20 border-amber-800/40' : 'bg-amber-50/60 border-amber-200'
                 }`}>
@@ -2057,15 +2086,15 @@ Please review both options and let us know your preferred configuration!
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
                         <ShieldCheck className="w-4 h-4 text-amber-600" />
-                        Internal CRM Calculation & Margin Section ({activeModelTab === 'model1' ? 'Model 1' : 'Model 2'})
+                        Internal CRM Calculation &amp; Margin ({getModelData(activeModelTab).name})
                       </span>
                       <span className="text-[10px] px-2 py-0.5 rounded font-bold bg-amber-200 text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">
-                        HIDDEN FROM CUSTOMER PDF
+                        HIDDEN FROM CUSTOMER PROPOSAL
                       </span>
                     </div>
 
                     <span className="text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
-                      Total Item Rate: ₹{(activeModelTab === 'model1' ? model1Calc.totalItemRate : model2Calc.totalItemRate).toLocaleString('en-IN')}
+                      Total Item Rate: ₹{getModelData(activeModelTab).calc.totalItemRate.toLocaleString('en-IN')}
                     </span>
                   </div>
 
@@ -2079,11 +2108,10 @@ Please review both options and let us know your preferred configuration!
                       <input
                         type="number"
                         min="0"
-                        value={activeModelTab === 'model1' ? model1Charges.installation : model2Charges.installation}
+                        value={getModelData(activeModelTab).charges.installation}
                         onChange={(e) => {
                           const val = Math.max(0, Number(e.target.value) || 0);
-                          if (activeModelTab === 'model1') setModel1Charges(prev => ({ ...prev, installation: val }));
-                          else setModel2Charges(prev => ({ ...prev, installation: val }));
+                          getModelData(activeModelTab).setCharges(prev => ({ ...prev, installation: val }));
                         }}
                         className={`w-full rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold focus:outline-none ${
                           isDark ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-300 text-slate-900'
@@ -2099,11 +2127,10 @@ Please review both options and let us know your preferred configuration!
                       <input
                         type="number"
                         min="0"
-                        value={activeModelTab === 'model1' ? model1Charges.helperFees : model2Charges.helperFees}
+                        value={getModelData(activeModelTab).charges.helperFees}
                         onChange={(e) => {
                           const val = Math.max(0, Number(e.target.value) || 0);
-                          if (activeModelTab === 'model1') setModel1Charges(prev => ({ ...prev, helperFees: val }));
-                          else setModel2Charges(prev => ({ ...prev, helperFees: val }));
+                          getModelData(activeModelTab).setCharges(prev => ({ ...prev, helperFees: val }));
                         }}
                         className={`w-full rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold focus:outline-none ${
                           isDark ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-300 text-slate-900'
@@ -2119,11 +2146,10 @@ Please review both options and let us know your preferred configuration!
                       <input
                         type="number"
                         min="0"
-                        value={activeModelTab === 'model1' ? model1Charges.commission : model2Charges.commission}
+                        value={getModelData(activeModelTab).charges.commission}
                         onChange={(e) => {
                           const val = Math.max(0, Number(e.target.value) || 0);
-                          if (activeModelTab === 'model1') setModel1Charges(prev => ({ ...prev, commission: val }));
-                          else setModel2Charges(prev => ({ ...prev, commission: val }));
+                          getModelData(activeModelTab).setCharges(prev => ({ ...prev, commission: val }));
                         }}
                         className={`w-full rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold focus:outline-none ${
                           isDark ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-300 text-slate-900'
@@ -2139,11 +2165,10 @@ Please review both options and let us know your preferred configuration!
                       <input
                         type="number"
                         min="0"
-                        value={activeModelTab === 'model1' ? model1Charges.margin : model2Charges.margin}
+                        value={getModelData(activeModelTab).charges.margin}
                         onChange={(e) => {
                           const val = Math.max(0, Number(e.target.value) || 0);
-                          if (activeModelTab === 'model1') setModel1Charges(prev => ({ ...prev, margin: val }));
-                          else setModel2Charges(prev => ({ ...prev, margin: val }));
+                          getModelData(activeModelTab).setCharges(prev => ({ ...prev, margin: val }));
                         }}
                         className={`w-full rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold focus:outline-none ${
                           isDark ? 'bg-slate-900 border border-slate-700 text-emerald-400' : 'bg-white border border-slate-300 text-emerald-700'
@@ -2159,11 +2184,10 @@ Please review both options and let us know your preferred configuration!
                       <input
                         type="number"
                         min="0"
-                        value={activeModelTab === 'model1' ? model1Charges.petrolVisit : model2Charges.petrolVisit}
+                        value={getModelData(activeModelTab).charges.petrolVisit}
                         onChange={(e) => {
                           const val = Math.max(0, Number(e.target.value) || 0);
-                          if (activeModelTab === 'model1') setModel1Charges(prev => ({ ...prev, petrolVisit: val }));
-                          else setModel2Charges(prev => ({ ...prev, petrolVisit: val }));
+                          getModelData(activeModelTab).setCharges(prev => ({ ...prev, petrolVisit: val }));
                         }}
                         className={`w-full rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold focus:outline-none ${
                           isDark ? 'bg-slate-900 border border-slate-700 text-white' : 'bg-white border border-slate-300 text-slate-900'
@@ -2179,11 +2203,10 @@ Please review both options and let us know your preferred configuration!
                       <input
                         type="number"
                         min="0"
-                        value={activeModelTab === 'model1' ? model1Charges.customerReduction : model2Charges.customerReduction}
+                        value={getModelData(activeModelTab).charges.customerReduction}
                         onChange={(e) => {
                           const val = Math.max(0, Number(e.target.value) || 0);
-                          if (activeModelTab === 'model1') setModel1Charges(prev => ({ ...prev, customerReduction: val }));
-                          else setModel2Charges(prev => ({ ...prev, customerReduction: val }));
+                          getModelData(activeModelTab).setCharges(prev => ({ ...prev, customerReduction: val }));
                         }}
                         placeholder="Negotiation discount"
                         className={`w-full rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold focus:outline-none ${
@@ -2199,21 +2222,21 @@ Please review both options and let us know your preferred configuration!
                     <div>
                       <span className="text-slate-500 text-[11px]">Total Item Rate:</span>
                       <p className="font-mono font-bold text-sm">
-                        ₹{(activeModelTab === 'model1' ? model1Calc.totalItemRate : model2Calc.totalItemRate).toLocaleString('en-IN')}
+                        ₹{getModelData(activeModelTab).calc.totalItemRate.toLocaleString('en-IN')}
                       </p>
                     </div>
 
                     <div>
-                      <span className="text-slate-500 text-[11px]">Margin & Internal Charges:</span>
+                      <span className="text-slate-500 text-[11px]">Margin &amp; Internal Charges:</span>
                       <p className="font-mono font-bold text-sm text-amber-700 dark:text-amber-400">
-                        +₹{(activeModelTab === 'model1' ? model1Calc.internalSum : model2Calc.internalSum).toLocaleString('en-IN')}
+                        +₹{getModelData(activeModelTab).calc.internalSum.toLocaleString('en-IN')}
                       </p>
                     </div>
 
                     <div>
                       <span className="text-slate-500 text-[11px]">Customer Reduction:</span>
                       <p className="font-mono font-bold text-sm text-rose-600">
-                        -₹{(activeModelTab === 'model1' ? model1Charges.customerReduction : model2Charges.customerReduction).toLocaleString('en-IN')}
+                        -₹{getModelData(activeModelTab).charges.customerReduction.toLocaleString('en-IN')}
                       </p>
                     </div>
 
@@ -2222,7 +2245,7 @@ Please review both options and let us know your preferred configuration!
                         Final Model Total (Customer Price)
                       </span>
                       <span className="text-lg font-black font-mono block">
-                        ₹{(activeModelTab === 'model1' ? model1Calc.finalModelTotal : model2Calc.finalModelTotal).toLocaleString('en-IN')}
+                        ₹{getModelData(activeModelTab).calc.finalModelTotal.toLocaleString('en-IN')}
                       </span>
                     </div>
                   </div>
@@ -2543,15 +2566,21 @@ Please review both options and let us know your preferred configuration!
                     {/* Content Area with dynamic top/bottom padding depending on custom header/footer */}
                     <div className={`${previewHeaderImg ? 'pt-5' : 'pt-40'} ${previewFooterImg ? 'pb-5' : 'pb-24'} px-10 space-y-6 flex-1 flex flex-col`}>
                   
-                  {/* Proposal Document Header Banner */}
+                  {/* Proposal Document Header Banner (Requirement 5: QUOTATION only) */}
                   <div className="flex items-center justify-between border-b pb-3 border-slate-300">
                     <div>
                       <div className="inline-block px-3 py-1 text-xs font-black uppercase tracking-wider rounded bg-blue-900 text-white shadow-xs">
-                        OFFICIAL COMMERCIAL PROPOSAL / QUOTATION
+                        QUOTATION
                       </div>
-                      <p className="text-[11px] text-slate-500 font-medium mt-1">
-                        CCTV Security &amp; Surveillance Systems Specification
-                      </p>
+                      {pdfPreviewQuotation.title ? (
+                        <p className="text-xs text-slate-800 font-bold mt-1">
+                          {pdfPreviewQuotation.title}
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-slate-500 font-medium mt-1">
+                          Spider Grid Solutions · Commercial Proposal
+                        </p>
+                      )}
                     </div>
 
                     <div className="text-right text-xs">
@@ -2585,109 +2614,88 @@ Please review both options and let us know your preferred configuration!
                     </div>
                   </div>
 
-                  {/* Comparative Two-Model Table */}
+                  {/* Dynamic Models Display (Models 1 to 5) */}
                   <div className="space-y-4 flex-1">
-                    
-                    {/* Model 1 Section */}
-                    <div className="border border-slate-300 rounded-lg overflow-hidden bg-white/95 shadow-2xs">
-                      <div className="bg-slate-900 text-white px-4 py-2 flex items-center justify-between">
-                        <span className="text-xs font-black uppercase tracking-wider">
-                          OPTION 1: {pdfPreviewQuotation.model1.name}
-                        </span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-600 text-white">
-                          Proposed Configuration
-                        </span>
-                      </div>
+                    {(() => {
+                      const allModels: (QuotationProposalModel | undefined)[] = [
+                        pdfPreviewQuotation.model1,
+                        pdfPreviewQuotation.model2,
+                        pdfPreviewQuotation.model3,
+                        pdfPreviewQuotation.model4,
+                        pdfPreviewQuotation.model5,
+                      ];
+                      const activeCount = pdfPreviewQuotation.activeModelsCount || (pdfPreviewQuotation.model2 ? 2 : 1);
+                      const displayList = allModels.slice(0, activeCount).filter(Boolean) as QuotationProposalModel[];
 
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-100 border-b border-slate-200 text-[10px] font-bold uppercase text-slate-700">
-                          <tr>
-                            <th className="py-2 px-3 w-10 text-center">#</th>
-                            <th className="py-2 px-3">Equipment / Service Description</th>
-                            <th className="py-2 px-3 text-center w-24">Qty / Unit</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-xs">
-                          {pdfPreviewQuotation.model1.items.map((it, idx) => (
-                            <tr key={idx}>
-                              <td className="py-2 px-3 text-center text-slate-400 font-mono">{idx + 1}</td>
-                              <td className="py-2 px-3 font-semibold text-slate-800">
-                                {it.description}
-                                {it.warranty && (
-                                  <span className="text-[10px] font-normal text-slate-500 block">
-                                    Warranty: {it.warranty}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="py-2 px-3 text-center font-mono font-bold text-slate-700">
-                                {String(it.quantity).padStart(2, '0')} {it.unit || 'Nos'}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      const headerColors = [
+                        'bg-slate-900',
+                        'bg-indigo-950',
+                        'bg-purple-950',
+                        'bg-teal-950',
+                        'bg-blue-950'
+                      ];
 
-                      {/* Model 1 Total Amount (Hides all individual prices & internal calculations!) */}
-                      <div className="bg-blue-50/90 border-t border-blue-200 px-4 py-2.5 flex items-center justify-between">
-                        <span className="text-xs font-black uppercase tracking-wider text-blue-900">
-                          {pdfPreviewQuotation.model1.name} — Total Proposal Amount:
-                        </span>
-                        <span className="text-base font-black font-mono text-blue-900">
-                          ₹{pdfPreviewQuotation.model1.finalModelTotal.toLocaleString('en-IN')}
-                        </span>
-                      </div>
-                    </div>
+                      return displayList.map((model, idx) => (
+                        <div key={idx} className="border border-slate-300 rounded-lg overflow-hidden bg-white/95 shadow-2xs">
+                          <div className={`${headerColors[idx % headerColors.length]} text-white px-4 py-2 flex items-center justify-between`}>
+                            <span className="text-xs font-black uppercase tracking-wider">
+                              {model.name}
+                            </span>
+                            {displayList.length > 1 && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-600 text-white">
+                                Option {idx + 1}
+                              </span>
+                            )}
+                          </div>
 
-                    {/* Model 2 Section */}
-                    <div className="border border-slate-300 rounded-lg overflow-hidden bg-white/95 shadow-2xs">
-                      <div className="bg-purple-950 text-white px-4 py-2 flex items-center justify-between">
-                        <span className="text-xs font-black uppercase tracking-wider">
-                          OPTION 2: {pdfPreviewQuotation.model2.name}
-                        </span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-600 text-white">
-                          Alternative High-Performance Configuration
-                        </span>
-                      </div>
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-100 border-b border-slate-200 text-[10px] font-bold uppercase text-slate-700">
+                              <tr>
+                                <th className="py-2 px-3 w-10 text-center">#</th>
+                                <th className="py-2 px-3">Equipment / Service Description</th>
+                                <th className="py-2 px-3 text-center w-24">Qty / Unit</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-xs">
+                              {model.items && model.items.length > 0 ? (
+                                model.items.map((it, itIdx) => (
+                                  <tr key={itIdx}>
+                                    <td className="py-2 px-3 text-center text-slate-400 font-mono">{itIdx + 1}</td>
+                                    <td className="py-2 px-3 font-semibold text-slate-800">
+                                      {it.description}
+                                      {it.warranty && (
+                                        <span className="text-[10px] font-normal text-slate-500 block">
+                                          Warranty: {it.warranty}
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="py-2 px-3 text-center font-mono font-bold text-slate-700">
+                                      {String(it.quantity).padStart(2, '0')} {it.unit || 'Nos'}
+                                    </td>
+                                  </tr>
+                                ))
+                              ) : (
+                                <tr>
+                                  <td colSpan={3} className="py-4 text-center text-slate-400 text-xs">
+                                    No items listed for {model.name}
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
 
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-100 border-b border-slate-200 text-[10px] font-bold uppercase text-slate-700">
-                          <tr>
-                            <th className="py-2 px-3 w-10 text-center">#</th>
-                            <th className="py-2 px-3">Equipment / Service Description</th>
-                            <th className="py-2 px-3 text-center w-24">Qty / Unit</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 text-xs">
-                          {pdfPreviewQuotation.model2.items.map((it, idx) => (
-                            <tr key={idx}>
-                              <td className="py-2 px-3 text-center text-slate-400 font-mono">{idx + 1}</td>
-                              <td className="py-2 px-3 font-semibold text-slate-800">
-                                {it.description}
-                                {it.warranty && (
-                                  <span className="text-[10px] font-normal text-slate-500 block">
-                                    Warranty: {it.warranty}
-                                  </span>
-                                )}
-                              </td>
-                              <td className="py-2 px-3 text-center font-mono font-bold text-slate-700">
-                                {String(it.quantity).padStart(2, '0')} {it.unit || 'Nos'}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-
-                      {/* Model 2 Total Amount */}
-                      <div className="bg-purple-50/90 border-t border-purple-200 px-4 py-2.5 flex items-center justify-between">
-                        <span className="text-xs font-black uppercase tracking-wider text-purple-950">
-                          {pdfPreviewQuotation.model2.name} — Total Proposal Amount:
-                        </span>
-                        <span className="text-base font-black font-mono text-purple-900">
-                          ₹{pdfPreviewQuotation.model2.finalModelTotal.toLocaleString('en-IN')}
-                        </span>
-                      </div>
-                    </div>
-
+                          {/* Model Total Amount (Individual item prices & internal margins hidden) */}
+                          <div className="bg-blue-50/90 border-t border-blue-200 px-4 py-2.5 flex items-center justify-between">
+                            <span className="text-xs font-black uppercase tracking-wider text-blue-900">
+                              {model.name} — Total Proposal Amount:
+                            </span>
+                            <span className="text-base font-black font-mono text-blue-900">
+                              ₹{(model.finalModelTotal || 0).toLocaleString('en-IN')}
+                            </span>
+                          </div>
+                        </div>
+                      ));
+                    })()}
                   </div>
 
                   {/* Payment Terms & Advance Note (Only if filled) */}
@@ -2811,10 +2819,12 @@ Please review both options and let us know your preferred configuration!
                     <span className="text-slate-400">Model 1:</span>{' '}
                     <strong>₹{versionHistoryQuotation.model1.finalModelTotal.toLocaleString('en-IN')}</strong>
                   </div>
-                  <div>
-                    <span className="text-slate-400">Model 2:</span>{' '}
-                    <strong>₹{versionHistoryQuotation.model2.finalModelTotal.toLocaleString('en-IN')}</strong>
-                  </div>
+                  {versionHistoryQuotation.model2 && (
+                    <div>
+                      <span className="text-slate-400">Model 2:</span>{' '}
+                      <strong>₹{versionHistoryQuotation.model2.finalModelTotal.toLocaleString('en-IN')}</strong>
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -2948,9 +2958,22 @@ Please review both options and let us know your preferred configuration!
                   isDark ? 'bg-slate-950 border border-slate-800 text-blue-400' : 'bg-slate-50 border border-slate-300 text-blue-800'
                 }`}
               >
-                <option value="Not Decided">Not Decided (Evaluating Both Options)</option>
-                <option value="Model 1">Model 1: {statusModalQuotation.model1.name} (₹{statusModalQuotation.model1.finalModelTotal.toLocaleString('en-IN')})</option>
-                <option value="Model 2">Model 2: {statusModalQuotation.model2.name} (₹{statusModalQuotation.model2.finalModelTotal.toLocaleString('en-IN')})</option>
+                <option value="Not Decided">Not Decided (Evaluating Options)</option>
+                {statusModalQuotation.model1 && (
+                  <option value="Model 1">Model 1: {statusModalQuotation.model1.name} (₹{(statusModalQuotation.model1.finalModelTotal || 0).toLocaleString('en-IN')})</option>
+                )}
+                {statusModalQuotation.model2 && (
+                  <option value="Model 2">Model 2: {statusModalQuotation.model2.name} (₹{(statusModalQuotation.model2.finalModelTotal || 0).toLocaleString('en-IN')})</option>
+                )}
+                {statusModalQuotation.model3 && (
+                  <option value="Model 3">Model 3: {statusModalQuotation.model3.name} (₹{(statusModalQuotation.model3.finalModelTotal || 0).toLocaleString('en-IN')})</option>
+                )}
+                {statusModalQuotation.model4 && (
+                  <option value="Model 4">Model 4: {statusModalQuotation.model4.name} (₹{(statusModalQuotation.model4.finalModelTotal || 0).toLocaleString('en-IN')})</option>
+                )}
+                {statusModalQuotation.model5 && (
+                  <option value="Model 5">Model 5: {statusModalQuotation.model5.name} (₹{(statusModalQuotation.model5.finalModelTotal || 0).toLocaleString('en-IN')})</option>
+                )}
               </select>
             </div>
 

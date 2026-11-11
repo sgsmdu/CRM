@@ -831,7 +831,6 @@ export const WorkAllocationBoard: React.FC<WorkAllocationBoardProps> = ({ onOpen
                       {/* Customer Row */}
                       <div className="flex items-center gap-3 text-xs flex-wrap">
                         <span className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1">
-                          <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-500 shrink-0" />
                           <span>{job.customerName}</span>
                         </span>
                         {job.customerPhone && (

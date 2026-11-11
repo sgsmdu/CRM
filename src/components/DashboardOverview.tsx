@@ -336,7 +336,6 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                         <span className={isDark ? 'text-slate-600' : 'text-slate-300'}>·</span>
                         <span className={`font-semibold inline-flex items-center gap-1 ${isDark ? 'text-slate-200' : 'text-slate-900'}`}>
                           <span>{job.customerName}</span>
-                          <span className="text-[10px] text-amber-500" title="Verified Customer">⭐</span>
                         </span>
                         {job.customerArea && (
                           <>

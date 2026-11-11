@@ -518,15 +518,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
                       </td>
 
                       <td className={`py-3 px-4 font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span 
-                            className="inline-flex items-center justify-center p-1 rounded-md text-amber-500 bg-amber-500/15 border border-amber-500/30 shadow-xs shrink-0" 
-                            title="Customer"
-                          >
-                            <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
-                          </span>
-                          <span className="font-bold">{customer.name}</span>
-                        </div>
+                        <span className="font-bold">{customer.name}</span>
                       </td>
 
                       {/* Location with Clickable Google Maps Pin */}

@@ -58,6 +58,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     updateVendor, 
     deleteVendor, 
     inventory,
+    jobCards,
     adminSettings,
     canDelete,
     theme 
@@ -130,6 +131,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
 
   // Bill Detail Viewer Modal & Multi-page Zoom Modal
   const [viewingBill, setViewingBill] = useState<VendorBill | null>(null);
+  const [viewingBillTab, setViewingBillTab] = useState<'jobs' | 'items'>('jobs');
   const [zoomedImages, setZoomedImages] = useState<string[]>([]);
   const [zoomedPageIndex, setZoomedPageIndex] = useState<number>(0);
 
@@ -1293,11 +1295,38 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                             </td>
                             
                             {/* Clickable Bill Number */}
-                            <td className="py-3 px-3">
-                              <span className="font-mono font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                            <td className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setViewingBill(bill);
+                                  setViewingBillTab('jobs');
+                                }}
+                                className="font-mono font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer text-left"
+                                title="Click to view linked Job Cards list"
+                              >
                                 <FileText className="w-3.5 h-3.5" />
                                 <span>{bill.invoiceNumber}</span>
-                              </span>
+                              </button>
+                              {(() => {
+                                const count = jobCards.filter(j => 
+                                  (j.linkedVendorBillIds && j.linkedVendorBillIds.includes(bill.id)) ||
+                                  (bill.linkedJobCardIds && bill.linkedJobCardIds.includes(j.id))
+                                ).length;
+                                if (count === 0) return null;
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setViewingBill(bill);
+                                      setViewingBillTab('jobs');
+                                    }}
+                                    className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300 hover:bg-purple-200 cursor-pointer"
+                                  >
+                                    📋 {count} {count === 1 ? 'Job Card' : 'Job Cards'}
+                                  </button>
+                                );
+                              })()}
                             </td>
 
                             <td className={`py-3 px-3 font-mono ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -1527,12 +1556,17 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                       </button>
                                       <button
                                         type="button"
-                                        onClick={() => setViewingBill(bill)}
-                                        className={`py-1.5 px-3 text-xs font-medium rounded-lg border transition-colors cursor-pointer ${
-                                          isDark ? 'border-slate-800 text-slate-300 hover:bg-slate-800' : 'border-slate-300 text-slate-700 hover:bg-slate-100'
+                                        onClick={() => {
+                                          setViewingBill(bill);
+                                          setViewingBillTab('jobs');
+                                        }}
+                                        className={`py-1.5 px-3 text-xs font-semibold rounded-lg border transition-colors cursor-pointer flex items-center gap-1 ${
+                                          isDark ? 'border-purple-800 text-purple-300 bg-purple-950/40 hover:bg-purple-900/60' : 'border-purple-300 text-purple-800 bg-purple-50 hover:bg-purple-100'
                                         }`}
+                                        title="View Linked Job Cards and full tax bill"
                                       >
-                                        Full Slip
+                                        <FileText className="w-3.5 h-3.5" />
+                                        <span>Linked Jobs</span>
                                       </button>
                                     </div>
                                   </div>
@@ -3186,8 +3220,153 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
               </button>
             </div>
 
+            {/* View Tabs: Linked Job Cards vs Invoiced Line Items */}
+            {(() => {
+              const linkedJobs = jobCards.filter(j => 
+                (j.linkedVendorBillIds && j.linkedVendorBillIds.includes(viewingBill.id)) ||
+                (viewingBill.linkedJobCardIds && viewingBill.linkedJobCardIds.includes(j.id))
+              );
+
+              return (
+                <div className={`px-6 pt-3 pb-0 border-b flex gap-4 text-xs font-bold shrink-0 ${
+                  isDark ? 'border-slate-800 bg-slate-950/40' : 'border-slate-100 bg-slate-50/50'
+                }`}>
+                  <button
+                    type="button"
+                    onClick={() => setViewingBillTab('jobs')}
+                    className={`pb-2.5 border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
+                      viewingBillTab === 'jobs'
+                        ? 'border-purple-600 text-purple-600 dark:text-purple-400'
+                        : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>Linked Job Cards ({linkedJobs.length})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setViewingBillTab('items')}
+                    className={`pb-2.5 border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
+                      viewingBillTab === 'items'
+                        ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                        : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                    }`}
+                  >
+                    <Boxes className="w-4 h-4" />
+                    <span>Invoiced Line Items ({viewingBill.items?.length || 0})</span>
+                  </button>
+                </div>
+              );
+            })()}
+
             <div className="p-6 overflow-y-auto space-y-5 flex-1">
-              {/* Uploaded receipt photo preview (supports multi-page) */}
+              {/* TAB 1: LINKED JOB CARDS */}
+              {viewingBillTab === 'jobs' && (() => {
+                const linkedJobs = jobCards.filter(j => 
+                  (j.linkedVendorBillIds && j.linkedVendorBillIds.includes(viewingBill.id)) ||
+                  (viewingBill.linkedJobCardIds && viewingBill.linkedJobCardIds.includes(j.id))
+                );
+
+                return (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <FileText className="w-4 h-4 text-purple-500" />
+                        <span>Job Cards Linked to this Stock Invoice ({linkedJobs.length})</span>
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        Invoice #{viewingBill.invoiceNumber}
+                      </span>
+                    </div>
+
+                    {linkedJobs.length === 0 ? (
+                      <div className={`p-8 rounded-xl border border-dashed text-center text-xs space-y-2 ${
+                        isDark ? 'border-slate-800 text-slate-400 bg-slate-950/40' : 'border-slate-200 text-slate-500 bg-slate-50'
+                      }`}>
+                        <FileText className="w-8 h-8 text-slate-400 mx-auto opacity-50" />
+                        <p className="font-semibold text-slate-700 dark:text-slate-300 text-sm">
+                          No Job Cards Linked Yet
+                        </p>
+                        <p className="max-w-md mx-auto text-slate-500">
+                          To link this stock purchase invoice to a Job Card, open the Job Card in CRM and click the <strong className="text-purple-600 dark:text-purple-400">"Link to Stock Invoice"</strong> button.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {linkedJobs.map(job => (
+                          <div
+                            key={job.id}
+                            className={`p-4 rounded-xl border transition-all text-xs space-y-2.5 ${
+                              isDark ? 'bg-slate-950/70 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-xs text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-950/70 px-2 py-0.5 rounded">
+                                  {job.jobId}
+                                </span>
+                                <span className="font-bold text-sm text-slate-900 dark:text-white">
+                                  {job.customerName}
+                                </span>
+                                {job.customerPhone && (
+                                  <span className="font-mono text-slate-500 text-[11px]">
+                                    {job.customerPhone}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${
+                                  job.status === 'completed' || job.status === 'delivered'
+                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-300'
+                                    : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-300'
+                                }`}>
+                                  {job.status.replace('_', ' ')}
+                                </span>
+                                <span className="font-mono text-[11px] text-slate-400">
+                                  Intake: {job.intakeDate}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] pt-1 border-t border-slate-100 dark:border-slate-800">
+                              <div>
+                                <strong className="text-slate-400">Device: </strong>
+                                <span className="font-semibold text-slate-800 dark:text-slate-200">
+                                  {job.deviceBrand || job.category.toUpperCase()} ({job.category})
+                                </span>
+                              </div>
+                              {job.customerArea && (
+                                <div>
+                                  <strong className="text-slate-400">Area: </strong>
+                                  <span>{job.customerArea}</span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="text-[11px] text-slate-600 dark:text-slate-400 italic bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg border border-slate-100 dark:border-slate-800/60">
+                              <strong className="not-italic text-slate-500">Complaint / Work: </strong>"{job.issueDescription}"
+                            </div>
+
+                            {job.assignedTechnician && (
+                              <div className="text-[10px] text-slate-500 flex items-center justify-between">
+                                <span>Assigned Tech: <strong className="text-slate-700 dark:text-slate-300">{job.assignedTechnician}</strong></span>
+                                <span>Est Delivery: {job.estimatedDelivery || 'In 48 Hours'}</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* TAB 2: INVOICED LINE ITEMS & SCANS */}
+              {viewingBillTab === 'items' && (
+                <>
+                  {/* Uploaded receipt photo preview (supports multi-page) */}
               {(() => {
                 const billPagesList = viewingBill.billImages && viewingBill.billImages.length > 0 
                   ? viewingBill.billImages 
@@ -3310,7 +3489,9 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                   </p>
                 </div>
               </div>
-            </div>
+            </>
+          )}
+        </div>
 
             <div className={`px-6 py-3 border-t flex ${canDelete ? 'justify-between' : 'justify-end'} gap-2 ${
               isDark ? 'border-slate-800 bg-slate-950/40' : 'border-slate-200 bg-slate-50'

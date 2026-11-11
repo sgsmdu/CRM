@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Menu, Plus, Users, FileSpreadsheet, Sun, Moon, Shield, ShieldAlert, Check, ChevronDown } from 'lucide-react';
+import { Menu, Plus, Users, FileSpreadsheet, Sun, Moon, Shield, ShieldAlert, Check, ChevronDown, LogOut } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { PWAInstallButton } from './PWAInstallButton';
 import { NavTab } from './Navbar';
@@ -19,7 +19,7 @@ export const HeaderTopBar: React.FC<HeaderTopBarProps> = ({
   onOpenGoogleSheetsModal,
   onOpenGoogleContactsModal,
 }) => {
-  const { theme, toggleTheme, currentUserEmail, setCurrentUserEmail, currentUserRole, setCurrentUserRole, isAdmin, allowedUsers } = useSgs();
+  const { theme, toggleTheme, currentUserEmail, setCurrentUserEmail, currentUserRole, setCurrentUserRole, isAdmin, allowedUsers, logout } = useSgs();
   const isDark = theme === 'dark';
   const [showRoleMenu, setShowRoleMenu] = useState(false);
   const [customEmailInput, setCustomEmailInput] = useState('');
@@ -205,10 +205,21 @@ export const HeaderTopBar: React.FC<HeaderTopBarProps> = ({
                   </form>
                 </div>
 
-                <div className="mt-2 pt-2 border-t border-slate-700/50 flex justify-end">
+                <div className="mt-3 pt-2.5 border-t border-slate-700/50 flex items-center justify-between">
+                  <button
+                    onClick={async () => {
+                      setShowRoleMenu(false);
+                      await logout();
+                    }}
+                    className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>Sign Out</span>
+                  </button>
+
                   <button
                     onClick={() => setShowRoleMenu(false)}
-                    className="text-[11px] text-slate-400 hover:text-white cursor-pointer"
+                    className="text-[11px] text-slate-400 hover:text-white cursor-pointer px-2 py-1"
                   >
                     Close
                   </button>
@@ -270,6 +281,17 @@ export const HeaderTopBar: React.FC<HeaderTopBarProps> = ({
             title={isDark ? 'Switch to Light Theme' : 'Switch to Dark Mode'}
           >
             {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
+
+          {/* Quick Sign Out Button */}
+          <button
+            onClick={logout}
+            className={`p-2 rounded-lg border transition-colors cursor-pointer ${
+              isDark ? 'bg-slate-900 border-slate-800 text-slate-400 hover:text-rose-400 hover:bg-slate-800' : 'bg-slate-100 border-slate-200 text-slate-500 hover:text-rose-600 hover:bg-slate-200'
+            }`}
+            title="Sign out of Google CRM session"
+          >
+            <LogOut className="w-4 h-4" />
           </button>
         </div>
       </div>

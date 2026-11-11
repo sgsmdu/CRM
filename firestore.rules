@@ -1,0 +1,88 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email != null;
+    }
+
+    function userEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function isRootAdmin() {
+      return isSignedIn() && userEmail() == 'spidergridsolutions@gmail.com';
+    }
+
+    function isAllowedUser() {
+      return isSignedIn() && (
+        isRootAdmin() ||
+        exists(/databases/$(database)/documents/allowed_users/$(userEmail()))
+      );
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        isRootAdmin() ||
+        (
+          exists(/databases/$(database)/documents/allowed_users/$(userEmail())) &&
+          get(/databases/$(database)/documents/allowed_users/$(userEmail())).data.role == 'admin'
+        )
+      );
+    }
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Allowed Users & RBAC collection
+    match /allowed_users/{email} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+      allow delete: if isAdmin() && email != 'spidergridsolutions@gmail.com';
+    }
+
+    // Job Cards
+    match /job_cards/{jobId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+
+    // Billing Invoices
+    match /invoices/{invoiceId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+
+    // Customer Directory
+    match /customers/{customerId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+
+    // Vendor Bills / Stock Invoices
+    match /vendor_bills/{billId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+
+    // Manual Quotations
+    match /quotations/{quotationId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+
+    // App Settings / Config
+    match /settings/{settingId} {
+      allow read: if isAllowedUser();
+      allow write: if isAdmin();
+    }
+  }
+}

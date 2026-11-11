@@ -37,9 +37,18 @@ import {
   fetchUserRoleFromFirestore, 
   subscribeToAllowedUsers, 
   saveAllowedUserToFirestore, 
-  deleteAllowedUserFromFirestore, 
+  deleteAllowedUserFromFirestore,
+  subscribeToJobCards,
+  saveJobCardToFirestore,
+  deleteJobCardFromFirestore,
+  subscribeToInvoices,
+  saveInvoiceToFirestore,
+  deleteInvoiceFromFirestore,
+  signOutUser,
+  auth,
   DEFAULT_ADMIN_EMAIL 
 } from '../services/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import * as Acc from '../utils/accounting';
 import { 
   DEFAULT_PRICE_CODE_MAPPING, 
@@ -123,6 +132,7 @@ interface SgsContextType {
   deleteJobCard: (id: string) => void;
   toggleCallCompleted: (id: string, completed?: boolean) => void;
   addJobTimelineEvent: (jobId: string, event: Omit<import('../types').JobTimelineEvent, 'id'>) => void;
+  toggleLinkJobAndVendorBill: (jobId: string, vendorBillId: string) => void;
   
   // Vendor Bill methods
   addVendorBill: (bill: Omit<VendorBill, 'id' | 'createdAt'>, updateStock?: boolean) => VendorBill;
@@ -251,6 +261,8 @@ interface SgsContextType {
   resetPriceCodeMappingToDefault: () => void;
 
   // Role-Based Access Control (RBAC via Firestore allowed_users)
+  isAuthenticated: boolean;
+  isAuthLoading: boolean;
   currentUserEmail: string;
   setCurrentUserEmail: (email: string) => Promise<void>;
   currentUserRole: UserRole;
@@ -262,6 +274,8 @@ interface SgsContextType {
   refreshAllowedUsers: () => Promise<void>;
   saveAllowedUser: (user: AllowedUser) => Promise<void>;
   deleteAllowedUser: (email: string) => Promise<void>;
+  handleAuthSuccess: (email: string, role: UserRole) => void;
+  logout: () => Promise<void>;
 }
 
 const STORAGE_KEY = 'spider_grid_solutions_db_v1';
@@ -593,7 +607,16 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem('sgs_theme', newTheme);
   };
 
-  // Role-Based Access Control (RBAC via Firestore allowed_users)
+  // Role-Based Access Control (RBAC via Firestore allowed_users) & Mandatory Auth
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('sgs_is_authenticated') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+
   const [currentUserEmail, setCurrentUserEmailState] = useState<string>(() => {
     try {
       return localStorage.getItem('sgs_current_user_email') || DEFAULT_ADMIN_EMAIL;
@@ -627,6 +650,78 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       notes: 'Primary Organization Admin'
     }
   ]);
+
+  // Mandatory Google Login Listener via onAuthStateChanged
+  useEffect(() => {
+    const unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
+      if (fbUser && fbUser.email) {
+        const cleanEmail = fbUser.email.trim().toLowerCase();
+        try {
+          const verification = await fetchUserRoleFromFirestore(cleanEmail);
+          if (verification.isAuthorized || cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
+            setIsAuthenticated(true);
+            setCurrentUserEmailState(cleanEmail);
+            setCurrentUserRoleState(verification.role);
+            try {
+              localStorage.setItem('sgs_is_authenticated', 'true');
+              localStorage.setItem('sgs_current_user_email', cleanEmail);
+              localStorage.setItem('sgs_current_user_role', verification.role);
+            } catch {}
+          } else {
+            // Unauthorized email -> Sign out immediately and keep locked
+            await signOutUser();
+            setIsAuthenticated(false);
+            try {
+              localStorage.removeItem('sgs_is_authenticated');
+            } catch {}
+          }
+        } catch (err) {
+          console.warn('Error checking user authorization:', err);
+        }
+      } else {
+        // No active Firebase Auth user session (e.g. if GCP API Key has domain restrictions or direct staff login used)
+        try {
+          const storedAuth = localStorage.getItem('sgs_is_authenticated') === 'true';
+          const storedEmail = localStorage.getItem('sgs_current_user_email');
+          if (storedAuth && storedEmail) {
+            setIsAuthenticated(true);
+          } else {
+            setIsAuthenticated(false);
+          }
+        } catch {
+          setIsAuthenticated(false);
+        }
+      }
+      setIsAuthLoading(false);
+    });
+
+    return () => unsubAuth();
+  }, []);
+
+  const handleAuthSuccess = (email: string, role: UserRole) => {
+    setIsAuthenticated(true);
+    setCurrentUserEmailState(email);
+    setCurrentUserRoleState(role);
+    try {
+      localStorage.setItem('sgs_is_authenticated', 'true');
+      localStorage.setItem('sgs_current_user_email', email);
+      localStorage.setItem('sgs_current_user_role', role);
+    } catch {}
+  };
+
+  const logout = async () => {
+    try {
+      await signOutUser();
+    } catch (e) {
+      console.warn('Logout error:', e);
+    }
+    setIsAuthenticated(false);
+    try {
+      localStorage.removeItem('sgs_is_authenticated');
+      localStorage.removeItem('sgs_current_user_email');
+      localStorage.removeItem('sgs_current_user_role');
+    } catch {}
+  };
 
   // Subscribe to allowed_users in Firestore
   useEffect(() => {
@@ -704,6 +799,46 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await deleteAllowedUserFromFirestore(email);
     setAllowedUsers(prev => prev.filter(u => u.email.trim().toLowerCase() !== email.trim().toLowerCase()));
   };
+
+  // ==========================================
+  // REAL-TIME FIRESTORE LISTENERS (onSnapshot)
+  // Job cards & Billing invoices sync instantly
+  // ==========================================
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    // Real-time listener for Job Cards
+    const unsubJobs = subscribeToJobCards(
+      (remoteJobs) => {
+        if (remoteJobs && remoteJobs.length > 0) {
+          setJobCards(prev => {
+            // Keep remote as authoritative, deduplicate
+            return deduplicateById(remoteJobs, 'job');
+          });
+        }
+      },
+      (err) => {
+        console.warn('Real-time sync notice for job_cards:', err);
+      }
+    );
+
+    // Real-time listener for Invoices
+    const unsubInvoices = subscribeToInvoices(
+      (remoteInvoices) => {
+        if (remoteInvoices && remoteInvoices.length > 0) {
+          setInvoices(remoteInvoices);
+        }
+      },
+      (err) => {
+        console.warn('Real-time sync notice for invoices:', err);
+      }
+    );
+
+    return () => {
+      unsubJobs();
+      unsubInvoices();
+    };
+  }, [isAuthenticated]);
 
   // Sync to localStorage
   useEffect(() => {
@@ -1055,21 +1190,28 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setJobCards(prev => [newJob, ...prev]);
+    saveJobCardToFirestore(newJob).catch(err => console.warn('Could not save job to Firestore:', err));
     return newJob;
   };
 
   const updateJobCardStatus = (id: string, status: JobStatus, notes?: string) => {
+    let updatedJob: JobCard | undefined;
     setJobCards(prev => prev.map(job => {
       if (job.id === id) {
-        return {
+        updatedJob = {
           ...job,
           status,
           technicianNotes: notes !== undefined ? notes : job.technicianNotes,
           updatedAt: Acc.todayLocal(),
         };
+        return updatedJob;
       }
       return job;
     }));
+
+    if (updatedJob) {
+      saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job status in Firestore:', err));
+    }
 
     if (status === 'work_completed' || status === 'completed' || status === 'delivered') {
       setWorkAllocations(prev => prev.filter(a => a.jobCardId !== id));
@@ -1077,16 +1219,22 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateJobCard = (id: string, updates: Partial<JobCard>) => {
+    let updatedJob: JobCard | undefined;
     setJobCards(prev => prev.map(job => {
       if (job.id === id) {
-        return {
+        updatedJob = {
           ...job,
           ...updates,
           updatedAt: Acc.todayLocal(),
         };
+        return updatedJob;
       }
       return job;
     }));
+
+    if (updatedJob) {
+      saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job in Firestore:', err));
+    }
 
     if (updates.status === 'work_completed' || updates.status === 'completed' || updates.status === 'delivered') {
       setWorkAllocations(prev => prev.filter(a => a.jobCardId !== id));
@@ -1096,21 +1244,28 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteJobCard = (id: string) => {
     setJobCards(prev => prev.filter(j => j.id !== id));
     setWorkAllocations(prev => prev.filter(a => a.jobCardId !== id));
+    deleteJobCardFromFirestore(id).catch(err => console.warn('Could not delete job from Firestore:', err));
   };
 
   const toggleCallCompleted = (id: string, completed?: boolean) => {
+    let updatedJob: JobCard | undefined;
     setJobCards(prev => prev.map(job => {
       if (job.id === id) {
         const nextState = completed !== undefined ? completed : !job.callCompleted;
-        return {
+        updatedJob = {
           ...job,
           callCompleted: nextState,
           lastCalledAt: nextState ? new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : undefined,
           updatedAt: Acc.todayLocal(),
         };
+        return updatedJob;
       }
       return job;
     }));
+
+    if (updatedJob) {
+      saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job in Firestore:', err));
+    }
   };
 
   const addJobTimelineEvent = (jobId: string, eventData: Omit<import('../types').JobTimelineEvent, 'id'>) => {
@@ -1120,16 +1275,56 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: eventData.timestamp || new Date().toISOString(),
     };
 
+    let updatedJob: JobCard | undefined;
     setJobCards(prev => prev.map(job => {
       if (job.id === jobId) {
         const existingTimeline = job.timeline || [];
-        return {
+        updatedJob = {
           ...job,
           timeline: [...existingTimeline, newEvent],
           updatedAt: Acc.todayLocal(),
         };
+        return updatedJob;
       }
       return job;
+    }));
+
+    if (updatedJob) {
+      saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job timeline in Firestore:', err));
+    }
+  };
+
+  const toggleLinkJobAndVendorBill = (jobId: string, vendorBillId: string) => {
+    let updatedJob: JobCard | undefined;
+    setJobCards(prev => prev.map(job => {
+      if (job.id === jobId) {
+        const existingLinks = job.linkedVendorBillIds || [];
+        const isLinked = existingLinks.includes(vendorBillId);
+        const nextLinks = isLinked ? existingLinks.filter(id => id !== vendorBillId) : [...existingLinks, vendorBillId];
+        updatedJob = {
+          ...job,
+          linkedVendorBillIds: nextLinks,
+          updatedAt: Acc.todayLocal(),
+        };
+        return updatedJob;
+      }
+      return job;
+    }));
+    if (updatedJob) {
+      saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job links in Firestore:', err));
+    }
+
+    setVendorBills(prev => prev.map(bill => {
+      if (bill.id === vendorBillId) {
+        const existingJobs = bill.linkedJobCardIds || [];
+        const isLinked = existingJobs.includes(jobId);
+        const nextJobs = isLinked ? existingJobs.filter(id => id !== jobId) : [...existingJobs, jobId];
+        return {
+          ...bill,
+          linkedJobCardIds: nextJobs
+        };
+      }
+      return bill;
     }));
   };
 
@@ -1226,12 +1421,18 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const prev = getLedger();
     const { state, invoice } = Acc.addInvoiceTx(prev, invoiceData);
     commitLedger(state, prev);
+    saveInvoiceToFirestore(invoice).catch(err => console.warn('Could not save invoice to Firestore:', err));
     return invoice;
   };
 
   const updateInvoice = (id: string, updates: Partial<Invoice>) => {
     const prev = getLedger();
-    commitLedger(Acc.updateInvoiceTx(prev, id, updates), prev);
+    const nextState = Acc.updateInvoiceTx(prev, id, updates);
+    commitLedger(nextState, prev);
+    const updated = nextState.invoices.find(i => i.id === id);
+    if (updated) {
+      saveInvoiceToFirestore(updated).catch(err => console.warn('Could not update invoice in Firestore:', err));
+    }
   };
 
   const updateInvoicePayment = (
@@ -1243,13 +1444,23 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ) => {
     // status is always derived from the amount; overpayment is capped at the bill total
     const prev = getLedger();
-    commitLedger(Acc.payInvoiceTx(prev, id, paidAmount, mode, paymentReference), prev);
+    const nextState = Acc.payInvoiceTx(prev, id, paidAmount, mode, paymentReference);
+    commitLedger(nextState, prev);
+    const updated = nextState.invoices.find(i => i.id === id);
+    if (updated) {
+      saveInvoiceToFirestore(updated).catch(err => console.warn('Could not update invoice payment in Firestore:', err));
+    }
   };
 
   const cancelInvoice = (id: string, reason = 'Cancelled by Admin') => {
     // puts stock back and records a refund for money already received
     const prev = getLedger();
-    commitLedger(Acc.cancelInvoiceTx(prev, id, reason), prev);
+    const nextState = Acc.cancelInvoiceTx(prev, id, reason);
+    commitLedger(nextState, prev);
+    const updated = nextState.invoices.find(i => i.id === id);
+    if (updated) {
+      saveInvoiceToFirestore(updated).catch(err => console.warn('Could not update cancelled invoice in Firestore:', err));
+    }
   };
 
   const duplicateInvoice = (id: string): Invoice => {
@@ -1280,12 +1491,14 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const prev = getLedger();
     const { state, invoice } = Acc.addInvoiceTx(prev, (({ id: _id, ...rest }) => rest)(duplicateDoc) as Omit<Invoice, 'id'>);
     commitLedger(state, prev);
+    saveInvoiceToFirestore(invoice).catch(err => console.warn('Could not save duplicate invoice to Firestore:', err));
     return invoice;
   };
 
   const deleteInvoice = (id: string) => {
     const prev = getLedger();
     commitLedger(Acc.deleteInvoiceTx(prev, id), prev);
+    deleteInvoiceFromFirestore(id).catch(err => console.warn('Could not delete invoice from Firestore:', err));
   };
 
   // Admin Settings
@@ -2444,6 +2657,7 @@ Please update your diagnostic notes and call status upon inspection.
         deleteJobCard,
         toggleCallCompleted,
         addJobTimelineEvent,
+        toggleLinkJobAndVendorBill,
         addVendorBill,
         updateVendorBillPayment,
         updateVendorBill,
@@ -2489,7 +2703,11 @@ Please update your diagnostic notes and call status upon inspection.
         theme,
         toggleTheme,
         setTheme,
-        // RBAC via Firestore allowed_users
+        // RBAC via Firestore allowed_users & Mandatory Auth
+        isAuthenticated,
+        isAuthLoading,
+        handleAuthSuccess,
+        logout,
         currentUserEmail,
         setCurrentUserEmail,
         currentUserRole,

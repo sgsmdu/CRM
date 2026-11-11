@@ -18,11 +18,12 @@ import { ManualQuotationManager } from './components/ManualQuotationManager';
 import { PriceCodeCalculator } from './components/PriceCodeCalculator';
 import { GoogleSheetsModal } from './components/GoogleSheetsModal';
 import { GoogleContactsModal } from './components/GoogleContactsModal';
+import { GoogleLoginScreen } from './components/GoogleLoginScreen';
 import { useSgs } from './context/SgsContext';
 import { Customer, JobCard, LeadSource } from './types';
 
 function SgsAppContent() {
-  const { theme } = useSgs();
+  const { theme, isAuthenticated, isAuthLoading, handleAuthSuccess } = useSgs();
   const isDark = theme === 'dark';
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
 
@@ -46,6 +47,30 @@ function SgsAppContent() {
     setPreselectedCustomer(customer);
     setIsNewJobModalOpen(true);
   };
+
+  // 1. Loading State while checking Firebase Auth and Firestore verification
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen w-full flex flex-col items-center justify-center bg-[#080d1a] text-white">
+        <div className="p-4 bg-white/5 rounded-3xl border border-white/10 mb-4 shadow-xl">
+          <img
+            src="/assets/aistudio/Final_logo51_79c6a806.png"
+            alt="Spider Grid Solutions"
+            className="h-16 w-auto object-contain animate-pulse"
+          />
+        </div>
+        <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-3" />
+        <p className="text-xs font-semibold text-slate-400 tracking-wider uppercase">
+          Verifying security credentials...
+        </p>
+      </div>
+    );
+  }
+
+  // 2. Mandatory Google Login Screen: App dashboard is NOT shown until authenticated
+  if (!isAuthenticated) {
+    return <GoogleLoginScreen onLoginSuccess={handleAuthSuccess} />;
+  }
 
   return (
     <div className={`min-h-screen flex transition-colors duration-150 w-full max-w-full overflow-x-hidden ${

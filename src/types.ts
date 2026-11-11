@@ -144,6 +144,7 @@ export interface JobCard {
   holdReason?: string;
   otherStatusText?: string;
   invoiceId?: string; // Linked invoice once billed
+  linkedVendorBillIds?: string[]; // Linked stock / vendor purchase invoices
   assignedEmployeeId?: string; // ID of allocated staff member
   assignedTechnician?: string; // Name of assigned technician
   assignedDate?: string;
@@ -232,6 +233,7 @@ export interface VendorBill {
   paymentMode?: PaymentMode;
   paymentReference?: string; // UPI UTR, Transaction ID, Cheque No
   paymentDate?: string;
+  linkedJobCardIds?: string[]; // Job cards linked to this stock invoice
   notes?: string;
   createdAt: string;
 }
@@ -555,15 +557,19 @@ export interface QuotationProposalModel {
 }
 
 export type QuotationStatus = 'Draft' | 'Sent' | 'Pending Decision' | 'Confirmed' | 'Rejected';
-export type CustomerModelSelection = 'Not Decided' | 'Model 1' | 'Model 2';
+export type CustomerModelSelection = 'Not Decided' | 'Model 1' | 'Model 2' | 'Model 3' | 'Model 4' | 'Model 5';
 
 export interface QuotationVersionSnapshot {
   version: number;
   updatedAt: string;
   updatedBy?: string;
   notes?: string;
+  title?: string;
   model1: QuotationProposalModel;
-  model2: QuotationProposalModel;
+  model2?: QuotationProposalModel;
+  model3?: QuotationProposalModel;
+  model4?: QuotationProposalModel;
+  model5?: QuotationProposalModel;
   termsAndConditions: string;
   validityDays: number;
   validUntil: string;
@@ -576,6 +582,7 @@ export interface QuotationVersionSnapshot {
 export interface ManualQuotation {
   id: string;
   quotationNumber: string; // Format: SGS/QTN/YYYY/001
+  title?: string; // Manual quotation title
   date: string; // YYYY-MM-DD local
   validityDays: number; // default: 7 days
   validUntil: string; // date + 7 days
@@ -590,9 +597,13 @@ export interface ManualQuotation {
   customerAddress?: string;
   customerEmail?: string;
   
-  // Two Proposal Models in One Quotation
+  // Multi-Proposal Models (Model 1, 2, 3, 4, 5)
+  activeModelsCount?: number; // 1 to 5
   model1: QuotationProposalModel;
-  model2: QuotationProposalModel;
+  model2?: QuotationProposalModel;
+  model3?: QuotationProposalModel;
+  model4?: QuotationProposalModel;
+  model5?: QuotationProposalModel;
   
   // Status and Confirmation
   status: QuotationStatus;
