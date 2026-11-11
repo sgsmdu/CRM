@@ -1,6 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShieldCheck, AlertCircle, LogIn, Lock, CheckCircle2, Phone, Mail, KeyRound, ExternalLink, ArrowRight } from 'lucide-react';
-import { signInWithGooglePopup, signOutUser, fetchUserRoleFromFirestore, DEFAULT_ADMIN_EMAIL } from '../services/firebase';
+import { 
+  signInWithGoogleRedirect, 
+  checkGoogleRedirectResult, 
+  signOutUser, 
+  fetchUserRoleFromFirestore, 
+  DEFAULT_ADMIN_EMAIL 
+} from '../services/firebase';
 
 interface GoogleLoginScreenProps {
   onLoginSuccess: (email: string, role: 'admin' | 'user') => void;
@@ -13,34 +19,72 @@ export const GoogleLoginScreen: React.FC<GoogleLoginScreenProps> = ({ onLoginSuc
   const [showDirectAuth, setShowDirectAuth] = useState(false);
   const [staffEmailInput, setStaffEmailInput] = useState('');
 
+  // 1. Process Google Login Redirect Result on mount (using getRedirectResult)
+  useEffect(() => {
+    let isMounted = true;
+    const processRedirect = async () => {
+      try {
+        const user = await checkGoogleRedirectResult();
+        if (!isMounted) return;
+
+        if (user && user.email) {
+          setIsLoading(true);
+          const cleanEmail = user.email.trim().toLowerCase();
+          
+          // Verify user's email against allowed_users Firestore collection
+          const verification = await fetchUserRoleFromFirestore(cleanEmail);
+
+          if (!verification.isAuthorized && cleanEmail !== DEFAULT_ADMIN_EMAIL.toLowerCase()) {
+            await signOutUser();
+            setErrorMessage(
+              `Access Denied: Account "${cleanEmail}" is not registered in the authorized staff list. Please contact administrator (spidergridsolutions@gmail.com) for CRM access.`
+            );
+            setIsLoading(false);
+            return;
+          }
+
+          // Successfully verified against allowed_users -> redirect to dashboard
+          onLoginSuccess(cleanEmail, verification.role);
+        }
+      } catch (err: any) {
+        console.warn('Redirect result error:', err);
+        if (!isMounted) return;
+
+        const msg = err.originalMessage || err.message || String(err);
+        const isBlocked = 
+          err.code === 'auth/requests-from-referer-blocked' ||
+          msg.includes('requests-from-referer') ||
+          msg.includes('are-blocked');
+
+        if (isBlocked) {
+          setIsRefererBlocked(true);
+          setShowDirectAuth(true);
+          setErrorMessage(
+            'Google Cloud API Key Referrer Restriction: In Google Cloud Console, this project API key currently restricts domain referrers. You can authenticate directly below as Primary Admin or enter an authorized staff email.'
+          );
+        } else {
+          setErrorMessage(err.message || 'Failed to complete Google Sign In.');
+        }
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    processRedirect();
+    return () => {
+      isMounted = false;
+    };
+  }, [onLoginSuccess]);
+
+  // 2. Trigger Google Sign In using redirect flow (prevents browser popup blocking)
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     setErrorMessage(null);
     setIsRefererBlocked(false);
 
     try {
-      const user = await signInWithGooglePopup();
-      const email = user.email || '';
-
-      if (!email) {
-        throw new Error('Google account did not return a valid email address.');
-      }
-
-      // Verify user against allowed_users Firestore collection
-      const verification = await fetchUserRoleFromFirestore(email);
-
-      if (!verification.isAuthorized && email.trim().toLowerCase() !== DEFAULT_ADMIN_EMAIL.toLowerCase()) {
-        // Sign out immediately if unauthorized
-        await signOutUser();
-        setErrorMessage(
-          `Access Denied: Account "${email}" is not registered in the authorized staff list. Please contact administrator (spidergridsolutions@gmail.com) for CRM access.`
-        );
-        setIsLoading(false);
-        return;
-      }
-
-      // Authorized!
-      onLoginSuccess(email, verification.role);
+      await signInWithGoogleRedirect();
+      // Browser will redirect to Google login page
     } catch (err: any) {
       console.warn('Authentication Exception:', err);
 
@@ -56,14 +100,9 @@ export const GoogleLoginScreen: React.FC<GoogleLoginScreenProps> = ({ onLoginSuc
         setErrorMessage(
           'Google Cloud API Key Referrer Restriction: In Google Cloud Console, this project API key currently restricts domain referrers, blocking this development preview domain (ais-dev-*.run.app). You can authenticate directly below as Primary Admin or enter an authorized staff email.'
         );
-      } else if (err.code === 'auth/popup-closed-by-user') {
-        setErrorMessage('Sign-in cancelled. Please click the button below to sign in with Google.');
-      } else if (err.code === 'auth/cancelled-popup-request') {
-        setErrorMessage('Only one sign-in window at a time. Please try again.');
       } else {
         setErrorMessage(err.message || 'Authentication failed. Please verify your internet connection and try again.');
       }
-    } finally {
       setIsLoading(false);
     }
   };

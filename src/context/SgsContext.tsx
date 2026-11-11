@@ -45,6 +45,7 @@ import {
   saveInvoiceToFirestore,
   deleteInvoiceFromFirestore,
   signOutUser,
+  checkGoogleRedirectResult,
   auth,
   DEFAULT_ADMIN_EMAIL 
 } from '../services/firebase';
@@ -651,8 +652,41 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   ]);
 
-  // Mandatory Google Login Listener via onAuthStateChanged
+  // Mandatory Google Login Listener via onAuthStateChanged & getRedirectResult
   useEffect(() => {
+    // 1. Process Google Sign-in redirect result (when returning from signInWithRedirect)
+    checkGoogleRedirectResult()
+      .then(async (user) => {
+        if (user && user.email) {
+          const cleanEmail = user.email.trim().toLowerCase();
+          try {
+            const verification = await fetchUserRoleFromFirestore(cleanEmail);
+            if (verification.isAuthorized || cleanEmail === DEFAULT_ADMIN_EMAIL.toLowerCase()) {
+              setIsAuthenticated(true);
+              setCurrentUserEmailState(cleanEmail);
+              setCurrentUserRoleState(verification.role);
+              try {
+                localStorage.setItem('sgs_is_authenticated', 'true');
+                localStorage.setItem('sgs_current_user_email', cleanEmail);
+                localStorage.setItem('sgs_current_user_role', verification.role);
+              } catch {}
+            } else {
+              await signOutUser();
+              setIsAuthenticated(false);
+              try {
+                localStorage.removeItem('sgs_is_authenticated');
+              } catch {}
+            }
+          } catch (err) {
+            console.warn('Error checking redirect user authorization:', err);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Redirect check notice:', err);
+      });
+
+    // 2. Auth State Listener
     const unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser && fbUser.email) {
         const cleanEmail = fbUser.email.trim().toLowerCase();

@@ -15,6 +15,8 @@ import {
   getAuth, 
   GoogleAuthProvider, 
   signInWithPopup, 
+  signInWithRedirect,
+  getRedirectResult,
   signOut,
   onAuthStateChanged,
   User as FirebaseUser
@@ -87,7 +89,52 @@ export const QUOTATIONS_COLLECTION = 'quotations';
 export const DEFAULT_ADMIN_EMAIL = 'spidergridsolutions@gmail.com';
 
 /**
- * Sign in using Google Popup
+ * Sign in using Google Redirect (replaces popup to prevent browser security and domain popup blocking)
+ */
+export async function signInWithGoogleRedirect(): Promise<void> {
+  try {
+    await signInWithRedirect(auth, googleAuthProvider);
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    if (msg.includes('requests-from-referer') || msg.includes('are-blocked')) {
+      console.warn('Google Sign-In blocked by GCP API Key referrer restrictions on this preview domain.');
+      const customErr: any = new Error(
+        'Google Cloud API Key has HTTP Referrer restrictions in Google Cloud Console that block this development preview domain (ais-dev-*.run.app).'
+      );
+      customErr.code = 'auth/requests-from-referer-blocked';
+      customErr.originalMessage = msg;
+      throw customErr;
+    }
+    console.error('Google Sign In Redirect Error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Retrieve redirect result after user returns to app from Google login redirect
+ */
+export async function checkGoogleRedirectResult(): Promise<FirebaseUser | null> {
+  try {
+    const cred = await getRedirectResult(auth);
+    return cred ? cred.user : null;
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    if (msg.includes('requests-from-referer') || msg.includes('are-blocked')) {
+      console.warn('Google Redirect Result blocked by GCP API Key referrer restrictions on this preview domain.');
+      const customErr: any = new Error(
+        'Google Cloud API Key has HTTP Referrer restrictions in Google Cloud Console that block this development preview domain (ais-dev-*.run.app).'
+      );
+      customErr.code = 'auth/requests-from-referer-blocked';
+      customErr.originalMessage = msg;
+      throw customErr;
+    }
+    console.error('Google Redirect Result Error:', err);
+    throw err;
+  }
+}
+
+/**
+ * Optional: Sign in using Google Popup (legacy alternative)
  */
 export async function signInWithGooglePopup(): Promise<FirebaseUser> {
   try {
