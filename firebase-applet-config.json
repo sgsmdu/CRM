@@ -1,12 +1,12 @@
 {
-  "projectId": "gen-lang-client-0252988844",
-  "appId": "1:276241524340:web:1c568f06dd84a628ea1321",
-  "apiKey": "AIzaSyCiUpg7PUNSt3s9CsT4zLCTfwayIU-bLuM",
-  "authDomain": "gen-lang-client-0252988844.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-spidergridsoluti-d62913d3-cb5f-4d98-8944-7dc7b322fdd0",
-  "storageBucket": "gen-lang-client-0252988844.firebasestorage.app",
-  "messagingSenderId": "276241524340",
-  "measurementId": "",
-  "oAuthClientId": "276241524340-hqmvci1337as3ktsq76oaqh2d00vhv90.apps.googleusercontent.com",
+  "projectId": "crm-sgs",
+  "appId": "1:753863497565:web:cf62dea4ab67cc327b7ab4",
+  "apiKey": "AIzaSyAhWwpErTkeZS_O8VyeR7OvX9M2VzVcDeQ",
+  "authDomain": "crm-sgs.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "crm-sgs.firebasestorage.app",
+  "messagingSenderId": "753863497565",
+  "measurementId": "G-HC9DF99RYG",
+  "oAuthClientId": "753863497565-e48v1miaoa628i8gne0b9hu5bdbt5d1a.apps.googleusercontent.com",
   "recaptchaSiteKey": ""
 }
