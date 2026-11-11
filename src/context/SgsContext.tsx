@@ -50,6 +50,7 @@ import {
   DEFAULT_ADMIN_EMAIL 
 } from '../services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
+import { useCollectionSync, useDocSync } from '../services/firestoreSync';
 import * as Acc from '../utils/accounting';
 import { 
   DEFAULT_PRICE_CODE_MAPPING, 
@@ -838,41 +839,31 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // REAL-TIME FIRESTORE LISTENERS (onSnapshot)
   // Job cards & Billing invoices sync instantly
   // ==========================================
-  useEffect(() => {
-    if (!isAuthenticated) return;
+    const syncOn = isAuthenticated;
 
-    // Real-time listener for Job Cards
-    const unsubJobs = subscribeToJobCards(
-      (remoteJobs) => {
-        if (remoteJobs && remoteJobs.length > 0) {
-          setJobCards(prev => {
-            // Keep remote as authoritative, deduplicate
-            return deduplicateById(remoteJobs, 'job');
-          });
-        }
-      },
-      (err) => {
-        console.warn('Real-time sync notice for job_cards:', err);
-      }
-    );
+  useCollectionSync('customers', customers, setCustomers, syncOn);
+  useCollectionSync('job_cards', jobCards, setJobCards, syncOn);
+  useCollectionSync('invoices', invoices, setInvoices, syncOn);
+  useCollectionSync('vendor_bills', vendorBills, setVendorBills, syncOn);
+  useCollectionSync('quotations', quotations, setQuotations, syncOn);
+  useCollectionSync('inventory', inventory, setInventory, syncOn);
+  useCollectionSync('stock_transactions', stockTransactions, setStockTransactions, syncOn);
+  useCollectionSync('cashflow', cashFlow, setCashFlow, syncOn);
+  useCollectionSync('lead_sources', leadSources, setLeadSources, syncOn);
+  useCollectionSync('vendors', vendors, setVendors, syncOn);
+  useCollectionSync('employees', employees, setEmployees, syncOn);
+  useCollectionSync('attendance', attendanceRecords, setAttendanceRecords, syncOn);
+  useCollectionSync('salary_payments', salaryPayments, setSalaryPayments, syncOn);
+  useCollectionSync('work_allocations', workAllocations, setWorkAllocations, syncOn);
+  useCollectionSync('salary_advances', salaryAdvances, setSalaryAdvances, syncOn);
+  useCollectionSync('quotation_categories', quotationCategories, setQuotationCategories, syncOn);
+  useCollectionSync('quotation_subcategories', quotationSubcategories, setQuotationSubcategories, syncOn);
+  useCollectionSync('quotation_products', quotationProducts, setQuotationProducts, syncOn);
 
-    // Real-time listener for Invoices
-    const unsubInvoices = subscribeToInvoices(
-      (remoteInvoices) => {
-        if (remoteInvoices && remoteInvoices.length > 0) {
-          setInvoices(remoteInvoices);
-        }
-      },
-      (err) => {
-        console.warn('Real-time sync notice for invoices:', err);
-      }
-    );
-
-    return () => {
-      unsubJobs();
-      unsubInvoices();
-    };
-  }, [isAuthenticated]);
+  useDocSync('admin_settings', adminSettings, setAdminSettings, syncOn);
+  useDocSync('price_code_mapping', activePriceCodeMapping, setActivePriceCodeMapping, syncOn);
+  useDocSync('price_code_versions', priceCodeMappingVersions, setPriceCodeMappingVersions, syncOn);
+  useDocSync('quotation_brands', quotationBrands, setQuotationBrands, syncOn);
 
   // Sync to localStorage
   useEffect(() => {
