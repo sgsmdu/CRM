@@ -84,8 +84,18 @@ export const GoogleLoginScreen: React.FC<GoogleLoginScreenProps> = ({ onLoginSuc
     setIsRefererBlocked(false);
 
     try {
-      await signInWithGoogleRedirect();
-      // Browser will redirect to Google login page
+          const user = await signInWithGooglePopup();
+    const cleanEmail = (user.email || '').trim().toLowerCase();
+    const verification = await fetchUserRoleFromFirestore(cleanEmail);
+
+    if (!verification.isAuthorized && cleanEmail !== DEFAULT_ADMIN_EMAIL.toLowerCase()) {
+      await signOutUser();
+      setErrorMessage(`Access Denied: Account "${cleanEmail}" is not registered in the authorized staff list. Please contact administrator (spidergridsolutions@gmail.com).`);
+      setIsLoading(false);
+      return;
+    }
+
+    onLoginSuccess(cleanEmail, verification.role);
     } catch (err: any) {
       console.warn('Authentication Exception:', err);
 
