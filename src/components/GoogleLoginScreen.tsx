@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldCheck, AlertCircle, LogIn, Lock, CheckCircle2, Phone, Mail, KeyRound, ExternalLink, ArrowRight } from 'lucide-react';
 import { 
-  signInWithGoogleRedirect, 
+  signInWithGoogleRedirect,
+  signInWithGooglePopup,
   checkGoogleRedirectResult, 
   signOutUser, 
   fetchUserRoleFromFirestore, 
