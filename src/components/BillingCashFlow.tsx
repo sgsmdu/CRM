@@ -249,6 +249,54 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     }
   }, [grandTotalCalc, paymentStatus]);
 
+  // Intercept browser back button to close open modal/preview instead of closing app
+  useEffect(() => {
+    const handleBack = (e: Event) => {
+      if (zoomedBillPhoto) {
+        e.preventDefault();
+        setZoomedBillPhoto(null);
+        return;
+      }
+      if (printableInvoice) {
+        e.preventDefault();
+        setPrintableInvoice(null);
+        return;
+      }
+      if (viewingInvoice) {
+        e.preventDefault();
+        setViewingInvoice(null);
+        return;
+      }
+      if (confirmConvertModal) {
+        e.preventDefault();
+        setConfirmConvertModal(null);
+        return;
+      }
+      if (isStockPickerOpen) {
+        e.preventDefault();
+        setIsStockPickerOpen(false);
+        return;
+      }
+      if (isCustomerSearchOpen) {
+        e.preventDefault();
+        setIsCustomerSearchOpen(false);
+        return;
+      }
+      if (isCreateInvoiceOpen) {
+        e.preventDefault();
+        setIsCreateInvoiceOpen(false);
+        return;
+      }
+      if (isAddExpenseOpen) {
+        e.preventDefault();
+        setIsAddExpenseOpen(false);
+        return;
+      }
+    };
+    window.addEventListener('sgs:modal-back', handleBack);
+    return () => window.removeEventListener('sgs:modal-back', handleBack);
+  }, [zoomedBillPhoto, printableInvoice, viewingInvoice, confirmConvertModal, isStockPickerOpen, isCustomerSearchOpen, isCreateInvoiceOpen, isAddExpenseOpen]);
+
   // Draft Auto-Save States & Handlers
   const [draftSavedTime, setDraftSavedTime] = useState<string | null>(null);
   const [hasPendingDraft, setHasPendingDraft] = useState<boolean>(() => {
@@ -2333,7 +2381,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                     )}
                     <span className="text-[11px] font-medium">
                       {billingFirm === 'pandiyan'
-                        ? 'Pandiyan Computers: Non-GST Estimate Slip · Inventory stock will NOT be reduced'
+                        ? 'Pandiyan Computers: Non-GST Estimate Slip · Hardware parts deducted from stock inventory · Exempt from GST filing'
                         : 'Spider Grid Solutions: GST Tax Invoice · Hardware parts deducted from stock inventory'}
                     </span>
                   </div>

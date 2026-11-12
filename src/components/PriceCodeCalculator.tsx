@@ -680,43 +680,43 @@ export const PriceCodeCalculator: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2">
               
               {/* Result 1: Sale Minimum & Sale Minimum Code */}
-              <div className={`p-4 rounded-xl border space-y-2.5 ${
-                isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-emerald-50/40 border-emerald-200'
+              <div className={`p-4 rounded-xl border space-y-2.5 transition-all ${
+                isDark ? 'bg-emerald-950/20 border-emerald-800/80' : 'bg-emerald-50 border-emerald-300 shadow-xs'
               }`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                  <span className="text-xs font-black uppercase tracking-wider text-emerald-900 dark:text-emerald-300">
                     3. Calculated Sale Minimum
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold">
+                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-700 text-white dark:bg-emerald-800 dark:text-emerald-100 font-extrabold shadow-xs">
                     Floor Price
                   </span>
                 </div>
 
                 <div className="flex items-baseline justify-between">
-                  <div className="font-mono text-2xl font-bold text-slate-900 dark:text-white">
+                  <div className="font-mono text-2xl font-black text-slate-900 dark:text-white">
                     ₹{saleMinimum.toLocaleString('en-IN')}
                   </div>
                   <div className="text-right">
-                    <span className="text-[10px] text-slate-400 block">4. Sale Minimum Code:</span>
-                    <span className="font-mono text-xl font-extrabold tracking-wider text-emerald-600 dark:text-emerald-400">
+                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">4. Sale Minimum Code:</span>
+                    <span className="font-mono text-2xl font-black tracking-wider text-emerald-700 dark:text-emerald-400">
                       {saleMinimumCodeResult.code || '—'}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-emerald-200/50 dark:border-slate-800 text-xs">
-                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                <div className="flex items-center justify-between pt-2 border-t border-emerald-200 dark:border-emerald-900/60 text-xs">
+                  <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
                     Buy ₹{numBuy} + Profit ₹{numProfit}
                   </span>
                   {saleMinimumCodeResult.code && (
                     <button
                       type="button"
                       onClick={() => handleCopy(saleMinimumCodeResult.code, 'min_code')}
-                      className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:underline cursor-pointer"
+                      className="flex items-center gap-1 text-[11px] font-bold text-emerald-800 dark:text-emerald-300 hover:underline cursor-pointer"
                     >
                       {copiedKey === 'min_code' ? (
                         <>
-                          <Check className="w-3 h-3 text-emerald-600" />
+                          <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
                           <span>Copied Code</span>
                         </>
                       ) : (
@@ -731,32 +731,32 @@ export const PriceCodeCalculator: React.FC = () => {
               </div>
 
               {/* Result 2: Additional Sale Price Code */}
-              <div className={`p-4 rounded-xl border space-y-2.5 ${
-                isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-blue-50/40 border-blue-200'
+              <div className={`p-4 rounded-xl border space-y-2.5 transition-all ${
+                isDark ? 'bg-blue-950/20 border-blue-800/80' : 'bg-blue-50 border-blue-300 shadow-xs'
               }`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400">
+                  <span className="text-xs font-black uppercase tracking-wider text-blue-900 dark:text-blue-300">
                     6. Additional Sale Price Code
                   </span>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 font-bold">
+                  <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-blue-700 text-white dark:bg-blue-800 dark:text-blue-100 font-extrabold shadow-xs">
                     Retail Sticker Code
                   </span>
                 </div>
 
                 <div className="flex items-baseline justify-between">
-                  <div className="font-mono text-2xl font-bold text-slate-900 dark:text-white">
+                  <div className="font-mono text-2xl font-black text-slate-900 dark:text-white">
                     {numAdditional !== null ? `₹${numAdditional.toLocaleString('en-IN')}` : '—'}
                   </div>
                   <div className="text-right">
-                    <span className="text-[10px] text-slate-400 block">Sticker Code:</span>
-                    <span className="font-mono text-xl font-extrabold tracking-wider text-blue-600 dark:text-blue-400">
+                    <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">Sticker Code:</span>
+                    <span className="font-mono text-2xl font-black tracking-wider text-blue-700 dark:text-blue-400">
                       {additionalSalePriceCodeResult.code || '—'}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-2 border-t border-blue-200/50 dark:border-slate-800 text-xs">
-                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                <div className="flex items-center justify-between pt-2 border-t border-blue-200 dark:border-blue-900/60 text-xs">
+                  <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">
                     {numAdditional !== null && numBuy > 0 
                       ? `Margin: ₹${numAdditional - numBuy} (${Math.round(((numAdditional - numBuy) / numBuy) * 100)}%)` 
                       : 'Temporary calculation'}
@@ -765,11 +765,11 @@ export const PriceCodeCalculator: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => handleCopy(additionalSalePriceCodeResult.code, 'add_code')}
-                      className="flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:underline cursor-pointer"
+                      className="flex items-center gap-1 text-[11px] font-bold text-blue-800 dark:text-blue-300 hover:underline cursor-pointer"
                     >
                       {copiedKey === 'add_code' ? (
                         <>
-                          <Check className="w-3 h-3 text-blue-600" />
+                          <Check className="w-3 h-3 text-blue-600 dark:text-blue-400" />
                           <span>Copied Code</span>
                         </>
                       ) : (

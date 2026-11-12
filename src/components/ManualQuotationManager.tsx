@@ -317,21 +317,40 @@ export const ManualQuotationManager: React.FC<ManualQuotationManagerProps> = ({
       setModel2Name(qtn.model2.name || 'Model 2');
       setModel2Items(JSON.parse(JSON.stringify(qtn.model2.items || [])));
       setModel2Charges({ ...defaultCharges(), ...(qtn.model2.internalCharges || {}) });
+    } else {
+      setModel2Name('Model 2');
+      setModel2Items([]);
+      setModel2Charges(defaultCharges());
     }
+
     if (qtn.model3) {
       setModel3Name(qtn.model3.name || 'Model 3');
       setModel3Items(JSON.parse(JSON.stringify(qtn.model3.items || [])));
       setModel3Charges({ ...defaultCharges(), ...(qtn.model3.internalCharges || {}) });
+    } else {
+      setModel3Name('Model 3');
+      setModel3Items([]);
+      setModel3Charges(defaultCharges());
     }
+
     if (qtn.model4) {
       setModel4Name(qtn.model4.name || 'Model 4');
       setModel4Items(JSON.parse(JSON.stringify(qtn.model4.items || [])));
       setModel4Charges({ ...defaultCharges(), ...(qtn.model4.internalCharges || {}) });
+    } else {
+      setModel4Name('Model 4');
+      setModel4Items([]);
+      setModel4Charges(defaultCharges());
     }
+
     if (qtn.model5) {
       setModel5Name(qtn.model5.name || 'Model 5');
       setModel5Items(JSON.parse(JSON.stringify(qtn.model5.items || [])));
       setModel5Charges({ ...defaultCharges(), ...(qtn.model5.internalCharges || {}) });
+    } else {
+      setModel5Name('Model 5');
+      setModel5Items([]);
+      setModel5Charges(defaultCharges());
     }
 
     setIsEditorOpen(true);
@@ -815,6 +834,34 @@ Please review the proposal options and let us know your preferred configuration!
   const [prodFormDesc, setProdFormDesc] = useState('');
   const [prodFormWarranty, setProdFormWarranty] = useState('2 Years Manufacturer Warranty');
   const [prodFormPrice, setProdFormPrice] = useState<number>(1000);
+
+  // Intercept browser back button to close open modal/editor instead of closing the app
+  useEffect(() => {
+    const handleBack = (e: Event) => {
+      if (isProductPickerOpen) {
+        e.preventDefault();
+        setIsProductPickerOpen(false);
+        return;
+      }
+      if (isNewProductModalOpen) {
+        e.preventDefault();
+        setIsNewProductModalOpen(false);
+        return;
+      }
+      if (pdfPreviewQuotation) {
+        e.preventDefault();
+        setPdfPreviewQuotation(null);
+        return;
+      }
+      if (isEditorOpen) {
+        e.preventDefault();
+        setIsEditorOpen(false);
+        return;
+      }
+    };
+    window.addEventListener('sgs:modal-back', handleBack);
+    return () => window.removeEventListener('sgs:modal-back', handleBack);
+  }, [isProductPickerOpen, isNewProductModalOpen, pdfPreviewQuotation, isEditorOpen]);
 
   // Filtered Products for Catalogue Table
   const filteredProducts = useMemo(() => {

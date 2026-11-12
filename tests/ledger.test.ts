@@ -112,12 +112,12 @@ eq('legacy bill: taxable 900, tax 162', [nl.taxable, nl.tax], [900, 162]);
 const newer: any = { subtotal: 1000, taxAmount: 162, discount: 100, roundOff: 0, grandTotal: 1062, items: [{ gstAmount: 180 }] };
 eq('new bill: taxable 900, tax 162', [A.netOfDiscount(newer).taxable, A.netOfDiscount(newer).tax], [900, 162]);
 
-// ---------- 9. Pandiyan bill never touches stock; profit simple
-const bp = build([{ description: 'SSD', quantity: 4, rate: 2000, grossRate: 2000, amount: 8000, gstPercent: 0, purchaseCost: 1000 }], { firm: 'pandiyan', no: 'PC-EST-501' });
+// ---------- 9. Pandiyan bill reduces stock; profit simple; excluded from GST
+const bp = build([{ description: 'SSD', quantity: 4, rate: 2000, grossRate: 2000, amount: 8000, gstPercent: 0, purchaseCost: 1000, inventoryItemId: s.inventory[0].id }], { firm: 'pandiyan', no: 'PC-EST-501' });
 bp.data.subtotal = 8000; bp.data.taxAmount = 0; bp.data.grandTotal = 8000; bp.data.paidAmount = 8000;
 const stockNow = s.inventory[0].currentStock;
 const pc = A.addInvoiceTx(s, bp.data); s = pc.state;
-eq('pandiyan: stock unchanged', s.inventory[0].currentStock, stockNow);
+eq('pandiyan: stock reduced', s.inventory[0].currentStock, stockNow - 4);
 eq('pandiyan: profit 8000 - 4000', pc.invoice.profitAmount, 4000);
 
 // ---------- 10. Delete real invoice: stock back, its cash gone; numbers never reused

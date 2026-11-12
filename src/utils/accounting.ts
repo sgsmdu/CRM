@@ -174,7 +174,7 @@ const normName = (s: string) => (s || '').trim().toLowerCase();
 /** Which stock items (and how many) does this invoice take out of stock? */
 export function invoiceStockLines(inv: Invoice, inventory: InventoryItem[]): Map<string, number> {
   const out = new Map<string, number>();
-  if (inv.billingFirm === 'pandiyan' || inv.type !== 'invoice' || inv.status === 'cancelled') return out;
+  if (inv.type !== 'invoice' || inv.status === 'cancelled') return out;
   for (const it of inv.items || []) {
     const qty = Number(it.quantity) || 0;
     if (it.isService || qty <= 0) continue;

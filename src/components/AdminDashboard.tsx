@@ -1445,7 +1445,7 @@ export const AdminDashboard: React.FC = () => {
                       </span>
                     </div>
                     <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                      Fast estimate slips · Without GST · No inventory stock deduction
+                      Fast estimate slips · Without GST · Hardware parts deducted from stock · Exempt from GST filing
                     </p>
                   </div>
                 </div>

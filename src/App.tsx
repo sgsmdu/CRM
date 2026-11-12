@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { SgsProvider } from './context/SgsContext';
 import { NavTab } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
@@ -43,6 +43,122 @@ function SgsAppContent() {
   const [selectedJobForDetails, setSelectedJobForDetails] = useState<JobCard | null>(null);
   const [billingInitialJobId, setBillingInitialJobId] = useState<string | null>(null);
   const [quotationInitialJob, setQuotationInitialJob] = useState<JobCard | null>(null);
+  const [exitToast, setExitToast] = useState<string | null>(null);
+
+  // Refs for tracking active state in browser popstate listener
+  const activeTabRef = useRef(activeTab);
+  activeTabRef.current = activeTab;
+  const isMobileMenuOpenRef = useRef(isMobileMenuOpen);
+  isMobileMenuOpenRef.current = isMobileMenuOpen;
+  const isNewJobModalOpenRef = useRef(isNewJobModalOpen);
+  isNewJobModalOpenRef.current = isNewJobModalOpen;
+  const isNewCustomerModalOpenRef = useRef(isNewCustomerModalOpen);
+  isNewCustomerModalOpenRef.current = isNewCustomerModalOpen;
+  const isVendorBillModalOpenRef = useRef(isVendorBillModalOpen);
+  isVendorBillModalOpenRef.current = isVendorBillModalOpen;
+  const isGoogleSheetsModalOpenRef = useRef(isGoogleSheetsModalOpen);
+  isGoogleSheetsModalOpenRef.current = isGoogleSheetsModalOpen;
+  const isGoogleContactsModalOpenRef = useRef(isGoogleContactsModalOpen);
+  isGoogleContactsModalOpenRef.current = isGoogleContactsModalOpen;
+  const selectedJobForWhatsAppRef = useRef(selectedJobForWhatsApp);
+  selectedJobForWhatsAppRef.current = selectedJobForWhatsApp;
+  const selectedJobForDetailsRef = useRef(selectedJobForDetails);
+  selectedJobForDetailsRef.current = selectedJobForDetails;
+
+  const handleTabChange = (newTab: NavTab) => {
+    if (newTab === activeTab) return;
+    try {
+      window.history.pushState({ tab: newTab }, '');
+    } catch {
+      // ignore
+    }
+    setActiveTab(newTab);
+  };
+
+  // Browser Back Button Trap & Modal Protection
+  useEffect(() => {
+    try {
+      window.history.replaceState({ tab: 'dashboard', root: true }, '');
+      window.history.pushState({ tab: 'dashboard' }, '');
+    } catch {
+      // ignore
+    }
+
+    let lastExitAttempt = 0;
+
+    const handlePopState = () => {
+      // 1. Dispatch custom event to close open child modals/editors/viewers
+      const customEvt = new CustomEvent('sgs:modal-back', { cancelable: true });
+      window.dispatchEvent(customEvt);
+      if (customEvt.defaultPrevented) {
+        window.history.pushState({ tab: activeTabRef.current }, '');
+        return;
+      }
+
+      // 2. Close any open top-level modals
+      if (isMobileMenuOpenRef.current) {
+        setIsMobileMenuOpen(false);
+        window.history.pushState({ tab: activeTabRef.current }, '');
+        return;
+      }
+      if (isNewJobModalOpenRef.current) {
+        setIsNewJobModalOpen(false);
+        window.history.pushState({ tab: activeTabRef.current }, '');
+        return;
+      }
+      if (isNewCustomerModalOpenRef.current) {
+        setIsNewCustomerModalOpen(false);
+        window.history.pushState({ tab: activeTabRef.current }, '');
+        return;
+      }
+      if (isVendorBillModalOpenRef.current) {
+        setIsVendorBillModalOpen(false);
+        window.history.pushState({ tab: activeTabRef.current }, '');
+        return;
+      }
+      if (isGoogleSheetsModalOpenRef.current) {
+        setIsGoogleSheetsModalOpen(false);
+        window.history.pushState({ tab: activeTabRef.current }, '');
+        return;
+      }
+      if (isGoogleContactsModalOpenRef.current) {
+        setIsGoogleContactsModalOpen(false);
+        window.history.pushState({ tab: activeTabRef.current }, '');
+        return;
+      }
+      if (selectedJobForWhatsAppRef.current) {
+        setSelectedJobForWhatsApp(null);
+        window.history.pushState({ tab: activeTabRef.current }, '');
+        return;
+      }
+      if (selectedJobForDetailsRef.current) {
+        setSelectedJobForDetails(null);
+        window.history.pushState({ tab: activeTabRef.current }, '');
+        return;
+      }
+
+      // 3. If currently on a sub-page, navigate back to 'dashboard'
+      if (activeTabRef.current !== 'dashboard') {
+        setActiveTab('dashboard');
+        window.history.pushState({ tab: 'dashboard' }, '');
+        return;
+      }
+
+      // 4. If already on dashboard: prevent leaving outside domain on accidental back
+      const now = Date.now();
+      if (now - lastExitAttempt < 2000) {
+        // Exit allowed on rapid double-tap back
+        return;
+      }
+      lastExitAttempt = now;
+      window.history.pushState({ tab: 'dashboard' }, '');
+      setExitToast('Press back again to exit SGS CRM');
+      setTimeout(() => setExitToast(null), 2500);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const handleOpenNewJobWithCustomer = (customer: Customer) => {
     setPreselectedCustomer(customer);
@@ -82,7 +198,7 @@ function SgsAppContent() {
       {/* 1. Left-Side Navigation Menu */}
       <Sidebar
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
         onOpenNewJobModal={() => {
           setPreselectedCustomer(null);
           setIsNewJobModalOpen(true);
@@ -115,7 +231,7 @@ function SgsAppContent() {
         <main className="flex-1 w-full mx-auto px-2.5 sm:px-4 lg:px-8 py-4 sm:py-6 max-w-7xl overflow-x-hidden">
         {activeTab === 'dashboard' && (
           <DashboardOverview
-            onNavigate={setActiveTab}
+            onNavigate={handleTabChange}
             onOpenNewJobModal={() => {
               setPreselectedCustomer(null);
               setIsNewJobModalOpen(true);
@@ -124,12 +240,12 @@ function SgsAppContent() {
             onOpenNewCustomerModal={() => setIsNewCustomerModalOpen(true)}
             onSelectJobForWhatsApp={(job) => {
               setSelectedJobForWhatsApp(job);
-              setActiveTab('jobs');
+              handleTabChange('jobs');
             }}
             onOpenGoogleSheetsModal={() => setIsGoogleSheetsModalOpen(true)}
             onShowJob={(job) => {
               setSelectedJobForDetails(job);
-              setActiveTab('jobs');
+              handleTabChange('jobs');
             }}
           />
         )}
@@ -146,10 +262,10 @@ function SgsAppContent() {
         {activeTab === 'leads' && (
           <LeadSourceManager
             onOpenCustomerDirectoryWithLead={(leadName) => {
-              setActiveTab('customers');
+              handleTabChange('customers');
             }}
             onOpenNewCustomerWithLead={(lead) => {
-              setActiveTab('customers');
+              handleTabChange('customers');
               setIsNewCustomerModalOpen(true);
             }}
           />
@@ -166,13 +282,13 @@ function SgsAppContent() {
             setSelectedJobForWhatsApp={setSelectedJobForWhatsApp}
             onNavigateToBilling={(jobId) => {
               setBillingInitialJobId(jobId || null);
-              setActiveTab('billing');
+              handleTabChange('billing');
             }}
             onNavigateToQuotation={(job) => {
               setQuotationInitialJob(job);
-              setActiveTab('quotations');
+              handleTabChange('quotations');
             }}
-            onNavigateToAllocation={() => setActiveTab('allocation')}
+            onNavigateToAllocation={() => handleTabChange('allocation')}
             initialJobForDetails={selectedJobForDetails}
             onClearInitialJobForDetails={() => setSelectedJobForDetails(null)}
           />
@@ -189,7 +305,7 @@ function SgsAppContent() {
           <WorkAllocationBoard
             onOpenJobDetail={(job) => {
               setSelectedJobForDetails(job);
-              setActiveTab('jobs');
+              handleTabChange('jobs');
             }}
           />
         )}
@@ -293,6 +409,14 @@ function SgsAppContent() {
           </div>
         </div>
       </footer>
+
+      {/* Exit Warning Toast */}
+      {exitToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-slate-900/95 text-white border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs font-semibold flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
+          <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+          <span>{exitToast}</span>
+        </div>
+      )}
       </div>
     </div>
   );
