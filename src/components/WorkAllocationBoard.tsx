@@ -43,6 +43,7 @@ export const WorkAllocationBoard: React.FC<WorkAllocationBoardProps> = ({ onOpen
   const { 
     jobCards, 
     employees, 
+    customers = [],
     updateJobPriority, 
     assignJobToEmployee, 
     bulkAssignJobs,
@@ -380,6 +381,46 @@ export const WorkAllocationBoard: React.FC<WorkAllocationBoardProps> = ({ onOpen
     setIsBulkWhatsAppModalOpen(false);
   };
 
+  // Consolidated WhatsApp Share for all active jobs assigned to an employee
+  const handleConsolidatedEmployeeWhatsApp = (emp: { id: string; name: string; count: number }) => {
+    // Fetch all currently active Job Cards assigned to that employee (exclude completed, delivered, cancelled)
+    const activeJobs = jobCards.filter(j => 
+      j.assignedEmployeeId === emp.id && 
+      j.status !== 'work_completed' && 
+      j.status !== 'completed' && 
+      j.status !== 'delivered'
+    );
+
+    if (activeJobs.length === 0) {
+      showToast(`No active jobs currently assigned to ${emp.name}`);
+      return;
+    }
+
+    let msg = `Spider Grid Solutions – Employee Work Allocation\n\n`;
+    msg += `Employee Name: ${emp.name}\n\n`;
+    msg += `Total Active Jobs: ${activeJobs.length}\n\n`;
+    msg += `Assigned Work Details:\n\n`;
+
+    activeJobs.forEach((j, index) => {
+      const customer = customers.find(c => c.id === j.customerId);
+      const location = j.customerArea || customer?.area || customer?.address || 'Madurai';
+      const workDesc = j.issueDescription || j.deviceBrand || 'Hardware / Service Diagnosis';
+      const latestWorkNote = j.workOrderNotes || j.technicianNotes || (j.timeline && j.timeline.length > 0 && j.timeline[j.timeline.length - 1].notes) || 'Under service inspection';
+      const priority = j.priority || (j.workOrderPriority === 1 ? 'P1' : j.workOrderPriority === 2 ? 'P2' : 'P3') || 'P2';
+
+      msg += `${index + 1}. Customer Name: ${j.customerName}\n`;
+      msg += `   Job Card No: ${j.jobId || j.id}\n`;
+      msg += `   Location: ${location}\n`;
+      msg += `   Work: ${workDesc}\n`;
+      msg += `   Work Note: ${latestWorkNote}\n`;
+      msg += `   Priority: ${priority}\n\n`;
+    });
+
+    const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(msg.trim())}`;
+    window.open(waUrl, '_blank');
+    showToast(`Consolidated WhatsApp message opened for ${emp.name}!`);
+  };
+
   const priorityBadgeConfig: Record<string, { label: string; bg: string; text: string }> = {
     P1: { label: 'P1 — Emergency', bg: 'bg-rose-600 text-white', text: 'text-rose-600' },
     P2: { label: 'P2 — High', bg: 'bg-amber-500 text-white', text: 'text-amber-600' },
@@ -531,27 +572,60 @@ export const WorkAllocationBoard: React.FC<WorkAllocationBoardProps> = ({ onOpen
           <span className="font-bold">Staff Workload Distribution:</span>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {kpis.employeeWorkload.map(emp => (
-            <button
-              key={emp.id}
-              type="button"
-              onClick={() => setFilterEmployee(filterEmployee === emp.id ? 'all' : emp.id)}
-              className={`px-2.5 py-1 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
-                filterEmployee === emp.id
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                  : (isDark ? 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500' : 'bg-white border-slate-300 text-slate-700 hover:border-blue-400')
-              }`}
-            >
-              <span>{emp.name}</span>
-              <span className={`font-mono font-bold px-1.5 py-0.2 rounded-full text-[10px] ${
-                filterEmployee === emp.id 
-                  ? 'bg-white text-blue-700' 
-                  : (emp.count > 3 ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300')
-              }`}>
-                {emp.count} active
-              </span>
-            </button>
-          ))}
+          {kpis.employeeWorkload.map(emp => {
+            const isSelected = filterEmployee === emp.id;
+            const hasActiveJobs = emp.count > 0;
+            return (
+              <div
+                key={emp.id}
+                className={`flex items-center rounded-lg border text-xs transition-all overflow-hidden ${
+                  isSelected
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                    : (isDark ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700')
+                }`}
+              >
+                {/* Employee Name & Active Job Count (Click to filter) */}
+                <button
+                  type="button"
+                  onClick={() => setFilterEmployee(isSelected ? 'all' : emp.id)}
+                  className="px-2.5 py-1 font-medium flex items-center gap-1.5 cursor-pointer hover:opacity-90"
+                  title={`Filter board by ${emp.name}`}
+                >
+                  <span>{emp.name}</span>
+                  <span className={isSelected ? 'text-blue-200' : 'text-slate-400 dark:text-slate-500'}>–</span>
+                  <span className={`font-mono font-bold px-1.5 py-0.2 rounded-full text-[10px] ${
+                    isSelected 
+                      ? 'bg-white text-blue-700' 
+                      : (hasActiveJobs 
+                          ? (emp.count > 3 ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' : 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300')
+                          : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400')
+                  }`}>
+                    {emp.count} Active
+                  </span>
+                </button>
+
+                {/* WhatsApp Consolidated Share Icon/Button */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleConsolidatedEmployeeWhatsApp(emp);
+                  }}
+                  disabled={!hasActiveJobs}
+                  className={`p-1.5 border-l transition-colors cursor-pointer flex items-center justify-center ${
+                    isSelected
+                      ? 'border-blue-500/50 hover:bg-blue-700 text-white'
+                      : hasActiveJobs
+                      ? 'border-slate-200 dark:border-slate-700 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40' 
+                      : 'border-slate-200 dark:border-slate-800 text-slate-300 dark:text-slate-600 cursor-not-allowed opacity-50'
+                  }`}
+                  title={hasActiveJobs ? `Share all ${emp.count} active jobs assigned to ${emp.name} via WhatsApp` : `No active jobs assigned to ${emp.name}`}
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            );
+          })}
           <button
             type="button"
             onClick={() => setFilterEmployee(filterEmployee === 'unassigned' ? 'all' : 'unassigned')}

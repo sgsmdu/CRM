@@ -25,7 +25,9 @@ import {
   ListOrdered,
   FileText,
   KeyRound,
-  ClipboardList
+  ClipboardList,
+  ChevronDown,
+  UserCheck
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -112,20 +114,89 @@ export const Sidebar: React.FC<SidebarProps> = ({
     setTimeout(() => setResetToast(null), 4000);
   };
 
-  const navItems = [
+  // Expandable submenu state for Job Cards and Vendor Hub
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
+    jobs_group: true,
+    vendors_group: false,
+  });
+
+  // Keep parent group expanded if any child route is active
+  React.useEffect(() => {
+    if (activeTab === 'jobs' || activeTab === 'job_card_list') {
+      setExpandedGroups(prev => ({ ...prev, jobs_group: true }));
+    } else if (activeTab === 'inventory' || activeTab === 'vendors') {
+      setExpandedGroups(prev => ({ ...prev, vendors_group: true }));
+    }
+  }, [activeTab]);
+
+  interface SubMenuItem {
+    id: NavTab;
+    label: string;
+    icon: React.ElementType;
+    count?: number;
+  }
+
+  interface MenuItem {
+    id: string;
+    label: string;
+    icon: React.ElementType;
+    count?: number;
+    subItems?: SubMenuItem[];
+  }
+
+  // EXACT MAIN MENU ORDER (1 to 12)
+  const menuItems: MenuItem[] = [
+    // 1. Command Center
     { id: 'dashboard', label: 'Command Center', icon: LayoutDashboard },
-    { id: 'jobs', label: 'Job Cards & Timeline', count: activeJobsCount, icon: Wrench },
-    { id: 'job_card_list', label: 'Job Card List (13 Stages)', count: jobCards.length, icon: ClipboardList },
-    { id: 'quotations', label: 'Manual Quotations', count: pendingQuotesCount, icon: FileText },
-    { id: 'allocation', label: 'Task Assign & Priority', count: pendingTasksCount, icon: ListOrdered },
-    { id: 'billing', label: 'Billing & Invoices', icon: CreditCard },
-    { id: 'reports', label: 'GST Reports & Filing', icon: FileSpreadsheet },
-    { id: 'employees', label: 'Staff & Attendance', icon: Users },
-    { id: 'inventory', label: 'Stock & Parts Inventory', icon: Boxes },
-    { id: 'price_calculator', label: 'Price Code Calculator', icon: KeyRound },
-    { id: 'vendors', label: 'Vendor Hub & Bill Scan', icon: Receipt },
+
+    // 2. Customer Directory
     { id: 'customers', label: 'Customer Directory', count: customers.length, icon: Users },
+
+    // 3. Job Cards & Timeline
+    { 
+      id: 'jobs_group', 
+      label: 'Job Cards & Timeline', 
+      icon: Wrench, 
+      count: activeJobsCount,
+      subItems: [
+        { id: 'jobs', label: 'Job Card Detail List', count: activeJobsCount, icon: FileText },
+        { id: 'job_card_list', label: 'Job Card (Status-wise)', count: jobCards.length, icon: ClipboardList }
+      ]
+    },
+
+    // 4. Task Assign & Priority
+    { id: 'allocation', label: 'Task Assign & Priority', count: pendingTasksCount, icon: ListOrdered },
+
+    // 5. Staff & Attendance
+    { id: 'employees', label: 'Staff & Attendance', icon: UserCheck },
+
+    // 6. Vendor Hub & Bill Scan
+    {
+      id: 'vendors_group',
+      label: 'Vendor Hub & Bill Scan',
+      icon: Receipt,
+      subItems: [
+        { id: 'inventory', label: 'Stock & Parts Inventory', icon: Boxes },
+        { id: 'vendors', label: 'Vendor Bills & Bill Scan', icon: Receipt }
+      ]
+    },
+
+    // 7. Billing & Invoices
+    { id: 'billing', label: 'Billing & Invoices', icon: CreditCard },
+
+    // 8. Manual Quotations
+    { id: 'quotations', label: 'Manual Quotations', count: pendingQuotesCount, icon: FileText },
+
+    // 9. GST Reports & Filing
+    { id: 'reports', label: 'GST Reports & Filing', icon: FileSpreadsheet },
+
+    // 10. Price Code Calculator
+    { id: 'price_calculator', label: 'Price Code Calculator', icon: KeyRound },
+
+    // 11. Lead Sources
     { id: 'leads', label: 'Lead Sources', count: leadSources.length, icon: Share2 },
+
+    // 12. Admin Hub & Settings
     { id: 'admin', label: 'Admin Hub & Settings', icon: ShieldCheck },
   ];
 
@@ -211,37 +282,129 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
         {/* Navigation Menu List */}
         <nav className="flex-1 px-3 py-2 space-y-1 overflow-y-auto scrollbar-thin">
-          {navItems.map((item) => {
+          {menuItems.map((item) => {
             const Icon = item.icon;
-            const isActive = activeTab === item.id;
+            
+            // Handle regular items without submenus
+            if (!item.subItems) {
+              const isActive = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    onTabChange(item.id as NavTab);
+                    setIsMobileOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    isActive
+                      ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25'
+                      : isDark
+                      ? 'text-slate-300 hover:text-white hover:bg-slate-900/80'
+                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
+                  } ${isCollapsed ? 'lg:justify-center lg:px-0' : ''}`}
+                  title={item.label}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span className={`flex-1 text-left truncate ${isCollapsed ? 'lg:hidden' : ''}`}>{item.label}</span>
+                  {item.count !== undefined && item.count > 0 && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                      isCollapsed ? 'lg:hidden' : ''
+                    } ${
+                      isActive ? 'bg-white/20 text-white' : (isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-700')
+                    }`}>
+                      {item.count}
+                    </span>
+                  )}
+                </button>
+              );
+            }
+
+            // Handle items WITH submenus (Job Cards & Timeline, Vendor Hub & Bill Scan)
+            const isGroupActive = item.subItems.some(sub => sub.id === activeTab);
+            const isExpanded = !!expandedGroups[item.id];
+
             return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  onTabChange(item.id as NavTab);
-                  setIsMobileOpen(false);
-                }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                  isActive
-                    ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25'
-                    : isDark
-                    ? 'text-slate-300 hover:text-white hover:bg-slate-900/80'
-                    : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
-                } ${isCollapsed ? 'lg:justify-center lg:px-0' : ''}`}
-                title={item.label}
-              >
-                <Icon className="w-4 h-4 shrink-0" />
-                <span className={`flex-1 text-left truncate ${isCollapsed ? 'lg:hidden' : ''}`}>{item.label}</span>
-                {item.count !== undefined && item.count > 0 && (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                    isCollapsed ? 'lg:hidden' : ''
-                  } ${
-                    isActive ? 'bg-white/20 text-white' : (isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-700')
-                  }`}>
-                    {item.count}
+              <div key={item.id} className="space-y-1">
+                {/* Parent Group Header Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isCollapsed) {
+                      setIsCollapsed(false);
+                      setExpandedGroups(prev => ({ ...prev, [item.id]: true }));
+                    } else {
+                      setExpandedGroups(prev => ({ ...prev, [item.id]: !prev[item.id] }));
+                    }
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                    isGroupActive && !isExpanded
+                      ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/25'
+                      : isGroupActive
+                      ? (isDark ? 'bg-slate-900/90 text-blue-400 font-bold border border-slate-800' : 'bg-blue-50/80 text-blue-700 font-bold border border-blue-100')
+                      : isDark
+                      ? 'text-slate-300 hover:text-white hover:bg-slate-900/80'
+                      : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100'
+                  } ${isCollapsed ? 'lg:justify-center lg:px-0' : ''}`}
+                  title={item.label}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span className={`flex-1 text-left truncate ${isCollapsed ? 'lg:hidden' : ''}`}>{item.label}</span>
+                  
+                  {item.count !== undefined && item.count > 0 && !isExpanded && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                      isCollapsed ? 'lg:hidden' : ''
+                    } ${
+                      isGroupActive ? 'bg-white/20 text-white' : (isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-700')
+                    }`}>
+                      {item.count}
+                    </span>
+                  )}
+
+                  <span className={`${isCollapsed ? 'lg:hidden' : ''} text-slate-400 shrink-0`}>
+                    {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                   </span>
+                </button>
+
+                {/* Submenu Dropdown List (Indented) */}
+                {isExpanded && !isCollapsed && (
+                  <div className={`ml-4 pl-3 border-l space-y-1 transition-all ${
+                    isDark ? 'border-slate-800' : 'border-slate-200'
+                  }`}>
+                    {item.subItems.map(sub => {
+                      const SubIcon = sub.icon;
+                      const isSubActive = activeTab === sub.id;
+                      return (
+                        <button
+                          key={sub.id}
+                          onClick={() => {
+                            onTabChange(sub.id);
+                            setIsMobileOpen(false);
+                          }}
+                          className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                            isSubActive
+                              ? 'bg-blue-600 text-white font-bold shadow-xs'
+                              : isDark
+                              ? 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
+                              : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                          }`}
+                        >
+                          <SubIcon className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                          <span className="flex-1 text-left truncate">{sub.label}</span>
+                          {sub.count !== undefined && sub.count > 0 && (
+                            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                              isSubActive 
+                                ? 'bg-white/20 text-white' 
+                                : isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-200 text-slate-600'
+                            }`}>
+                              {sub.count}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 )}
-              </button>
+              </div>
             );
           })}
         </nav>

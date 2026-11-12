@@ -19,7 +19,9 @@ import {
   Share2,
   UserCheck,
   ListOrdered,
-  ClipboardList
+  ClipboardList,
+  FileText,
+  KeyRound
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 
@@ -92,17 +94,19 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const navItems = [
     { id: 'dashboard', label: 'Command Center', icon: LayoutDashboard },
-    { id: 'jobs', label: `Job Cards (${activeJobsCount})`, icon: Wrench },
-    { id: 'job_card_list', label: `Job Card List (13 Stages)`, icon: ClipboardList },
-    { id: 'allocation', label: `Task Assign & Priority (${pendingTasksCount})`, icon: ListOrdered },
-    { id: 'billing', label: 'Billing & Quotations', icon: CreditCard },
-    { id: 'reports', label: 'GST Reports & Filing', icon: FileSpreadsheet },
-    { id: 'employees', label: 'Staff & Allocation', icon: UserCheck },
-    { id: 'inventory', label: 'Stock & Parts', icon: Boxes },
-    { id: 'vendors', label: 'Vendor Hub & Ledger', icon: Receipt },
     { id: 'customers', label: `Customers (${customers.length})`, icon: Users },
+    { id: 'jobs', label: `Job Cards (${activeJobsCount})`, icon: Wrench },
+    { id: 'job_card_list', label: 'Job Card (Status-wise)', icon: ClipboardList },
+    { id: 'allocation', label: `Task Assign & Priority (${pendingTasksCount})`, icon: ListOrdered },
+    { id: 'employees', label: 'Staff & Attendance', icon: UserCheck },
+    { id: 'inventory', label: 'Stock & Parts Inventory', icon: Boxes },
+    { id: 'vendors', label: 'Vendor Hub & Bill Scan', icon: Receipt },
+    { id: 'billing', label: 'Billing & Invoices', icon: CreditCard },
+    { id: 'quotations', label: 'Manual Quotations', icon: FileText },
+    { id: 'reports', label: 'GST Reports & Filing', icon: FileSpreadsheet },
+    { id: 'price_calculator', label: 'Price Code Calculator', icon: KeyRound },
     { id: 'leads', label: `Lead Sources (${leadSources.length})`, icon: Share2 },
-    { id: 'admin', label: 'Admin Hub', icon: ShieldCheck },
+    { id: 'admin', label: 'Admin Hub & Settings', icon: ShieldCheck },
   ];
 
   return (

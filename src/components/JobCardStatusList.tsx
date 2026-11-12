@@ -330,6 +330,43 @@ export const JobCardStatusList: React.FC<JobCardStatusListProps> = ({
     window.open(shareUrl, '_blank');
   };
 
+  // Dynamic Status Box Sorting & Filtering:
+  // 1. Completely exclude "Call Closed" category, even if it contains records
+  // 2. Hide any status category whose Job Card count is 0
+  // 3. Display in descending order based on current Job Card count (highest count first)
+  // 4. Automatically reorders whenever jobCards are created, deleted, or their status changes
+  const activeSortedCategories = useMemo(() => {
+    return categories
+      // Exclude Call Closed completely
+      .filter(cat => {
+        const titleLower = cat.title.toLowerCase();
+        const idLower = cat.id.toLowerCase();
+        return !titleLower.includes('call close') && 
+               !titleLower.includes('call closed') && 
+               !idLower.includes('call_close') && 
+               !idLower.includes('call_closed');
+      })
+      // Map to include matching jobs and live count
+      .map(cat => {
+        const jobsInStatus = filteredJobs.filter(cat.matcher);
+        return {
+          ...cat,
+          jobsInStatus,
+          count: jobsInStatus.length
+        };
+      })
+      // Hide any status category whose Job Card count is 0
+      .filter(cat => cat.count > 0)
+      // Descending order based on current Job Card count (highest count first)
+      .sort((a, b) => b.count - a.count);
+  }, [categories, filteredJobs]);
+
+  const displayedCategories = useMemo(() => {
+    if (selectedFilterCategory === 'all') return activeSortedCategories;
+    const matched = activeSortedCategories.filter(cat => cat.id === selectedFilterCategory);
+    return matched.length > 0 ? matched : activeSortedCategories;
+  }, [activeSortedCategories, selectedFilterCategory]);
+
   return (
     <div className="space-y-5 animate-in fade-in duration-200">
       
@@ -340,16 +377,16 @@ export const JobCardStatusList: React.FC<JobCardStatusListProps> = ({
         <div>
           <div className="flex items-center gap-2">
             <h2 className={`text-base sm:text-lg font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-              Job Card List (Status-wise)
+              Job Card (Status-wise)
             </h2>
             <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
               isDark ? 'bg-blue-950 text-blue-300 border border-blue-800' : 'bg-blue-50 text-blue-700 border border-blue-200'
             }`}>
-              {jobCards.length} Total Jobs
+              {activeSortedCategories.reduce((sum, c) => sum + c.count, 0)} Active Cards · {activeSortedCategories.length} Active Categories
             </span>
           </div>
           <p className={`text-xs mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-            Live status categorization across all 13 workshop stages. Under each status, cards are shown as a simple numbered list with latest note & WhatsApp share.
+            Dynamically sorted in descending order by job count. Active stages only (zero-count categories hidden, Call Closed excluded).
           </p>
         </div>
 
@@ -391,24 +428,23 @@ export const JobCardStatusList: React.FC<JobCardStatusListProps> = ({
         </div>
       </div>
 
-      {/* Status Summary Pills / Quick Jump */}
-      <div className={`p-3 rounded-xl border flex items-center gap-2 overflow-x-auto scrollbar-thin ${
-        isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50/80 border-slate-200'
-      }`}>
-        <button
-          type="button"
-          onClick={() => setSelectedFilterCategory('all')}
-          className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors cursor-pointer shrink-0 ${
-            selectedFilterCategory === 'all'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : isDark ? 'bg-slate-800 text-slate-300 hover:text-white' : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
-          }`}
-        >
-          All 13 Categories ({jobCards.length})
-        </button>
-        {categories.map((cat) => {
-          const count = jobCards.filter(cat.matcher).length;
-          return (
+      {/* Dynamic Status Summary Pills (Sorted Descending by Count) */}
+      {activeSortedCategories.length > 0 && (
+        <div className={`p-3 rounded-xl border flex items-center gap-2 overflow-x-auto scrollbar-thin ${
+          isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50/80 border-slate-200'
+        }`}>
+          <button
+            type="button"
+            onClick={() => setSelectedFilterCategory('all')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-colors cursor-pointer shrink-0 ${
+              selectedFilterCategory === 'all'
+                ? 'bg-blue-600 text-white shadow-xs'
+                : isDark ? 'bg-slate-800 text-slate-300 hover:text-white' : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            All Active Stages ({activeSortedCategories.reduce((sum, c) => sum + c.count, 0)})
+          </button>
+          {activeSortedCategories.map((cat, rank) => (
             <button
               key={cat.id}
               type="button"
@@ -421,23 +457,46 @@ export const JobCardStatusList: React.FC<JobCardStatusListProps> = ({
                     : 'bg-white border border-slate-200/90 text-slate-700 hover:bg-slate-100'
               }`}
             >
+              <span className="text-[10px] opacity-60">#{rank + 1}</span>
               <span>{cat.title}</span>
               <span className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
                 selectedFilterCategory === cat.id ? 'bg-white/20 text-white' : cat.badgeBg + ' ' + cat.badgeText
               }`}>
-                {count}
+                {cat.count}
               </span>
             </button>
-          );
-        })}
-      </div>
+          ))}
+        </div>
+      )}
 
-      {/* Grid of 13 Status Boxes */}
+      {/* Grid of Dynamic Descending Status Boxes */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
-        {categories
-          .filter(cat => selectedFilterCategory === 'all' || selectedFilterCategory === cat.id)
-          .map((cat) => {
-            const jobsInStatus = filteredJobs.filter(cat.matcher);
+        {displayedCategories.length === 0 ? (
+          <div className={`col-span-full py-16 px-4 text-center rounded-2xl border border-dashed flex flex-col items-center justify-center gap-3 ${
+            isDark ? 'border-slate-800 bg-slate-900/40 text-slate-400' : 'border-slate-200 bg-slate-50 text-slate-500'
+          }`}>
+            <AlertCircle className="w-8 h-8 opacity-40 text-blue-500" />
+            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+              No Active Job Cards Available
+            </h3>
+            <p className="text-xs max-w-md text-slate-500 dark:text-slate-400">
+              {searchQuery 
+                ? `No active status categories match the search term "${searchQuery}".`
+                : 'All status categories currently have 0 job cards. Status boxes will automatically appear here in descending order as soon as job cards are created or moved.'}
+            </p>
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="mt-2 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 cursor-pointer"
+              >
+                Clear Search
+              </button>
+            )}
+          </div>
+        ) : (
+          displayedCategories.map((cat, rank) => {
+            const jobsInStatus = cat.jobsInStatus;
             const Icon = cat.icon;
             const hasJobs = jobsInStatus.length > 0;
 
@@ -448,23 +507,27 @@ export const JobCardStatusList: React.FC<JobCardStatusListProps> = ({
                   isDark ? 'bg-slate-900/80 shadow-lg' : 'bg-white shadow-xs hover:shadow-md'
                 }`}
               >
-                {/* 1. Box Header: Title and Job Card Count */}
+                {/* 1. Box Header: Title and Live Job Card Count */}
                 <div className={`px-4 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${cat.headerBg} ${cat.borderColor}`}>
                   <div className="flex items-center gap-2 min-w-0">
                     <div className={`p-1.5 rounded-lg shrink-0 ${cat.badgeBg} ${cat.badgeText}`}>
                       <Icon className="w-4 h-4" />
                     </div>
-                    <h3 className={`font-bold text-xs sm:text-sm tracking-wide uppercase truncate ${
-                      isDark ? 'text-white' : 'text-slate-900'
-                    }`}>
-                      {cat.title}
-                    </h3>
+                    <div className="min-w-0">
+                      <h3 className={`font-bold text-xs sm:text-sm tracking-wide uppercase truncate ${
+                        isDark ? 'text-white' : 'text-slate-900'
+                      }`}>
+                        {cat.title}
+                      </h3>
+                    </div>
                   </div>
                   
                   {/* Badge count */}
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold shrink-0 ${cat.badgeBg} ${cat.badgeText} border ${cat.borderColor}`}>
-                    {jobsInStatus.length}
-                  </span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${cat.badgeBg} ${cat.badgeText} border ${cat.borderColor}`}>
+                      {cat.count}
+                    </span>
+                  </div>
                 </div>
 
                 {/* 2. Box Content: Simple Numbered List of Job Cards */}
@@ -587,7 +650,8 @@ export const JobCardStatusList: React.FC<JobCardStatusListProps> = ({
                 </div>
               </div>
             );
-          })}
+          })
+        )}
       </div>
     </div>
   );
