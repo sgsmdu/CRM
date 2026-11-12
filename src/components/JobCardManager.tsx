@@ -58,6 +58,7 @@ import {
 import { useSgs } from '../context/SgsContext';
 import { JobCard, JobStatus, DeviceCategory, ServiceSalesType, Customer, JobTimelineEvent } from '../types';
 import { WorkAllocationBoard } from './WorkAllocationBoard';
+import { JobCardStatusList } from './JobCardStatusList';
 
 interface JobCardManagerProps {
   isCreateModalOpen: boolean;
@@ -71,6 +72,7 @@ interface JobCardManagerProps {
   onNavigateToAllocation?: () => void;
   initialJobForDetails?: JobCard | null;
   onClearInitialJobForDetails?: () => void;
+  initialSubTab?: 'cards' | 'list' | 'allocation';
 }
 
 export const JobCardManager: React.FC<JobCardManagerProps> = ({
@@ -85,6 +87,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
   onNavigateToAllocation,
   initialJobForDetails,
   onClearInitialJobForDetails,
+  initialSubTab = 'cards',
 }) => {
   const { 
     customers, 
@@ -111,8 +114,14 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
   
   const isDark = theme === 'dark';
 
-  // View Toggle: All Job Cards vs Work Allocation Board (Module 1)
-  const [activeManagerTab, setActiveManagerTab] = useState<'cards' | 'allocation'>('cards');
+  // View Toggle: All Job Cards vs Job Card List (13 Statuses) vs Work Allocation Board
+  const [activeManagerTab, setActiveManagerTab] = useState<'cards' | 'list' | 'allocation'>(initialSubTab || 'cards');
+
+  useEffect(() => {
+    if (initialSubTab) {
+      setActiveManagerTab(initialSubTab);
+    }
+  }, [initialSubTab]);
 
   // "Show Job" Full Details & Management Modal (Module 2)
   const [detailedJob, setDetailedJob] = useState<JobCard | null>(null);
@@ -492,14 +501,19 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
       text: isDark ? 'text-green-300' : 'text-green-700 font-semibold',
     },
     billed: {
-      label: 'Billed (Invoice Created)',
+      label: 'Billed',
       bg: isDark ? 'bg-cyan-950/60 border-cyan-800' : 'bg-cyan-50 border-cyan-200',
       text: isDark ? 'text-cyan-300' : 'text-cyan-700 font-semibold',
     },
+    payment_pending: {
+      label: 'Payment Pending',
+      bg: isDark ? 'bg-amber-950/60 border-amber-800' : 'bg-amber-50 border-amber-200',
+      text: isDark ? 'text-amber-300' : 'text-amber-700 font-semibold',
+    },
     pickup_ready: {
-      label: 'Pickup Note Ready',
-      bg: isDark ? 'bg-blue-950/60 border-blue-800' : 'bg-blue-50 border-blue-200',
-      text: isDark ? 'text-blue-300' : 'text-blue-700 font-semibold',
+      label: 'Ready for Pickup',
+      bg: isDark ? 'bg-emerald-950/60 border-emerald-800' : 'bg-emerald-50 border-emerald-200',
+      text: isDark ? 'text-emerald-300' : 'text-emerald-700 font-semibold',
     },
     hold: {
       label: 'On Hold',
@@ -582,6 +596,18 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
             </button>
             <button
               type="button"
+              onClick={() => setActiveManagerTab('list')}
+              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeManagerTab === 'list'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <ListOrdered className="w-3.5 h-3.5" />
+              <span>Job Card List (13 Statuses)</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveManagerTab('allocation')}
               className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
                 activeManagerTab === 'allocation'
@@ -611,8 +637,20 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
         </div>
       </div>
 
-      {/* Render Work Allocation Board if activeManagerTab is 'allocation' */}
-      {activeManagerTab === 'allocation' ? (
+      {/* Render Job Card List or Work Allocation Board or Standard Cards */}
+      {activeManagerTab === 'list' ? (
+        <JobCardStatusList 
+          onSelectJob={(job) => setDetailedJob(job)}
+          onOpenNewJobModal={() => {
+            onClearPreselectedCustomer();
+            setCustomerId('');
+            setCustomerName('');
+            setCustomerPhone('');
+            setCustomerArea('');
+            setIsCreateModalOpen(true);
+          }}
+        />
+      ) : activeManagerTab === 'allocation' ? (
         <WorkAllocationBoard onOpenJobDetail={(job) => setDetailedJob(job)} />
       ) : (
         <>
@@ -666,6 +704,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                 <option value="customer_discussion">Customer Discussion</option>
                 <option value="work_completed">Work Completed</option>
                 <option value="billed">Billed</option>
+                <option value="payment_pending">Payment Pending</option>
                 <option value="completed">Ready for Pickup</option>
                 <option value="delivered">Delivered / Closed</option>
                 <option value="hold">On Hold</option>
@@ -1567,6 +1606,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                       <option value="customer_discussion">Customer Discussion</option>
                       <option value="work_completed">Work Completed</option>
                       <option value="billed">Billed</option>
+                      <option value="payment_pending">Payment Pending</option>
                       <option value="completed">Ready for Pickup</option>
                       <option value="delivered">Delivered</option>
                       <option value="hold">On Hold</option>
@@ -3840,6 +3880,8 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                     <option value="quotation_pending">Quotation Pending</option>
                     <option value="waiting_parts">Waiting for Parts</option>
                     <option value="work_completed">Work Completed</option>
+                    <option value="billed">Billed</option>
+                    <option value="payment_pending">Payment Pending</option>
                     <option value="completed">Ready for Pickup</option>
                     <option value="hold">On Hold</option>
                   </select>

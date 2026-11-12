@@ -154,8 +154,9 @@ function SgsAppContent() {
           />
         )}
 
-        {activeTab === 'jobs' && (
+        {(activeTab === 'jobs' || activeTab === 'job_card_list') && (
           <JobCardManager
+            initialSubTab={activeTab === 'job_card_list' ? 'list' : 'cards'}
             isCreateModalOpen={isNewJobModalOpen}
             setIsCreateModalOpen={setIsNewJobModalOpen}
             preselectedCustomer={preselectedCustomer}
@@ -229,7 +230,7 @@ function SgsAppContent() {
 
       {/* Background Modals when invoked globally from other views */}
       {/* Note: Job Card Modal is also rendered by JobCardManager, so if on another tab, render JobCardManager invisibly or handle */}
-      {activeTab !== 'jobs' && isNewJobModalOpen && (
+      {activeTab !== 'jobs' && activeTab !== 'job_card_list' && isNewJobModalOpen && (
         <JobCardManager
           isCreateModalOpen={isNewJobModalOpen}
           setIsCreateModalOpen={setIsNewJobModalOpen}

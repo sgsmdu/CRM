@@ -24,7 +24,8 @@ import {
   X,
   ListOrdered,
   FileText,
-  KeyRound
+  KeyRound,
+  ClipboardList
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -114,6 +115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems = [
     { id: 'dashboard', label: 'Command Center', icon: LayoutDashboard },
     { id: 'jobs', label: 'Job Cards & Timeline', count: activeJobsCount, icon: Wrench },
+    { id: 'job_card_list', label: 'Job Card List (13 Stages)', count: jobCards.length, icon: ClipboardList },
     { id: 'quotations', label: 'Manual Quotations', count: pendingQuotesCount, icon: FileText },
     { id: 'allocation', label: 'Task Assign & Priority', count: pendingTasksCount, icon: ListOrdered },
     { id: 'billing', label: 'Billing & Invoices', icon: CreditCard },

@@ -2555,6 +2555,7 @@ Please update your diagnostic notes and call status upon inspection.
       customer_discussion: 'Technical Discussion with Customer',
       work_completed: 'Service Completed & Quality Checked',
       billed: 'Invoice Generated',
+      payment_pending: 'Payment Pending - Awaiting Clearance',
       pickup_ready: 'Device Ready for Pickup',
       completed: 'Work Completed - Ready for Pickup / Delivery',
       delivered: 'Delivered & Handed Over',

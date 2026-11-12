@@ -18,13 +18,14 @@ import {
   ShieldCheck,
   Share2,
   UserCheck,
-  ListOrdered
+  ListOrdered,
+  ClipboardList
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 
 import { PWAInstallButton } from './PWAInstallButton';
 
-export type NavTab = 'dashboard' | 'customers' | 'leads' | 'jobs' | 'allocation' | 'quotations' | 'price_calculator' | 'inventory' | 'vendors' | 'billing' | 'reports' | 'employees' | 'admin';
+export type NavTab = 'dashboard' | 'customers' | 'leads' | 'jobs' | 'job_card_list' | 'allocation' | 'quotations' | 'price_calculator' | 'inventory' | 'vendors' | 'billing' | 'reports' | 'employees' | 'admin';
 
 interface NavbarProps {
   activeTab: NavTab;
@@ -92,6 +93,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const navItems = [
     { id: 'dashboard', label: 'Command Center', icon: LayoutDashboard },
     { id: 'jobs', label: `Job Cards (${activeJobsCount})`, icon: Wrench },
+    { id: 'job_card_list', label: `Job Card List (13 Stages)`, icon: ClipboardList },
     { id: 'allocation', label: `Task Assign & Priority (${pendingTasksCount})`, icon: ListOrdered },
     { id: 'billing', label: 'Billing & Quotations', icon: CreditCard },
     { id: 'reports', label: 'GST Reports & Filing', icon: FileSpreadsheet },

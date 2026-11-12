@@ -27,6 +27,7 @@ export const HeaderTopBar: React.FC<HeaderTopBarProps> = ({
   const tabTitles: Record<NavTab, { title: string; subtitle: string }> = {
     dashboard: { title: 'Command Center', subtitle: 'Overview, quick actions, performance & alerts' },
     jobs: { title: 'Job Cards & Timeline', subtitle: 'Process tracking, quotations, approvals, delivery & calls' },
+    job_card_list: { title: 'Job Card List (Status-wise)', subtitle: 'All 13 workshop stages with simplified card notes & category WhatsApp sharing' },
     quotations: { title: 'Manual Quotations (Model 1 & 2)', subtitle: 'Independent comparative quotation proposals with hidden internal margins' },
     allocation: { title: 'Task Assign & Work Priority', subtitle: 'Order pending tasks, assign to staff & share WhatsApp work schedule' },
     billing: { title: 'Billing & Invoices', subtitle: 'Tax invoices, manual GST edit & printable vouchers' },

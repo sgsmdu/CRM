@@ -86,6 +86,7 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
     customer_discussion: { label: 'Discussion', color: isDark ? 'text-indigo-400 bg-indigo-950/40 border-indigo-800' : 'text-indigo-700 bg-indigo-50 border-indigo-200' },
     work_completed: { label: 'Work Completed', color: isDark ? 'text-green-400 bg-green-950/40 border-green-800' : 'text-green-700 bg-green-50 border-green-200' },
     billed: { label: 'Billed', color: isDark ? 'text-cyan-400 bg-cyan-950/40 border-cyan-800' : 'text-cyan-700 bg-cyan-50 border-cyan-200' },
+    payment_pending: { label: 'Payment Pending', color: isDark ? 'text-yellow-400 bg-yellow-950/40 border-yellow-800' : 'text-yellow-800 bg-yellow-50 border-yellow-200' },
     pickup_ready: { label: 'Pickup Ready', color: isDark ? 'text-blue-400 bg-blue-950/40 border-blue-800' : 'text-blue-700 bg-blue-50 border-blue-200' },
     completed: { label: 'Ready for Delivery', color: isDark ? 'text-emerald-400 bg-emerald-950/40 border-emerald-800' : 'text-emerald-700 bg-emerald-50 border-emerald-200' },
     delivered: { label: 'Delivered', color: isDark ? 'text-slate-400 bg-slate-900 border-slate-800' : 'text-slate-600 bg-slate-100 border-slate-200' },
@@ -378,12 +379,19 @@ export const DashboardOverview: React.FC<DashboardOverviewProps> = ({
                         onChange={(e) => updateJobCardStatus(job.id, e.target.value as JobStatus)}
                         className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg border cursor-pointer ${statusMeta.color}`}
                       >
-                        <option value="received">Received</option>
+                        <option value="received">Received (Inspection)</option>
                         <option value="in_process">In Process</option>
                         <option value="quotation_pending">Quotation Pending</option>
                         <option value="waiting_parts">Waiting Parts</option>
+                        <option value="customer_approval">Customer Approved</option>
+                        <option value="customer_discussion">Customer Discussion</option>
+                        <option value="work_completed">Work Completed</option>
+                        <option value="billed">Billed</option>
+                        <option value="payment_pending">Payment Pending</option>
                         <option value="completed">Ready for Pickup</option>
                         <option value="delivered">Delivered</option>
+                        <option value="hold">On Hold</option>
+                        <option value="other">Other Stage</option>
                       </select>
 
                       {/* Show Job Button */}
