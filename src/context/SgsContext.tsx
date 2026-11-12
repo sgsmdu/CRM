@@ -713,19 +713,13 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         } catch (err) {
           console.warn('Error checking user authorization:', err);
         }
-      } else {
-        // No active Firebase Auth user session (e.g. if GCP API Key has domain restrictions or direct staff login used)
+       } else {
+        setIsAuthenticated(false);
         try {
-          const storedAuth = localStorage.getItem('sgs_is_authenticated') === 'true';
-          const storedEmail = localStorage.getItem('sgs_current_user_email');
-          if (storedAuth && storedEmail) {
-            setIsAuthenticated(true);
-          } else {
-            setIsAuthenticated(false);
-          }
-        } catch {
-          setIsAuthenticated(false);
-        }
+          localStorage.removeItem('sgs_is_authenticated');
+          localStorage.removeItem('sgs_current_user_email');
+          localStorage.removeItem('sgs_current_user_role');
+        } catch {}
       }
       setIsAuthLoading(false);
     });
