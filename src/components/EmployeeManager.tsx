@@ -53,6 +53,7 @@ export const EmployeeManager: React.FC = () => {
     allocateWorkToEmployee,
     removeWorkAllocation,
     shareJobToEmployeeWhatsApp,
+    canDelete,
     theme 
   } = useSgs();
 
@@ -143,6 +144,17 @@ export const EmployeeManager: React.FC = () => {
     setEmpUpiId(emp.upiId || '');
     setEmpNotes(emp.notes || '');
     setIsAddEmpModalOpen(true);
+  };
+
+  const handleDeleteEmployee = (emp: Employee) => {
+    if (confirm(`Are you sure you want to permanently remove "${emp.name}" from the staff roster?\n\nThis will remove their profile and unassign active tasks.`)) {
+      deleteEmployee(emp.id);
+      showEmpToast(`Staff member ${emp.name} removed successfully.`);
+      if (editingEmpId === emp.id) {
+        setIsAddEmpModalOpen(false);
+        setEditingEmpId(null);
+      }
+    }
   };
 
   // Attendance Date
@@ -504,6 +516,16 @@ export const EmployeeManager: React.FC = () => {
                         >
                           <Edit3 className="w-3.5 h-3.5" />
                         </button>
+                        {canDelete && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteEmployee(emp)}
+                            className="p-1 rounded-md text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 cursor-pointer transition-colors"
+                            title={`Delete ${emp.name} from staff roster (Admin Only)`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
                           todayAtt === 'present' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' :
                           todayAtt === 'half_day' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' :
@@ -1293,23 +1315,38 @@ export const EmployeeManager: React.FC = () => {
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsAddEmpModalOpen(false);
-                    setEditingEmpId(null);
-                  }}
-                  className="px-4 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm"
-                >
-                  {editingEmpId ? 'Save Profile Changes' : 'Save Employee'}
-                </button>
+              <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                {editingEmpId && canDelete ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const emp = employees.find(e => e.id === editingEmpId);
+                      if (emp) handleDeleteEmployee(emp);
+                    }}
+                    className="px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg border border-rose-300 dark:border-rose-900 cursor-pointer flex items-center gap-1.5"
+                    title="Permanently remove staff member (Admin Only)"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Delete Staff
+                  </button>
+                ) : <div />}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddEmpModalOpen(false);
+                      setEditingEmpId(null);
+                    }}
+                    className="px-4 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm cursor-pointer"
+                  >
+                    {editingEmpId ? 'Save Profile Changes' : 'Save Employee'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

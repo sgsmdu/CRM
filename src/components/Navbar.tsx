@@ -21,13 +21,14 @@ import {
   ListOrdered,
   ClipboardList,
   FileText,
-  KeyRound
+  KeyRound,
+  Wallet
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 
 import { PWAInstallButton } from './PWAInstallButton';
 
-export type NavTab = 'dashboard' | 'customers' | 'leads' | 'jobs' | 'job_card_list' | 'allocation' | 'quotations' | 'price_calculator' | 'inventory' | 'vendors' | 'billing' | 'reports' | 'employees' | 'admin';
+export type NavTab = 'dashboard' | 'customers' | 'leads' | 'jobs' | 'job_card_list' | 'allocation' | 'quotations' | 'price_calculator' | 'inventory' | 'vendors' | 'billing' | 'money_flow' | 'reports' | 'employees' | 'admin';
 
 interface NavbarProps {
   activeTab: NavTab;
@@ -102,6 +103,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     { id: 'inventory', label: 'Stock & Parts Inventory', icon: Boxes },
     { id: 'vendors', label: 'Vendor Hub & Bill Scan', icon: Receipt },
     { id: 'billing', label: 'Billing & Invoices', icon: CreditCard },
+    { id: 'money_flow', label: 'Money Flow', icon: Wallet },
     { id: 'quotations', label: 'Manual Quotations', icon: FileText },
     { id: 'reports', label: 'GST Reports & Filing', icon: FileSpreadsheet },
     { id: 'price_calculator', label: 'Price Code Calculator', icon: KeyRound },

@@ -1378,6 +1378,22 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                 >
                                   <Eye className="w-4 h-4" />
                                 </button>
+                                {canDelete && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (window.confirm(`Delete bill #${bill.invoiceNumber} from ${bill.vendorName}?\n\nThe stock it added will be taken back and its payment entries removed from the cash book.`)) {
+                                        deleteVendorBill(bill.id);
+                                      }
+                                    }}
+                                    className={`p-1.5 rounded transition-colors cursor-pointer ${
+                                      isDark ? 'text-slate-400 hover:text-rose-400 hover:bg-slate-800' : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                                    }`}
+                                    title="Delete bill (Admin Only)"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
                               </div>
                             </td>
                           </tr>

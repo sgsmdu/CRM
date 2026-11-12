@@ -339,16 +339,46 @@ export interface Invoice {
   attachedBillImage?: string; // Scanned invoice / receipt photo
 }
 
+export interface BankAccount {
+  id: string;
+  bankName: string;
+  accountHolder: string;
+  accountNumber: string; // Stored securely; displayed masked (e.g. •••• 7890)
+  accountType: 'savings' | 'current' | 'overdraft' | 'other';
+  branch?: string;
+  ifscCode?: string;
+  openingBalance: number;
+  isActive: boolean;
+  notes?: string;
+  createdAt: string;
+}
+
 export interface CashFlowEntry {
   id: string;
   date: string;
-  type: 'income' | 'expense';
-  category: string; // "Service Charge", "Hardware Sale", "Vendor Spares", "Rent & Bills", "Tools & Consumables"
+  type: 'income' | 'expense' | 'transfer';
+  category: string; // e.g. "Customer Payment", "Service Charge", "Vendor Spares", "Office Expenses", "Internal Transfer"
   description: string;
   amount: number;
   paymentMode: PaymentMode;
-  referenceId?: string; // Invoice ID or Vendor Bill ID
-  referenceNumber?: string; // UPI UTR or Transaction Ref
+  referenceId?: string; // Invoice ID or Vendor Bill ID or Job Card ID
+  referenceNumber?: string; // UPI UTR, Cheque No, Transaction Ref
+  // Money Flow & Accounts Management
+  accountType?: 'cash' | 'bank'; // 'cash' or 'bank' (defaults to 'cash' for backward compatibility)
+  bankAccountId?: string; // Bank account ID if accountType === 'bank'
+  toAccountType?: 'cash' | 'bank'; // Destination account for transfers
+  toBankAccountId?: string; // Destination bank account for transfers
+  isTransfer?: boolean; // True for internal transfers (excluded from P&L / Income / Expense metrics)
+  transferType?: 'cash_to_bank' | 'bank_to_cash' | 'bank_to_bank';
+  payeeOrCustomer?: string; // Contact or company name
+  customerId?: string;
+  vendorId?: string;
+  jobCardId?: string;
+  invoiceId?: string;
+  vendorBillId?: string;
+  attachmentUrl?: string; // Scanned bill, receipt, or payment voucher image
+  notes?: string;
+  createdAt?: string;
 }
 
 export interface QuickServicePreset {
@@ -404,6 +434,8 @@ export interface AdminSettings {
   quotationHeaderImageUrl?: string; // Custom header banner image for Manual Quotation
   quotationFooterImageUrl?: string; // Custom footer banner image for Manual Quotation
   quotationTerms?: string; // Default terms for manual quotations
+  // Money Flow & Accounts
+  openingCashBalance?: number; // Starting cash in hand balance (₹)
 }
 
 export interface Employee {

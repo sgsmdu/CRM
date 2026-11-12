@@ -1026,6 +1026,20 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     }
   };
 
+  // Delete Bill
+  const handleDeleteInvoice = (id: string, invoiceNumber: string) => {
+    const target = invoices.find(i => i.id === id);
+    const note = target && target.paidAmount > 0 
+      ? `\n\nPayment entries (₹${target.paidAmount.toLocaleString('en-IN')}) will be reversed, and deducted stock will be restored to inventory.` 
+      : '\n\nDeducted stock will be restored to inventory.';
+    if (confirm(`Are you sure you want to permanently delete bill #${invoiceNumber}?${note}`)) {
+      deleteInvoice(id);
+      if (viewingInvoice?.id === id) {
+        setViewingInvoice(null);
+      }
+    }
+  };
+
   // Duplicate Bill
   const handleDuplicateInvoice = (id: string) => {
     try {
@@ -1602,11 +1616,23 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                                 <button
                                   onClick={() => handleCancelInvoice(inv.id)}
                                   className={`p-1.5 text-xs rounded transition-colors cursor-pointer ${
-                                    isDark ? 'text-slate-500 hover:text-rose-400 hover:bg-slate-800' : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                                    isDark ? 'text-slate-500 hover:text-amber-400 hover:bg-slate-800' : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'
                                   }`}
                                   title="Cancel bill (Admin Only)"
                                 >
                                   <Ban className="w-4 h-4" />
+                                </button>
+                              )}
+
+                              {canDelete && (
+                                <button
+                                  onClick={() => handleDeleteInvoice(inv.id, inv.invoiceNumber)}
+                                  className={`p-1.5 text-xs rounded transition-colors cursor-pointer ${
+                                    isDark ? 'text-slate-500 hover:text-rose-400 hover:bg-slate-800' : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                                  }`}
+                                  title="Permanently Delete Bill (Admin Only)"
+                                >
+                                  <Trash2 className="w-4 h-4" />
                                 </button>
                               )}
                             </div>
@@ -2048,10 +2074,21 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                   <button
                     type="button"
                     onClick={() => handleCancelInvoice(viewingInvoice.id)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-rose-600 hover:bg-rose-50 border border-rose-300 cursor-pointer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-amber-600 hover:bg-amber-50 border border-amber-300 cursor-pointer"
                     title="Cancel Bill (Admin Only)"
                   >
                     <Ban className="w-3.5 h-3.5" /> Cancel Bill
+                  </button>
+                )}
+
+                {canDelete && (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteInvoice(viewingInvoice.id, viewingInvoice.invoiceNumber)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-rose-600 hover:bg-rose-50 border border-rose-300 cursor-pointer"
+                    title="Permanently Delete Bill (Admin Only)"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Delete Bill
                   </button>
                 )}
               </div>

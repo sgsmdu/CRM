@@ -27,7 +27,8 @@ import {
   KeyRound,
   ClipboardList,
   ChevronDown,
-  UserCheck
+  UserCheck,
+  Wallet
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -183,6 +184,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
     // 7. Billing & Invoices
     { id: 'billing', label: 'Billing & Invoices', icon: CreditCard },
+
+    // Money Flow
+    { id: 'money_flow', label: 'Money Flow', icon: Wallet },
 
     // 8. Manual Quotations
     { id: 'quotations', label: 'Manual Quotations', count: pendingQuotesCount, icon: FileText },

@@ -11,6 +11,7 @@ import { WorkAllocationBoard } from './components/WorkAllocationBoard';
 import { InventoryManager } from './components/InventoryManager';
 import { VendorBillScanner } from './components/VendorBillScanner';
 import { BillingCashFlow } from './components/BillingCashFlow';
+import { MoneyFlowManager } from './components/MoneyFlowManager';
 import { ReportsManager } from './components/ReportsManager';
 import { EmployeeManager } from './components/EmployeeManager';
 import { AdminDashboard } from './components/AdminDashboard';
@@ -213,6 +214,10 @@ function SgsAppContent() {
             initialJobId={billingInitialJobId}
             onClearInitialJobId={() => setBillingInitialJobId(null)}
           />
+        )}
+
+        {activeTab === 'money_flow' && (
+          <MoneyFlowManager />
         )}
 
         {activeTab === 'reports' && (

@@ -31,6 +31,7 @@ export const HeaderTopBar: React.FC<HeaderTopBarProps> = ({
     quotations: { title: 'Manual Quotations (Model 1 & 2)', subtitle: 'Independent comparative quotation proposals with hidden internal margins' },
     allocation: { title: 'Task Assign & Work Priority', subtitle: 'Order pending tasks, assign to staff & share WhatsApp work schedule' },
     billing: { title: 'Billing & Invoices', subtitle: 'Tax invoices, manual GST edit & printable vouchers' },
+    money_flow: { title: 'Money Flow & Accounts Management', subtitle: 'Cash book, multi-bank accounts, money in/out, expenses, transfers & statements' },
     reports: { title: 'GST Reports & Filing', subtitle: 'Official GSTR-1, GSTR-2 JSON & Excel exports, master ledger' },
     employees: { title: 'Staff, Attendance & Allocation', subtitle: 'Staff attendance, wage slips, work allocation & WhatsApp orders' },
     inventory: { title: 'Stock & Parts Inventory', subtitle: 'Spares tracking, category summaries, vendor link & movements' },

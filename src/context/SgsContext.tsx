@@ -31,7 +31,8 @@ import {
   PriceCodeMapping,
   PriceCodeMappingVersion,
   AllowedUser,
-  UserRole
+  UserRole,
+  BankAccount
 } from '../types';
 import { 
   fetchUserRoleFromFirestore, 
@@ -171,6 +172,25 @@ interface SgsContextType {
   
   // Cash Flow & Expenses
   addCashFlowEntry: (entry: Omit<CashFlowEntry, 'id'>) => void;
+  updateCashFlowEntry: (id: string, updates: Partial<CashFlowEntry>) => void;
+  deleteCashFlowEntry: (id: string) => void;
+
+  // Money Flow & Bank Accounts
+  bankAccounts: BankAccount[];
+  addBankAccount: (acc: Omit<BankAccount, 'id' | 'createdAt'>) => BankAccount;
+  updateBankAccount: (id: string, updates: Partial<BankAccount>) => void;
+  deleteBankAccount: (id: string) => void;
+  toggleBankAccountStatus: (id: string) => void;
+  transferFunds: (transfer: {
+    date: string;
+    fromAccountType: 'cash' | 'bank';
+    fromBankAccountId?: string;
+    toAccountType: 'cash' | 'bank';
+    toBankAccountId?: string;
+    amount: number;
+    referenceNumber?: string;
+    notes?: string;
+  }) => void;
   
   // Admin Settings
   updateAdminSettings: (updates: Partial<AdminSettings>) => void;
@@ -320,6 +340,35 @@ function deduplicateById<T extends { id: string }>(items: T[], prefix: string): 
   });
 }
 
+const DEFAULT_BANK_ACCOUNTS: BankAccount[] = [
+  {
+    id: 'bank-acc-1',
+    bankName: 'Axis Bank',
+    accountHolder: 'Spider Grid Solutions',
+    accountNumber: '921020034567890',
+    accountType: 'current',
+    branch: 'Simmakkal, Madurai',
+    ifscCode: 'UTIB0000123',
+    openingBalance: 45000,
+    isActive: true,
+    notes: 'Primary Current Account for GST billing and vendor RTGS/NEFT transfers',
+    createdAt: '2026-01-01',
+  },
+  {
+    id: 'bank-acc-2',
+    bankName: 'State Bank of India',
+    accountHolder: 'Spider Grid Solutions',
+    accountNumber: '38291045678',
+    accountType: 'savings',
+    branch: 'Goripalayam, Madurai',
+    ifscCode: 'SBIN0001248',
+    openingBalance: 18500,
+    isActive: true,
+    notes: 'Secondary Savings Account for UPI QR codes and small cash deposits',
+    createdAt: '2026-01-01',
+  }
+];
+
 const SgsContext = createContext<SgsContextType | undefined>(undefined);
 
 export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -390,6 +439,19 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return deduplicateById(raw, 'cf');
     } catch {
       return [];
+    }
+  });
+
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_bank_accounts`);
+      if (stored) {
+        const parsed: BankAccount[] = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return deduplicateById(parsed, 'bank');
+      }
+      return DEFAULT_BANK_ACCOUNTS;
+    } catch {
+      return DEFAULT_BANK_ACCOUNTS;
     }
   });
 
@@ -843,6 +905,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useCollectionSync('inventory', inventory, setInventory, syncOn);
   useCollectionSync('stock_transactions', stockTransactions, setStockTransactions, syncOn);
   useCollectionSync('cashflow', cashFlow, setCashFlow, syncOn);
+  useCollectionSync('bank_accounts', bankAccounts, setBankAccounts, syncOn);
   useCollectionSync('lead_sources', leadSources, setLeadSources, syncOn);
   useCollectionSync('vendors', vendors, setVendors, syncOn);
   useCollectionSync('employees', employees, setEmployees, syncOn);
@@ -915,6 +978,14 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Failed to save cashflow to localStorage', e);
     }
   }, [cashFlow]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_bank_accounts`, JSON.stringify(bankAccounts));
+    } catch (e) {
+      console.warn('Failed to save bank accounts to localStorage', e);
+    }
+  }, [bankAccounts]);
 
   useEffect(() => {
     try {
@@ -1529,13 +1600,99 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setAdminSettings(DEFAULT_ADMIN_SETTINGS);
   };
 
-  // Cash Flow
+  // Cash Flow & Money Flow
   const addCashFlowEntry = (entryData: Omit<CashFlowEntry, 'id'>) => {
     const newEntry: CashFlowEntry = {
       ...entryData,
       id: Acc.uid('cf'),
+      accountType: entryData.accountType || (entryData.paymentMode === 'cash' ? 'cash' : 'bank'),
+      createdAt: entryData.createdAt || new Date().toISOString(),
     };
     setCashFlow(prev => [newEntry, ...prev]);
+  };
+
+  const updateCashFlowEntry = (id: string, updates: Partial<CashFlowEntry>) => {
+    setCashFlow(prev => prev.map(entry => entry.id === id ? { ...entry, ...updates } : entry));
+  };
+
+  const deleteCashFlowEntry = (id: string) => {
+    setCashFlow(prev => prev.filter(entry => entry.id !== id));
+  };
+
+  // Bank Accounts Management
+  const addBankAccount = (acc: Omit<BankAccount, 'id' | 'createdAt'>): BankAccount => {
+    const newAccount: BankAccount = {
+      ...acc,
+      id: Acc.uid('bank'),
+      createdAt: Acc.todayLocal(),
+    };
+    setBankAccounts(prev => [...prev, newAccount]);
+    return newAccount;
+  };
+
+  const updateBankAccount = (id: string, updates: Partial<BankAccount>) => {
+    setBankAccounts(prev => prev.map(acc => acc.id === id ? { ...acc, ...updates } : acc));
+  };
+
+  const deleteBankAccount = (id: string) => {
+    setBankAccounts(prev => prev.filter(acc => acc.id !== id));
+  };
+
+  const toggleBankAccountStatus = (id: string) => {
+    setBankAccounts(prev => prev.map(acc => acc.id === id ? { ...acc, isActive: !acc.isActive } : acc));
+  };
+
+  // Internal Transfer (Cash <-> Bank, Bank <-> Bank)
+  const transferFunds = (transfer: {
+    date: string;
+    fromAccountType: 'cash' | 'bank';
+    fromBankAccountId?: string;
+    toAccountType: 'cash' | 'bank';
+    toBankAccountId?: string;
+    amount: number;
+    referenceNumber?: string;
+    notes?: string;
+  }) => {
+    let transferType: 'cash_to_bank' | 'bank_to_cash' | 'bank_to_bank';
+    let desc = '';
+    const fromBank = bankAccounts.find(b => b.id === transfer.fromBankAccountId);
+    const toBank = bankAccounts.find(b => b.id === transfer.toBankAccountId);
+
+    if (transfer.fromAccountType === 'cash' && transfer.toAccountType === 'bank') {
+      transferType = 'cash_to_bank';
+      desc = `Cash Deposit to ${toBank?.bankName || 'Bank'} (${toBank?.accountNumber ? '•••• ' + toBank.accountNumber.slice(-4) : ''})`;
+    } else if (transfer.fromAccountType === 'bank' && transfer.toAccountType === 'cash') {
+      transferType = 'bank_to_cash';
+      desc = `Cash Withdrawal from ${fromBank?.bankName || 'Bank'} (${fromBank?.accountNumber ? '•••• ' + fromBank.accountNumber.slice(-4) : ''})`;
+    } else {
+      transferType = 'bank_to_bank';
+      desc = `Inter-bank Transfer from ${fromBank?.bankName || 'Bank'} to ${toBank?.bankName || 'Bank'}`;
+    }
+
+    if (transfer.notes) {
+      desc += ` - ${transfer.notes}`;
+    }
+
+    const transferEntry: CashFlowEntry = {
+      id: Acc.uid('cf-tr'),
+      date: transfer.date || Acc.todayLocal(),
+      type: 'transfer',
+      category: 'Internal Transfer',
+      description: desc,
+      amount: transfer.amount,
+      paymentMode: transfer.fromAccountType === 'cash' ? 'cash' : 'bank_transfer',
+      accountType: transfer.fromAccountType,
+      bankAccountId: transfer.fromBankAccountId,
+      toAccountType: transfer.toAccountType,
+      toBankAccountId: transfer.toBankAccountId,
+      isTransfer: true,
+      transferType,
+      referenceNumber: transfer.referenceNumber,
+      notes: transfer.notes,
+      createdAt: new Date().toISOString(),
+    };
+
+    setCashFlow(prev => [transferEntry, ...prev]);
   };
 
   // Convert Quotation directly to Official Tax Invoice
@@ -2622,6 +2779,7 @@ Please update your diagnostic notes and call status upon inspection.
         stockTransactions,
         invoices,
         cashFlow,
+        bankAccounts,
         adminSettings,
         leadSources,
         vendors,
@@ -2695,6 +2853,13 @@ Please update your diagnostic notes and call status upon inspection.
         deleteInvoice,
         convertQuotationToInvoice,
         addCashFlowEntry,
+        updateCashFlowEntry,
+        deleteCashFlowEntry,
+        addBankAccount,
+        updateBankAccount,
+        deleteBankAccount,
+        toggleBankAccountStatus,
+        transferFunds,
         addEmployee,
         updateEmployee,
         deleteEmployee,
