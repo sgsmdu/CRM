@@ -257,72 +257,7 @@ export const GoogleLoginScreen: React.FC<GoogleLoginScreenProps> = ({ onLoginSuc
           </button>
 
           {/* Direct Authorized Access Toggle / Section */}
-          {showDirectAuth ? (
-            <div className="mt-5 pt-5 border-t border-slate-800 text-left space-y-3 animate-in fade-in duration-200">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
-                  <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Authorized Staff Direct Access</span>
-                </span>
-                <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-amber-950/70 border border-amber-800 text-amber-300">
-                  Verified
-                </span>
-              </div>
-
-              {/* Quick Primary Admin Button */}
-              <button
-                type="button"
-                onClick={handleDirectAdminLogin}
-                disabled={isLoading}
-                className="w-full py-2.5 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 font-semibold text-xs flex items-center justify-between transition-colors cursor-pointer"
-              >
-                <span className="truncate">Sign in as Administrator ({DEFAULT_ADMIN_EMAIL})</span>
-                <ArrowRight className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              </button>
-
-              {/* Staff Email Verification Form */}
-              <form onSubmit={handleDirectStaffEmailVerify} className="space-y-2 pt-1">
-                <div className="flex gap-2">
-                  <input
-                    type="email"
-                    value={staffEmailInput}
-                    onChange={(e) => setStaffEmailInput(e.target.value)}
-                    placeholder="Or enter authorized staff email..."
-                    className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 outline-hidden focus:border-blue-500"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isLoading}
-                    className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer shrink-0"
-                  >
-                    Verify
-                  </button>
-                </div>
-              </form>
-
-              {isRefererBlocked && (
-                <div className="p-3 rounded-xl bg-blue-950/40 border border-blue-900/60 text-[10px] text-blue-300 space-y-1">
-                  <div className="font-bold flex items-center gap-1 text-blue-200">
-                    <ExternalLink className="w-3 h-3" />
-                    <span>Google Cloud Console API Key Guide:</span>
-                  </div>
-                  <p className="text-slate-400 leading-relaxed">
-                    To enable Google Popup directly on this preview URL, go to Google Cloud Console &gt; APIs &amp; Services &gt; Credentials &gt; API Key &gt; set Application Restrictions to <strong>None</strong> or add <code className="bg-blue-950 px-1 py-0.5 rounded text-blue-200">https://*.run.app/*</code>.
-                  </p>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="mt-4">
-              <button
-                type="button"
-                onClick={() => setShowDirectAuth(true)}
-                className="text-[11px] text-slate-400 hover:text-blue-400 underline cursor-pointer"
-              >
-                Sign-in issue? Click here for Direct Authorized Staff Access
-              </button>
-            </div>
-          )}
+          
 
           {/* Verification Badge */}
           <div className="mt-6 pt-5 border-t border-slate-800 flex items-center justify-center gap-2 text-[11px] text-slate-400">
