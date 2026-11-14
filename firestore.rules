@@ -84,5 +84,22 @@ service cloud.firestore {
       allow read: if isAllowedUser();
       allow write: if isAdmin();
     }
+  
+    // ---- Extra synced collections (multi-device sync) ----
+    function isStaffColl(c) {
+      return c in ['inventory', 'stock_transactions', 'lead_sources', 'vendors',
+                   'quotation_categories', 'quotation_subcategories', 'quotation_products'];
+    }
+
+    function isAdminColl(c) {
+      return c in ['cashflow', 'bank_accounts', 'employees', 'attendance', 'salary_payments',
+                   'work_allocations', 'salary_advances'];
+    }
+
+    match /{coll}/{docId} {
+      allow read, create, update: if isStaffColl(coll) && isAllowedUser();
+      allow delete: if isStaffColl(coll) && isAdmin();
+      allow read, write: if isAdminColl(coll) && isAdmin();
+    }
   }
 }
