@@ -679,14 +679,23 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
   };
 
   // 8. Image Upload Helper
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setOutAttachment(reader.result);
-      }
+      if (typeof reader.result !== 'string') return;
+      const img = new Image();
+      img.onload = () => {
+        const maxSide = 1000;
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d')?.drawImage(img, 0, 0, canvas.width, canvas.height);
+        setOutAttachment(canvas.toDataURL('image/jpeg', 0.6));
+      };
+      img.src = reader.result;
     };
     reader.readAsDataURL(file);
   };
