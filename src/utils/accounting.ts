@@ -18,13 +18,19 @@
  */
 import type {
   CashFlowEntry,
+  CustomerPaymentAllocation,
+  CustomerPaymentAllocationItem,
   InventoryItem,
   Invoice,
   InvoiceItem,
+  InvoicePaymentRecord,
+  PaymentAccountType,
   PaymentMode,
+  PaymentModeChoice,
   StockTransaction,
   VendorBill,
   VendorBillItem,
+  VendorPaymentRecord,
 } from '../types';
 
 // ------------------------------------------------------------------ basics
@@ -552,7 +558,8 @@ export function findDuplicateVendorBill(
 export function addVendorBillTx(
   s: LedgerState,
   billData: Omit<VendorBill, 'id' | 'createdAt'>,
-  updateStock = true
+  updateStock = true,
+  accountMeta?: { accountType?: PaymentAccountType; bankAccountId?: string; paymentModeChoice?: PaymentModeChoice }
 ): { state: LedgerState; bill: VendorBill } {
   const pay = normalizePayment(billData.paidAmount, billData.totalAmount);
   const bill: VendorBill = {
@@ -644,15 +651,30 @@ export function addVendorBillTx(
   }
 
   if (bill.paidAmount > 0) {
+    const mode = bill.paymentMode || 'upi';
+    const accType: PaymentAccountType = accountMeta?.accountType || (mode === 'cash' ? 'cash' : 'bank');
     st = addCash(st, {
       date: bill.invoiceDate,
       type: 'expense',
-      category: 'Vendor Spares',
+      category: 'Vendor Payment',
+      categoryId: 'mfc-vendor',
+      categoryName: 'Vendor Payment',
+      subcategory: 'Stock Purchase Bill',
+      subcategoryId: 'mfc-vendor-stock',
       description: `Vendor: ${bill.vendorName} (Inv: ${bill.invoiceNumber})`,
       amount: bill.paidAmount,
-      paymentMode: bill.paymentMode || 'upi',
+      paymentMode: mode,
+      paymentModeChoice: accountMeta?.paymentModeChoice,
+      accountType: accType,
+      bankAccountId: accType === 'bank' ? accountMeta?.bankAccountId : undefined,
       referenceId: bill.id,
       referenceNumber: bill.paymentReference,
+      payeeOrCustomer: bill.vendorName,
+      vendorId: bill.vendorId,
+      vendorBillId: bill.id,
+      invoiceNumber: bill.invoiceNumber,
+      sourceModule: 'vendor',
+      sourceDocId: bill.id,
     });
   }
   return { state: st, bill };
@@ -854,3 +876,591 @@ export function hsnSummary(inv: Invoice): { hsn: string; rate: number; qty: numb
   }
   return Array.from(map.values()).map(r => ({ ...r, taxable: round2(r.taxable), tax: round2(r.tax) }));
 }
+
+// ------------------------------------------------------------------ incremental payments, multi-bill allocation & reversals
+
+export interface RecordInvoicePaymentInput {
+  invoiceId?: string;
+  jobCardId?: string;
+  customerId: string;
+  customerName: string;
+  customerPhone?: string;
+  amount: number;
+  date: string;
+  paymentMode: PaymentMode;
+  paymentModeChoice?: PaymentModeChoice;
+  accountType: PaymentAccountType;
+  bankAccountId?: string;
+  bankAccountName?: string;
+  transactionRef?: string;
+  notes?: string;
+  isAdvance?: boolean;
+  uniqueSourceKey?: string;
+  createdBy?: string;
+}
+
+export function recordInvoicePaymentTx(
+  s: LedgerState,
+  invoicePayments: InvoicePaymentRecord[],
+  input: RecordInvoicePaymentInput
+): {
+  state: LedgerState;
+  invoicePayments: InvoicePaymentRecord[];
+  record: InvoicePaymentRecord;
+  cashFlowEntry?: CashFlowEntry;
+  duplicate: boolean;
+} {
+  const amt = round2(Number(input.amount) || 0);
+  if (amt <= 0) {
+    throw new Error('Payment amount must be greater than zero.');
+  }
+  if (input.accountType === 'bank' && !input.bankAccountId) {
+    throw new Error('Bank Account selection is required for Bank payments.');
+  }
+
+  if (input.uniqueSourceKey) {
+    const existingPay = invoicePayments.find(
+      p => !p.isReversed && p.uniqueSourceKey === input.uniqueSourceKey
+    );
+    if (existingPay) {
+      return {
+        state: s,
+        invoicePayments,
+        record: existingPay,
+        duplicate: true,
+      };
+    }
+    const existingCf = s.cashFlow.find(
+      c => !c.isReversed && c.uniqueSourceKey === input.uniqueSourceKey
+    );
+    if (existingCf) {
+      return {
+        state: s,
+        invoicePayments,
+        record: {
+          id: existingCf.paymentRecordId || existingCf.id,
+          paymentReference: existingCf.referenceNumber || existingCf.id,
+          uniqueSourceKey: input.uniqueSourceKey,
+          invoiceId: existingCf.invoiceId,
+          invoiceNumber: existingCf.invoiceNumber,
+          jobCardId: existingCf.jobCardId,
+          customerId: existingCf.customerId || input.customerId,
+          customerName: existingCf.payeeOrCustomer || input.customerName,
+          customerPhone: input.customerPhone,
+          amount: existingCf.amount,
+          date: existingCf.date,
+          paymentMode: existingCf.paymentMode,
+          accountType: existingCf.accountType || 'cash',
+          bankAccountId: existingCf.bankAccountId,
+          cashFlowEntryId: existingCf.id,
+          createdAt: existingCf.createdAt || new Date().toISOString(),
+        },
+        duplicate: true,
+      };
+    }
+  }
+
+  let inv: Invoice | undefined;
+  let nextInvoices = s.invoices;
+  if (input.invoiceId) {
+    inv = s.invoices.find(i => i.id === input.invoiceId);
+    if (!inv || inv.status === 'cancelled') {
+      throw new Error('Invoice not found or cancelled.');
+    }
+    const due = Math.max(0, round2((inv.grandTotal || 0) - (inv.paidAmount || 0)));
+    if (amt > due + 0.01) {
+      throw new Error(`Payment amount (₹${amt.toLocaleString('en-IN')}) exceeds remaining balance (₹${due.toLocaleString('en-IN')}).`);
+    }
+    const newPaid = round2((inv.paidAmount || 0) + amt);
+    const pay = normalizePayment(newPaid, inv.grandTotal);
+    nextInvoices = s.invoices.map(i =>
+      i.id === inv!.id
+        ? {
+            ...i,
+            paidAmount: pay.paid,
+            paymentStatus: pay.status,
+            paymentMode: input.paymentMode,
+            paymentReference: input.transactionRef?.trim() || i.paymentReference,
+          }
+        : i
+    );
+  }
+
+  const cfId = uid('cf');
+  const recId = uid('invpay');
+  const paymentRef = input.transactionRef?.trim() || `PAY-${Date.now().toString().slice(-6)}`;
+  const dateStr = input.date || todayLocal();
+  const isAdvance = Boolean(input.isAdvance || !inv);
+
+  const cfEntry: CashFlowEntry = {
+    id: cfId,
+    date: dateStr,
+    type: 'income',
+    category: 'Customer Payment',
+    categoryId: 'mfc-cust-pay',
+    categoryName: 'Customer Payment',
+    subcategory: isAdvance ? 'Advance Receipt' : 'Invoice Settlement',
+    subcategoryId: isAdvance ? 'mfc-cust-pay-adv' : 'mfc-cust-pay-inv',
+    secondSubcategory: inv
+      ? inv.billingFirm === 'pandiyan'
+        ? 'Pandiyan Estimate'
+        : 'SGS Tax Invoice'
+      : input.jobCardId
+        ? 'Job Card Advance'
+        : 'Customer Credit',
+    secondSubcategoryId: inv
+      ? inv.billingFirm === 'pandiyan'
+        ? 'mfc-cust-pay-inv-pc'
+        : 'mfc-cust-pay-inv-sgs'
+      : input.jobCardId
+        ? 'mfc-cust-pay-adv-job'
+        : 'mfc-cust-pay-adv-credit',
+    description: inv
+      ? `Payment from ${input.customerName} (${inv.invoiceNumber})${input.notes ? ` - ${input.notes}` : ''}`
+      : `Advance Payment from ${input.customerName}${input.jobCardId ? ` (Job ${input.jobCardId})` : ''}${input.notes ? ` - ${input.notes}` : ''}`,
+    amount: amt,
+    paymentMode: input.paymentMode,
+    paymentModeChoice: input.paymentModeChoice,
+    accountType: input.accountType,
+    bankAccountId: input.accountType === 'bank' ? input.bankAccountId : undefined,
+    referenceId: inv?.id || input.jobCardId || input.customerId,
+    referenceNumber: input.transactionRef?.trim() || paymentRef,
+    payeeOrCustomer: input.customerName,
+    customerId: input.customerId,
+    jobCardId: input.jobCardId || inv?.jobCardId,
+    invoiceId: inv?.id,
+    invoiceNumber: inv?.invoiceNumber,
+    sourceModule: inv ? 'billing' : input.jobCardId ? 'job_card' : 'customer',
+    sourceDocId: inv?.id || input.jobCardId || input.customerId,
+    paymentRecordId: recId,
+    uniqueSourceKey: input.uniqueSourceKey,
+    notes: input.notes,
+    createdBy: input.createdBy || 'CRM User',
+    createdAt: new Date().toISOString(),
+  };
+
+  const record: InvoicePaymentRecord = {
+    id: recId,
+    paymentReference: paymentRef,
+    uniqueSourceKey: input.uniqueSourceKey,
+    invoiceId: inv?.id,
+    invoiceNumber: inv?.invoiceNumber,
+    jobCardId: input.jobCardId || inv?.jobCardId,
+    customerId: input.customerId,
+    customerName: input.customerName,
+    customerPhone: input.customerPhone,
+    amount: amt,
+    date: dateStr,
+    paymentMode: input.paymentMode,
+    paymentModeChoice: input.paymentModeChoice,
+    accountType: input.accountType,
+    bankAccountId: input.accountType === 'bank' ? input.bankAccountId : undefined,
+    bankAccountName: input.bankAccountName,
+    transactionRef: input.transactionRef?.trim() || undefined,
+    notes: input.notes,
+    isAdvance,
+    cashFlowEntryId: cfId,
+    createdBy: input.createdBy || 'CRM User',
+    createdAt: new Date().toISOString(),
+  };
+
+  return {
+    state: {
+      ...s,
+      invoices: nextInvoices,
+      cashFlow: [cfEntry, ...s.cashFlow],
+    },
+    invoicePayments: [record, ...invoicePayments],
+    record,
+    cashFlowEntry: cfEntry,
+    duplicate: false,
+  };
+}
+
+export function reverseInvoicePaymentTx(
+  s: LedgerState,
+  invoicePayments: InvoicePaymentRecord[],
+  paymentRecordId: string,
+  reason = 'Payment reversed by Admin'
+): { state: LedgerState; invoicePayments: InvoicePaymentRecord[] } {
+  const now = new Date().toISOString();
+  const target = invoicePayments.find(p => p.id === paymentRecordId && !p.isReversed);
+
+  if (target) {
+    const nextPayments = invoicePayments.map(p =>
+      p.id === target.id ? { ...p, isReversed: true, reversedAt: now, reversalReason: reason } : p
+    );
+    const nextCashFlow = s.cashFlow.map(c =>
+      c.id === target.cashFlowEntryId || c.paymentRecordId === target.id
+        ? { ...c, isReversed: true, reversedAt: now, reversalReason: reason }
+        : c
+    );
+    let nextInvoices = s.invoices;
+    if (target.invoiceId) {
+      nextInvoices = s.invoices.map(inv => {
+        if (inv.id !== target.invoiceId) return inv;
+        const reduced = Math.max(0, round2((inv.paidAmount || 0) - target.amount));
+        const pay = normalizePayment(reduced, inv.grandTotal);
+        return { ...inv, paidAmount: pay.paid, paymentStatus: inv.status === 'cancelled' ? 'cancelled' : pay.status };
+      });
+    }
+    return {
+      state: { ...s, invoices: nextInvoices, cashFlow: nextCashFlow },
+      invoicePayments: nextPayments,
+    };
+  }
+
+  // Fallback for legacy cashFlow entries recorded before invoice_payments collection existed
+  const cf = s.cashFlow.find(c => c.id === paymentRecordId && !c.isReversed);
+  if (!cf) return { state: s, invoicePayments };
+
+  const linkedInvoiceId = cf.invoiceId || cf.referenceId;
+  const nextCashFlow = s.cashFlow.map(c =>
+    c.id === cf.id ? { ...c, isReversed: true, reversedAt: now, reversalReason: reason } : c
+  );
+  const nextInvoices = linkedInvoiceId
+    ? s.invoices.map(inv => {
+        if (inv.id !== linkedInvoiceId) return inv;
+        const delta = cf.type === 'income' ? -cf.amount : cf.amount;
+        const reduced = Math.max(0, round2((inv.paidAmount || 0) + delta));
+        const pay = normalizePayment(reduced, inv.grandTotal);
+        return { ...inv, paidAmount: pay.paid, paymentStatus: inv.status === 'cancelled' ? ('cancelled' as const) : pay.status };
+      })
+    : s.invoices;
+
+  return {
+    state: { ...s, invoices: nextInvoices, cashFlow: nextCashFlow },
+    invoicePayments,
+  };
+}
+
+export interface RecordCustomerMultiPaymentInput {
+  customerId: string;
+  customerName: string;
+  customerPhone?: string;
+  jobCardId?: string;
+  totalAmount: number;
+  date: string;
+  paymentMode: PaymentMode;
+  paymentModeChoice?: PaymentModeChoice;
+  accountType: PaymentAccountType;
+  bankAccountId?: string;
+  bankAccountName?: string;
+  transactionRef?: string;
+  notes?: string;
+  allocations: { invoiceId: string; amount: number }[];
+  uniqueSourceKey?: string;
+  createdBy?: string;
+}
+
+export function recordCustomerMultiPaymentTx(
+  s: LedgerState,
+  invoicePayments: InvoicePaymentRecord[],
+  customerAllocations: CustomerPaymentAllocation[],
+  input: RecordCustomerMultiPaymentInput
+): {
+  state: LedgerState;
+  invoicePayments: InvoicePaymentRecord[];
+  customerAllocations: CustomerPaymentAllocation[];
+  allocation: CustomerPaymentAllocation;
+  duplicate: boolean;
+} {
+  const totalAmount = round2(Number(input.totalAmount) || 0);
+  if (totalAmount <= 0) {
+    throw new Error('Total payment amount must be greater than zero.');
+  }
+  if (input.accountType === 'bank' && !input.bankAccountId) {
+    throw new Error('Bank Account selection is required.');
+  }
+
+  if (input.uniqueSourceKey) {
+    const existingAlloc = customerAllocations.find(
+      a => !a.isReversed && a.uniqueSourceKey === input.uniqueSourceKey
+    );
+    if (existingAlloc) {
+      return {
+        state: s,
+        invoicePayments,
+        customerAllocations,
+        allocation: existingAlloc,
+        duplicate: true,
+      };
+    }
+  }
+
+  const cleanAllocations: CustomerPaymentAllocationItem[] = [];
+  let allocatedSum = 0;
+
+  for (const item of input.allocations || []) {
+    const amt = round2(Number(item.amount) || 0);
+    if (amt <= 0) continue;
+    const inv = s.invoices.find(i => i.id === item.invoiceId);
+    if (!inv || inv.status === 'cancelled') {
+      throw new Error('Selected invoice not found or cancelled.');
+    }
+    const due = Math.max(0, round2((inv.grandTotal || 0) - (inv.paidAmount || 0)));
+    if (amt > due + 0.01) {
+      throw new Error(`Allocated amount ₹${amt} exceeds balance ₹${due} on ${inv.invoiceNumber}.`);
+    }
+    allocatedSum = round2(allocatedSum + amt);
+    cleanAllocations.push({
+      invoiceId: inv.id,
+      invoiceNumber: inv.invoiceNumber,
+      amount: amt,
+    });
+  }
+
+  if (allocatedSum > totalAmount + 0.01) {
+    throw new Error('Allocated invoice amounts cannot exceed total received payment.');
+  }
+
+  const unallocatedAmount = round2(Math.max(0, totalAmount - allocatedSum));
+  const allocId = uid('allocpay');
+  const cfId = uid('cf');
+  const dateStr = input.date || todayLocal();
+  const paymentRef = input.transactionRef?.trim() || `CUST-${Date.now().toString().slice(-6)}`;
+  const now = new Date().toISOString();
+
+  const invSummaryText =
+    cleanAllocations.length > 0
+      ? cleanAllocations.map(a => `${a.invoiceNumber} (₹${a.amount})`).join(', ')
+      : 'Unallocated Advance';
+
+  const cfEntry: CashFlowEntry = {
+    id: cfId,
+    date: dateStr,
+    type: 'income',
+    category: 'Customer Payment',
+    categoryId: 'mfc-cust-pay',
+    categoryName: 'Customer Payment',
+    subcategory: cleanAllocations.length > 0 ? 'Invoice Settlement' : 'Advance Receipt',
+    subcategoryId: cleanAllocations.length > 0 ? 'mfc-cust-pay-inv' : 'mfc-cust-pay-adv',
+    secondSubcategory: cleanAllocations.length === 0 ? 'Customer Credit' : undefined,
+    secondSubcategoryId: cleanAllocations.length === 0 ? 'mfc-cust-pay-adv-credit' : undefined,
+    description: `Customer Payment: ${input.customerName} [${invSummaryText}]${unallocatedAmount > 0 && cleanAllocations.length > 0 ? ` + Advance Credit ₹${unallocatedAmount}` : ''}`,
+    amount: totalAmount,
+    paymentMode: input.paymentMode,
+    paymentModeChoice: input.paymentModeChoice,
+    accountType: input.accountType,
+    bankAccountId: input.accountType === 'bank' ? input.bankAccountId : undefined,
+    referenceId: cleanAllocations.length === 1 ? cleanAllocations[0].invoiceId : input.customerId,
+    referenceNumber: paymentRef,
+    payeeOrCustomer: input.customerName,
+    customerId: input.customerId,
+    jobCardId: input.jobCardId,
+    invoiceId: cleanAllocations.length === 1 ? cleanAllocations[0].invoiceId : undefined,
+    invoiceNumber: cleanAllocations.length === 1 ? cleanAllocations[0].invoiceNumber : undefined,
+    sourceModule: 'customer',
+    sourceDocId: allocId,
+    uniqueSourceKey: input.uniqueSourceKey,
+    notes: input.notes,
+    createdBy: input.createdBy || 'CRM User',
+    createdAt: now,
+  };
+
+  const allocMap = new Map<string, number>();
+  cleanAllocations.forEach(a => allocMap.set(a.invoiceId, round2((allocMap.get(a.invoiceId) || 0) + a.amount)));
+
+  const nextInvoices = s.invoices.map(inv => {
+    const addAmt = allocMap.get(inv.id);
+    if (!addAmt) return inv;
+    const newPaid = round2((inv.paidAmount || 0) + addAmt);
+    const pay = normalizePayment(newPaid, inv.grandTotal);
+    return {
+      ...inv,
+      paidAmount: pay.paid,
+      paymentStatus: pay.status,
+      paymentMode: input.paymentMode,
+      paymentReference: input.transactionRef?.trim() || inv.paymentReference,
+    };
+  });
+
+  const newPaymentRecords: InvoicePaymentRecord[] = cleanAllocations.map((a, idx) => ({
+    id: uid(`invpay${idx}`),
+    paymentReference: paymentRef,
+    invoiceId: a.invoiceId,
+    invoiceNumber: a.invoiceNumber,
+    jobCardId: input.jobCardId,
+    customerId: input.customerId,
+    customerName: input.customerName,
+    customerPhone: input.customerPhone,
+    amount: a.amount,
+    date: dateStr,
+    paymentMode: input.paymentMode,
+    paymentModeChoice: input.paymentModeChoice,
+    accountType: input.accountType,
+    bankAccountId: input.accountType === 'bank' ? input.bankAccountId : undefined,
+    bankAccountName: input.bankAccountName,
+    transactionRef: input.transactionRef?.trim() || undefined,
+    notes: input.notes,
+    isAdvance: false,
+    allocationId: allocId,
+    cashFlowEntryId: cfId,
+    createdBy: input.createdBy || 'CRM User',
+    createdAt: now,
+  }));
+
+  const allocation: CustomerPaymentAllocation = {
+    id: allocId,
+    uniqueSourceKey: input.uniqueSourceKey,
+    customerId: input.customerId,
+    customerName: input.customerName,
+    customerPhone: input.customerPhone,
+    jobCardId: input.jobCardId,
+    totalAmount,
+    allocatedTotal: allocatedSum,
+    unallocatedAmount,
+    date: dateStr,
+    paymentMode: input.paymentMode,
+    accountType: input.accountType,
+    bankAccountId: input.accountType === 'bank' ? input.bankAccountId : undefined,
+    bankAccountName: input.bankAccountName,
+    transactionRef: input.transactionRef?.trim() || undefined,
+    notes: input.notes,
+    allocations: cleanAllocations,
+    cashFlowEntryId: cfId,
+    createdBy: input.createdBy || 'CRM User',
+    createdAt: now,
+  };
+
+  return {
+    state: {
+      ...s,
+      invoices: nextInvoices,
+      cashFlow: [cfEntry, ...s.cashFlow],
+    },
+    invoicePayments: [...newPaymentRecords, ...invoicePayments],
+    customerAllocations: [allocation, ...customerAllocations],
+    allocation,
+    duplicate: false,
+  };
+}
+
+export interface RecordVendorPaymentInput {
+  vendorBillId: string;
+  amount: number;
+  date: string;
+  paymentMode: PaymentMode;
+  paymentModeChoice?: PaymentModeChoice;
+  accountType: PaymentAccountType;
+  bankAccountId?: string;
+  bankAccountName?: string;
+  transactionRef?: string;
+  notes?: string;
+  uniqueSourceKey?: string;
+  createdBy?: string;
+}
+
+export function recordVendorPaymentTx(
+  s: LedgerState,
+  vendorPayments: VendorPaymentRecord[],
+  input: RecordVendorPaymentInput
+): {
+  state: LedgerState;
+  vendorPayments: VendorPaymentRecord[];
+  record: VendorPaymentRecord;
+  duplicate: boolean;
+} {
+  const amt = round2(Number(input.amount) || 0);
+  if (amt <= 0) {
+    throw new Error('Vendor payment amount must be greater than zero.');
+  }
+  if (input.accountType === 'bank' && !input.bankAccountId) {
+    throw new Error('Bank Account selection is required for Bank payments.');
+  }
+  if (input.uniqueSourceKey) {
+    const dup = vendorPayments.find(p => !p.isReversed && p.uniqueSourceKey === input.uniqueSourceKey);
+    if (dup) {
+      return { state: s, vendorPayments, record: dup, duplicate: true };
+    }
+  }
+
+  const bill = s.vendorBills.find(b => b.id === input.vendorBillId);
+  if (!bill) throw new Error('Vendor bill not found.');
+  const due = Math.max(0, round2((bill.totalAmount || 0) - (bill.paidAmount || 0)));
+  if (amt > due + 0.01) {
+    throw new Error(`Payment amount (₹${amt.toLocaleString('en-IN')}) exceeds remaining vendor bill balance (₹${due.toLocaleString('en-IN')}).`);
+  }
+
+  const newPaid = round2((bill.paidAmount || 0) + amt);
+  const pay = normalizePayment(newPaid, bill.totalAmount);
+  const dateStr = input.date || todayLocal();
+  const vpId = uid('vpay');
+  const cfId = uid('cf');
+  const now = new Date().toISOString();
+
+  const cfEntry: CashFlowEntry = {
+    id: cfId,
+    date: dateStr,
+    type: 'expense',
+    category: 'Vendor Payment',
+    categoryId: 'mfc-vendor',
+    categoryName: 'Vendor Payment',
+    subcategory: 'Stock Purchase Bill',
+    subcategoryId: 'mfc-vendor-stock',
+    description: `Payment to ${bill.vendorName} (Inv: ${bill.invoiceNumber})${input.notes ? ` - ${input.notes}` : ''}`,
+    amount: amt,
+    paymentMode: input.paymentMode,
+    paymentModeChoice: input.paymentModeChoice,
+    accountType: input.accountType,
+    bankAccountId: input.accountType === 'bank' ? input.bankAccountId : undefined,
+    referenceId: bill.id,
+    referenceNumber: input.transactionRef?.trim() || undefined,
+    payeeOrCustomer: bill.vendorName,
+    vendorId: bill.vendorId,
+    vendorBillId: bill.id,
+    invoiceNumber: bill.invoiceNumber,
+    sourceModule: 'vendor',
+    sourceDocId: bill.id,
+    paymentRecordId: vpId,
+    uniqueSourceKey: input.uniqueSourceKey,
+    notes: input.notes,
+    createdBy: input.createdBy || 'CRM User',
+    createdAt: now,
+  };
+
+  const record: VendorPaymentRecord = {
+    id: vpId,
+    uniqueSourceKey: input.uniqueSourceKey,
+    vendorBillId: bill.id,
+    vendorBillNumber: bill.invoiceNumber,
+    vendorId: bill.vendorId,
+    vendorName: bill.vendorName,
+    amount: amt,
+    date: dateStr,
+    paymentMode: input.paymentMode,
+    accountType: input.accountType,
+    bankAccountId: input.accountType === 'bank' ? input.bankAccountId : undefined,
+    bankAccountName: input.bankAccountName,
+    transactionRef: input.transactionRef?.trim() || undefined,
+    notes: input.notes,
+    cashFlowEntryId: cfId,
+    createdBy: input.createdBy || 'CRM User',
+    createdAt: now,
+  };
+
+  const nextBills = s.vendorBills.map(b =>
+    b.id === bill.id
+      ? {
+          ...b,
+          paidAmount: pay.paid,
+          paymentStatus: pay.status === 'unpaid' ? ('pending' as const) : pay.status,
+          paymentMode: input.paymentMode,
+          paymentReference: input.transactionRef?.trim() || b.paymentReference,
+          paymentDate: dateStr,
+        }
+      : b
+  );
+
+  return {
+    state: {
+      ...s,
+      vendorBills: nextBills,
+      cashFlow: [cfEntry, ...s.cashFlow],
+    },
+    vendorPayments: [record, ...vendorPayments],
+    record,
+    duplicate: false,
+  };
+}
+

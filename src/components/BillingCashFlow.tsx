@@ -33,10 +33,24 @@ import {
   ChevronDown,
   ArrowLeft,
   Save,
-  MessageSquare
+  MessageSquare,
+  RotateCcw,
+  Wallet
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
-import { Invoice, InvoiceItem, CashFlowEntry, PaymentMode, BillingFirm, BillingTheme, PandiyanBillingTheme, InventoryItem, Customer } from '../types';
+import {
+  Invoice,
+  InvoiceItem,
+  CashFlowEntry,
+  PaymentMode,
+  BillingFirm,
+  BillingTheme,
+  PandiyanBillingTheme,
+  InventoryItem,
+  Customer,
+  PaymentAccountType,
+  PaymentModeChoice,
+} from '../types';
 import { 
   SgsLogo, 
   SgsStamp, 
@@ -54,8 +68,20 @@ import {
   ItemGstCalculation 
 } from '../utils/gstUtils';
 import * as Acc from '../utils/accounting';
+import {
+  formatAccountLabel,
+  getInvoicePaymentRecords,
+  mapChoiceToPaymentMode,
+  normalizePhoneDigits,
+  resolveCategoryNames,
+  validatePaymentAccountSelection,
+} from '../utils/moneyFlow';
 import { checkGstin, getStateCode, stateNameForCode, GST_STATES, amountInWords, upiPayLink, isValidUpiId } from '../utils/indiaTax';
 import UpiQr from './UpiQr';
+import { CollectPaymentModal } from './CollectPaymentModal';
+import { WhatsAppPendingModal } from './WhatsAppPendingModal';
+import { PaymentAccountSelector } from './PaymentAccountSelector';
+import { MoneyFlowCategoryPicker } from './MoneyFlowCategoryPicker';
 
 interface BillingCashFlowProps {
   initialJobId?: string | null;
@@ -68,9 +94,13 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     jobCards, 
     invoices, 
     cashFlow, 
+    invoicePayments,
+    bankAccounts,
+    moneyFlowCategories,
     addInvoice, 
     updateInvoice, 
     updateInvoicePayment, 
+    reverseInvoicePayment,
     cancelInvoice, 
     duplicateInvoice, 
     deleteInvoice, 
@@ -98,6 +128,15 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
   const [zoomedBillPhoto, setZoomedBillPhoto] = useState<string | null>(null);
   const [confirmConvertModal, setConfirmConvertModal] = useState<Invoice | null>(null);
   const [convertToast, setConvertToast] = useState<string | null>(null);
+  const [collectModalInvoice, setCollectModalInvoice] = useState<Invoice | null>(null);
+  const [whatsAppModalState, setWhatsAppModalState] = useState<{
+    customerName: string;
+    customerPhone: string;
+    pendingInvoices: Invoice[];
+  } | null>(null);
+  const [reversingPaymentId, setReversingPaymentId] = useState<string | null>(null);
+  const [invoiceFormError, setInvoiceFormError] = useState<string | null>(null);
+  const [expenseFormError, setExpenseFormError] = useState<string | null>(null);
 
   // Form State: Create / Edit Invoice / Quotation
   const [invoiceType, setInvoiceType] = useState<'invoice' | 'quotation'>('invoice');
@@ -121,10 +160,10 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     { description: 'Computer & Laptop General Service', hsnCode: '998713', quantity: 1, rate: 850, amount: 850, purchaseCost: 0, isService: true },
   ]);
   const [gstPercent, setGstPercent] = useState<number>(0);
-  const [paymentStatus, setPaymentStatus] = useState<'paid' | 'partial' | 'unpaid'>('paid');
+  const [paymentStatus, setPaymentStatus] = useState<'paid' | 'partial' | 'unpaid'>('unpaid');
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('upi');
   const [paymentReference, setPaymentReference] = useState('');
-  const [paidAmount, setPaidAmount] = useState<number>(850);
+  const [paidAmount, setPaidAmount] = useState<number>(0);
   const [discount, setDiscount] = useState<number>(0);
   const [roundOff, setRoundOff] = useState<number>(0);
   const [autoRoundOff, setAutoRoundOff] = useState<boolean>(false);
@@ -140,15 +179,22 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
   const [invoiceNotes, setInvoiceNotes] = useState('Thank you for trusting Spider Grid Solutions! Spares carry 1-year warranty.');
   const [attachedBillImage, setAttachedBillImage] = useState<string | null>(null);
 
-  // Form State: Add Manual Expense
+  // Form State: Add Manual Expense (3-level categories & Cash/Bank/UPI/Other selector)
   const [expenseDate, setExpenseDate] = useState(() => Acc.todayLocal());
-  const [expenseCategory, setExpenseCategory] = useState('Workshop Rent & Electricity');
+  const [expenseCatId, setExpenseCatId] = useState('mfc-office');
+  const [expenseCatName, setExpenseCatName] = useState('Office Expenses');
+  const [expenseSubId, setExpenseSubId] = useState('');
+  const [expenseSubName, setExpenseSubName] = useState('');
+  const [expenseThirdId, setExpenseThirdId] = useState('');
+  const [expenseThirdName, setExpenseThirdName] = useState('');
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseAmount, setExpenseAmount] = useState<number>(0);
-  const [expenseMode, setExpenseMode] = useState<PaymentMode>('upi');
+  const [expenseModeChoice, setExpenseModeChoice] = useState<PaymentModeChoice>('cash');
+  const [expenseAccountType, setExpenseAccountType] = useState<PaymentAccountType>('cash');
+  const [expenseBankAccountId, setExpenseBankAccountId] = useState<string>('');
   const [expenseRef, setExpenseRef] = useState('');
 
-  // Payment Quick Update Modal
+  // Payment Quick Update Modal (kept for compatibility, superseded by CollectPaymentModal)
   const [quickPayInvoice, setQuickPayInvoice] = useState<Invoice | null>(null);
   const [quickPayAmount, setQuickPayAmount] = useState<number>(0);
   const [quickPayStatus, setQuickPayStatus] = useState<'paid' | 'partial' | 'unpaid'>('paid');
@@ -158,15 +204,21 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
   // Filter
   const [searchInvoices, setSearchInvoices] = useState('');
 
+  // Live viewing invoice resolved from context so recorded payments refresh immediately inside modal
+  const liveViewingInvoice = useMemo(
+    () => (viewingInvoice ? invoices.find(i => i.id === viewingInvoice.id) || viewingInvoice : null),
+    [viewingInvoice, invoices]
+  );
+
   // Calculations
   const activeInvoices = invoices.filter(inv => inv.status !== 'cancelled');
 
   const totalIncome = cashFlow
-    .filter(c => c.type === 'income')
+    .filter(c => !c.isReversed && !c.isTransfer && c.type === 'income')
     .reduce((sum, c) => sum + c.amount, 0);
 
   const totalExpense = cashFlow
-    .filter(c => c.type === 'expense')
+    .filter(c => !c.isReversed && !c.isTransfer && c.type === 'expense')
     .reduce((sum, c) => sum + c.amount, 0);
 
   const netBalance = totalIncome - totalExpense;
@@ -241,13 +293,6 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
   const totalPurchaseCostCalc = invoiceSummary.totalCostOfGoods;
   const netProfitCalc = invoiceSummary.netProfit;
   const profitMarginPercentCalc = invoiceSummary.profitMarginPercent;
-
-  // Auto-fill and keep paidAmount in sync when paymentStatus is 'paid'
-  useEffect(() => {
-    if (paymentStatus === 'paid') {
-      setPaidAmount(grandTotalCalc);
-    }
-  }, [grandTotalCalc, paymentStatus]);
 
   // Intercept browser back button to close open modal/preview instead of closing app
   useEffect(() => {
@@ -429,14 +474,15 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
       setDocDate(d.docDate || Acc.todayLocal());
       if (Array.isArray(d.docItems) && d.docItems.length > 0) setDocItems(d.docItems);
       setGstPercent(d.gstPercent !== undefined ? d.gstPercent : (d.billingFirm === 'pandiyan' ? 0 : 18));
-      setPaymentStatus(d.paymentStatus || 'paid');
+      setPaymentStatus(d.editingInvoiceId ? (d.paymentStatus || 'unpaid') : 'unpaid');
       setPaymentMode(d.paymentMode || 'upi');
       setPaymentReference(d.paymentReference || '');
-      setPaidAmount(d.paidAmount || 0);
+      setPaidAmount(d.editingInvoiceId ? (d.paidAmount || 0) : 0);
       setDiscount(d.discount || 0);
       setRoundOff(d.roundOff || 0);
       setManualExtraCost(d.manualExtraCost || 0);
       setInvoiceNotes(d.invoiceNotes || '');
+      setInvoiceFormError(null);
       setIsCreateInvoiceOpen(true);
     } catch (e) {
       console.warn('Failed to restore draft', e);
@@ -483,7 +529,8 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
           purchaseCost: 0,
         }
       ]);
-      setPaidAmount(est || 1200);
+      setPaymentStatus('unpaid');
+      setPaidAmount(0);
     }
   };
 
@@ -795,7 +842,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     setGstPercent(defPct);
     setDiscount(0);
     setRoundOff(0);
-    setPaymentStatus('paid');
+    setPaymentStatus('unpaid');
     setPaymentMode('upi');
     setPaymentReference('');
     setCustomerGstin('');
@@ -805,9 +852,10 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     setCustomDueDate('');
     setDiscountMode('amount');
     setDiscountPct(0);
-    setPaidAmount(850);
+    setPaidAmount(0);
     setManualExtraCost(0);
     setAttachedBillImage(null);
+    setInvoiceFormError(null);
     setInvoiceNotes(firm === 'pandiyan' ? 'Thank you for choosing Pandiyan Computers! Valid for 7 days.' : 'Thank you for trusting Spider Grid Solutions! Spares carry 1-year warranty.');
     setIsCreateInvoiceOpen(true);
   };
@@ -818,18 +866,20 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     setInvoiceType('invoice');
     setBillingFirm('sgs');
     setDocTheme(adminSettings.billingTheme || 'modern_navy');
-    setSelectedCustomerId(job.customerId);
-    setCustomerSearchInput(job.customerName);
-    setCustName(job.customerName);
-    setCustPhone(job.customerPhone);
+    setSelectedCustomerId(job.customerId || '');
+    setCustomerSearchInput(job.customerName || '');
+    setCustName(job.customerName || '');
+    setCustPhone(job.customerPhone || '');
     setCustArea(job.customerArea || '');
     setSelectedJobId(job.id);
     const defPct = adminSettings.defaultGstPercent || 18;
-    const gross = job.estimatedCost || 850;
+    const gross = (job.finalCost > 0 ? job.finalCost : job.estimatedCost) || 850;
     const initCalc = calculateFromInclusiveRate(gross, defPct, 1);
+    const deviceLabel = `${job.category || job.deviceType || 'Device'}${job.deviceBrand || job.brandModel ? ` (${job.deviceBrand || job.brandModel})` : ''}`;
+    const issueLabel = job.issueDescription || job.reportedIssue || 'Repair & Service';
     setDocItems([
       {
-        description: `${job.deviceType} (${job.brandModel}) - Repair & Service [${job.reportedIssue}]`,
+        description: `${deviceLabel} - Repair & Service [${issueLabel}]`,
         hsnCode: adminSettings.defaultHsnCode || '998713',
         quantity: 1,
         grossRate: gross,
@@ -845,8 +895,8 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     setGstPercent(defPct);
     setDiscount(0);
     setRoundOff(0);
-    const advance = job.advancePaid || 0;
-    setPaymentStatus(advance >= gross ? 'paid' : (advance > 0 ? 'partial' : 'unpaid'));
+    // All newly created bills begin as Payment Pending (₹0 Paid) — payments collected explicitly via CollectPaymentModal
+    setPaymentStatus('unpaid');
     setPaymentMode('upi');
     setPaymentReference('');
     setCustomerGstin('');
@@ -856,10 +906,11 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     setCustomDueDate('');
     setDiscountMode('amount');
     setDiscountPct(0);
-    setPaidAmount(advance > 0 ? advance : gross);
+    setPaidAmount(0);
     setManualExtraCost(0);
     setAttachedBillImage(null);
-    setInvoiceNotes(`Repair & service completed for Job Card #${job.jobCardNumber}. Spares carry 1-year warranty.`);
+    setInvoiceFormError(null);
+    setInvoiceNotes(`Repair & service for Job Card #${job.jobId || job.jobCardNumber || job.id}. Spares carry 1-year warranty.`);
     setIsCreateInvoiceOpen(true);
   };
 
@@ -966,21 +1017,19 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
   // Submit invoice create / edit
   const handleSaveInvoice = (e: React.FormEvent) => {
     e.preventDefault();
+    setInvoiceFormError(null);
     const cleanItems = docItems.filter(it => (it.description || '').trim() !== '');
     if (!custName.trim()) {
-      alert('Please enter the customer name.');
+      setInvoiceFormError('Please enter the customer name.');
       return;
     }
     if (cleanItems.length === 0) {
-      alert('Please add at least one item with a name.');
+      setInvoiceFormError('Please add at least one item with a name.');
       return;
     }
     if (docItems.some(it => !(it.description || '').trim() && (it.amount || 0) > 0)) {
-      alert('One of the items has an amount but no name. Please type the item name or remove that row.');
+      setInvoiceFormError('One of the items has an amount but no name. Please type the item name or remove that row.');
       return;
-    }
-    if (cleanItems.some(it => !(Number(it.rate) > 0 || Number(it.grossRate) > 0))) {
-      if (!window.confirm('Some items have ₹0 rate. Save anyway?')) return;
     }
 
     const isPandiyan = billingFirm === 'pandiyan';
@@ -1002,19 +1051,23 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     const dominantItem = [...cleanItems].sort((a, b) => (b.amount || 0) - (a.amount || 0))[0];
     const effectiveGstPercent = isPandiyan ? 0 : (dominantItem?.gstPercent ?? gstPercent ?? 0);
 
-    // Paid amount can never be more than the bill; status always follows the amount
-    const pay = Acc.normalizePayment(Number(paidAmount) || 0, effectiveGrandTotal);
+    // New bills ALWAYS save with paidAmount = 0 and paymentStatus = 'unpaid' (Payment Pending).
+    // Editing preserves existing collected paidAmount without mutating payments inline.
+    const oldInvoice = editingInvoiceId ? invoices.find(i => i.id === editingInvoiceId) : undefined;
+    const pay = editingInvoiceId && oldInvoice
+      ? Acc.normalizePayment(oldInvoice.paidAmount || 0, effectiveGrandTotal)
+      : { paid: 0, status: 'unpaid' as const };
 
     // Stock check for SGS tax invoices (Pandiyan bills and quotations never touch stock)
-    const oldInvoice = editingInvoiceId ? invoices.find(i => i.id === editingInvoiceId) : undefined;
     const shortages = Acc.findStockShortages(
       { items: cleanItems, billingFirm, type: invoiceType, status: 'active' },
       inventory,
       oldInvoice ? Acc.invoiceStockLines(oldInvoice, inventory) : undefined
     );
     if (shortages.length > 0) {
-      const list = shortages.map(sh => `• ${sh.name}: need ${sh.need}, only ${sh.have} in stock`).join('\n');
-      if (!window.confirm(`Stock is not enough:\n${list}\n\nSave anyway? (Stock will go to 0 for these items.)`)) return;
+      const list = shortages.map(sh => `${sh.name} (need ${sh.need}, stock ${sh.have})`).join(', ');
+      setConvertToast(`Low stock adjusted to 0 for: ${list}`);
+      setTimeout(() => setConvertToast(null), 5000);
     }
 
     const common = {
@@ -1042,8 +1095,8 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
       roundOff: effectiveRoundOff,
       grandTotal: effectiveGrandTotal,
       paymentStatus: pay.status,
-      paymentMode,
-      paymentReference: paymentReference.trim() || undefined,
+      paymentMode: oldInvoice?.paymentMode || paymentMode,
+      paymentReference: oldInvoice?.paymentReference || (paymentReference.trim() || undefined),
       paidAmount: pay.paid,
       purchaseCostTotal: Acc.purchaseCostOf(cleanItems),
       manualExtraCost: Number(manualExtraCost) || 0,
@@ -1052,12 +1105,17 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     };
 
     if (editingInvoiceId) {
-      // Stock, cash book and profit are re-adjusted automatically for the changes
       updateInvoice(editingInvoiceId, { ...common, customerId: selectedCustomerId || undefined });
+      setConvertToast('Bill updated! Totals and stock recalculated.');
+      setTimeout(() => setConvertToast(null), 3500);
     } else {
-      addInvoice({ ...common, invoiceNumber, customerId: selectedCustomerId || `cust-${Date.now()}` });
+      const created = addInvoice({ ...common, invoiceNumber, customerId: selectedCustomerId || `cust-${Date.now()}` });
+      setConvertToast(`${created.type === 'quotation' ? 'Quotation' : 'Invoice'} #${created.invoiceNumber} saved as Payment Pending (₹0 Paid).`);
+      setTimeout(() => setConvertToast(null), 4500);
     }
 
+    localStorage.removeItem('sgs_billing_draft');
+    setHasPendingDraft(false);
     setIsCreateInvoiceOpen(false);
   };
 
@@ -1092,41 +1150,30 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
   const handleDuplicateInvoice = (id: string) => {
     try {
       const duplicated = duplicateInvoice(id);
-      alert(`Duplicate invoice created: ${duplicated.invoiceNumber}`);
+      setConvertToast(`Duplicate invoice created: ${duplicated.invoiceNumber} (₹0 Paid)`);
+      setTimeout(() => setConvertToast(null), 4000);
       setViewingInvoice(duplicated);
     } catch (err: any) {
-      alert(`Failed to duplicate: ${err.message}`);
+      setConvertToast(`Failed to duplicate: ${err.message}`);
+      setTimeout(() => setConvertToast(null), 4000);
     }
   };
 
-  // WhatsApp Payment Reminder
-  const handleSendPaymentReminderWhatsApp = (inv: Invoice) => {
-    let cleanPhone = (inv.customerPhone || '').replace(/[^0-9]/g, '');
-    if (cleanPhone.length === 10) cleanPhone = `91${cleanPhone}`;
-    if (!cleanPhone) {
-      alert('Customer phone number is missing');
-      return;
-    }
-    const pending = Math.max(0, inv.grandTotal - (inv.paidAmount || 0));
-    const template = adminSettings.paymentPendingMessageTemplate || 
-      'Dear {customerName},\nThis is a friendly payment reminder from Spider Grid Solutions regarding Invoice #{jobId}.\n\n' +
-      '• Total Amount: ₹{amount}\n' +
-      '• Paid so far: ₹{paidAmount}\n' +
-      '• Outstanding Balance: ₹{pendingBalance}\n\n' +
-      'Kindly settle via UPI: {workshopUpiId} or contact {workshopPhone}.\nThank you for your business!';
-
-    const itemNames = (inv.items || []).map(i => i.description).slice(0, 2).join(', ');
-    const msg = template
-      .replace(/{customerName}/g, inv.customerName || 'Valued Customer')
-      .replace(/{jobId}/g, inv.invoiceNumber)
-      .replace(/{deviceBrand}/g, itemNames || 'Supplies / Service')
-      .replace(/{amount}/g, inv.grandTotal.toLocaleString('en-IN'))
-      .replace(/{paidAmount}/g, (inv.paidAmount || 0).toLocaleString('en-IN'))
-      .replace(/{pendingBalance}/g, pending.toLocaleString('en-IN'))
-      .replace(/{workshopUpiId}/g, adminSettings.workshopUpiId || '9176795665@okbizaxis')
-      .replace(/{workshopPhone}/g, adminSettings.workshopPhone || '+91 9176795665');
-
-    window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+  // Open WhatsApp Pending Reminder Modal (aggregates all pending invoices for that customer)
+  const handleOpenWhatsAppPending = (inv: Invoice) => {
+    const phoneDigits = normalizePhoneDigits(inv.customerPhone);
+    const custPending = invoices.filter(other => {
+      if (other.type !== 'invoice' || other.status === 'cancelled') return false;
+      if (Acc.amountDue(other) <= 0) return false;
+      if (inv.customerId && other.customerId === inv.customerId) return true;
+      if (phoneDigits && normalizePhoneDigits(other.customerPhone) === phoneDigits) return true;
+      return other.id === inv.id;
+    });
+    setWhatsAppModalState({
+      customerName: inv.customerName,
+      customerPhone: inv.customerPhone || '',
+      pendingInvoices: custPending.length > 0 ? custPending : [inv],
+    });
   };
 
   // Submit quick payment update
@@ -1144,21 +1191,43 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     setQuickPayRef('');
   };
 
-  // Submit expense
+  // Submit manual expense (validated with 3-level category + Cash/Bank/UPI/Other account)
   const handleAddExpenseSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setExpenseFormError(null);
     if (!expenseDesc.trim() || expenseAmount <= 0) {
-      alert('Please enter expense description and valid amount');
+      setExpenseFormError('Please enter an expense description and a valid amount.');
+      return;
+    }
+    const accCheck = validatePaymentAccountSelection({
+      paymentModeChoice: expenseModeChoice,
+      accountType: expenseAccountType,
+      bankAccountId: expenseBankAccountId,
+      bankAccounts,
+      transactionRef: expenseRef,
+      requireReferenceForOther: true,
+    });
+    if (!accCheck.valid) {
+      setExpenseFormError(accCheck.error || 'Please choose a valid Cash or Bank account.');
       return;
     }
 
+    const catLabel = expenseCatName || 'Office Expenses';
     addCashFlowEntry({
       date: expenseDate,
       type: 'expense',
-      category: expenseCategory,
-      description: expenseDesc,
+      category: catLabel,
+      categoryId: expenseCatId || undefined,
+      categoryName: catLabel,
+      subcategory: expenseSubName || undefined,
+      subcategoryId: expenseSubId || undefined,
+      secondSubcategory: expenseThirdName || undefined,
+      secondSubcategoryId: expenseThirdId || undefined,
+      description: expenseDesc.trim(),
       amount: Number(expenseAmount),
-      paymentMode: expenseMode,
+      paymentMode: mapChoiceToPaymentMode(expenseModeChoice),
+      accountType: accCheck.resolvedAccountType,
+      bankAccountId: accCheck.resolvedBankAccountId,
       referenceNumber: expenseRef.trim() || undefined,
     });
 
@@ -1166,6 +1235,8 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     setExpenseDesc('');
     setExpenseAmount(0);
     setExpenseRef('');
+    setConvertToast(`Expense of ₹${Number(expenseAmount).toLocaleString('en-IN')} recorded under ${catLabel}`);
+    setTimeout(() => setConvertToast(null), 3500);
   };
 
   // Filtered invoices
@@ -1615,6 +1686,18 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                                 <Printer className="w-4 h-4" />
                               </button>
 
+                              {isInvoice && !isCancelled && Acc.amountDue(inv) > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setCollectModalInvoice(inv)}
+                                  className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors cursor-pointer"
+                                  title="Collect Cash / Bank / UPI / Other payment"
+                                >
+                                  <Wallet className="w-3.5 h-3.5" />
+                                  <span>Collect Payment</span>
+                                </button>
+                              )}
+
                               {inv.type === 'quotation' && !isCancelled && (
                                 <button
                                   type="button"
@@ -1632,7 +1715,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                                 className={`flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
                                   isDark ? 'text-blue-300 bg-blue-950/70 border-blue-800 hover:bg-blue-900' : 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100 shadow-2xs'
                                 }`}
-                                title="Edit bill entry, items, GST, payment details or customer info"
+                                title="Edit bill entry, items, GST or customer info"
                               >
                                 <Edit3 className="w-3.5 h-3.5" />
                                 <span>Edit</span>
@@ -1648,13 +1731,14 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                                 <Copy className="w-4 h-4" />
                               </button>
 
-                              {inv.paymentStatus !== 'paid' && !isCancelled && (
+                              {isInvoice && inv.paymentStatus !== 'paid' && !isCancelled && Acc.amountDue(inv) > 0 && (
                                 <button
-                                  onClick={() => handleSendPaymentReminderWhatsApp(inv)}
+                                  type="button"
+                                  onClick={() => handleOpenWhatsAppPending(inv)}
                                   className={`p-1.5 text-xs rounded transition-colors cursor-pointer ${
                                     isDark ? 'text-emerald-400 hover:text-white hover:bg-emerald-900/60' : 'text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50'
                                   }`}
-                                  title="Send WhatsApp Payment Pending Reminder"
+                                  title="Share WhatsApp Payment Pending Reminder"
                                 >
                                   <MessageSquare className="w-4 h-4" />
                                 </button>
@@ -1708,9 +1792,9 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                   <tr>
                     <th className="py-3 px-4">Date</th>
                     <th className="py-3 px-4">Flow Type</th>
-                    <th className="py-3 px-4">Category</th>
+                    <th className="py-3 px-4">Category (3-Level)</th>
                     <th className="py-3 px-4">Description</th>
-                    <th className="py-3 px-4">Payment Mode</th>
+                    <th className="py-3 px-4">Mode & Account</th>
                     <th className="py-3 px-4 font-mono">Reference / UTR</th>
                     <th className="py-3 px-4 font-mono text-right">Amount</th>
                   </tr>
@@ -1718,24 +1802,34 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                 <tbody className={`divide-y ${isDark ? 'divide-slate-800/70' : 'divide-slate-100'}`}>
                   {cashFlow.map((cf) => {
                     const isIncome = cf.type === 'income';
+                    const resolvedCat = resolveCategoryNames(cf, moneyFlowCategories);
+                    const accLabel = formatAccountLabel(cf.accountType, cf.bankAccountId, bankAccounts, cf.paymentMode);
                     return (
-                      <tr key={cf.id} className={isDark ? 'hover:bg-slate-900/60' : 'hover:bg-slate-50'}>
+                      <tr key={cf.id} className={`${isDark ? 'hover:bg-slate-900/60' : 'hover:bg-slate-50'} ${cf.isReversed ? 'opacity-50 line-through' : ''}`}>
                         <td className={`py-3 px-4 font-mono ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                           {cf.date}
                         </td>
                         <td className="py-3 px-4">
                           <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${
-                            isIncome 
-                              ? (isDark ? 'bg-emerald-950 text-emerald-400 border-emerald-800' : 'bg-emerald-50 text-emerald-700 border-emerald-200')
-                              : (isDark ? 'bg-rose-950 text-rose-400 border-rose-800' : 'bg-rose-50 text-rose-700 border-rose-200')
+                            cf.isTransfer
+                              ? (isDark ? 'bg-blue-950 text-blue-400 border-blue-800' : 'bg-blue-50 text-blue-700 border-blue-200')
+                              : isIncome 
+                                ? (isDark ? 'bg-emerald-950 text-emerald-400 border-emerald-800' : 'bg-emerald-50 text-emerald-700 border-emerald-200')
+                                : (isDark ? 'bg-rose-950 text-rose-400 border-rose-800' : 'bg-rose-50 text-rose-700 border-rose-200')
                           }`}>
                             {isIncome ? <ArrowDownLeft className="w-3 h-3" /> : <ArrowUpRight className="w-3 h-3" />}
                             <span>{cf.type}</span>
                           </span>
+                          {cf.isReversed && (
+                            <span className="ml-1 text-[9px] font-bold px-1 py-0.5 rounded bg-rose-100 text-rose-700">REVERSED</span>
+                          )}
                         </td>
-                        <td className="py-3 px-4 font-semibold">{cf.category}</td>
+                        <td className="py-3 px-4 font-semibold">{resolvedCat.breadcrumb}</td>
                         <td className={`py-3 px-4 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{cf.description}</td>
-                        <td className="py-3 px-4 uppercase text-[10px] font-mono">{cf.paymentMode}</td>
+                        <td className="py-3 px-4">
+                          <span className="uppercase text-[10px] font-mono font-bold block">{cf.paymentMode}</span>
+                          <span className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>{accLabel}</span>
+                        </td>
                         <td className={`py-3 px-4 font-mono text-[11px] ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
                           {cf.referenceNumber || cf.referenceId || '-'}
                         </td>
@@ -1753,7 +1847,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
       </div>
 
       {/* Viewing Bill Details Modal (Click old bill to view) */}
-      {viewingInvoice && (
+      {liveViewingInvoice && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
           <div className={`border rounded-2xl w-full max-w-3xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
@@ -1766,19 +1860,19 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                      {viewingInvoice.invoiceNumber}
+                      {liveViewingInvoice.invoiceNumber}
                     </h3>
                     <span className="uppercase text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-800">
-                      {viewingInvoice.type}
+                      {liveViewingInvoice.type}
                     </span>
-                    {viewingInvoice.status === 'cancelled' && (
+                    {liveViewingInvoice.status === 'cancelled' && (
                       <span className="uppercase text-[10px] font-bold px-1.5 py-0.2 rounded bg-rose-100 text-rose-800">
                         CANCELLED
                       </span>
                     )}
                   </div>
                   <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                    {viewingInvoice.customerName} · Date: {viewingInvoice.date}
+                    {liveViewingInvoice.customerName} · Date: {liveViewingInvoice.date}
                   </p>
                 </div>
               </div>
@@ -1798,19 +1892,19 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
               }`}>
                 <div>
                   <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Customer Name</span>
-                  <p className="font-semibold text-sm mt-0.5">{viewingInvoice.customerName}</p>
+                  <p className="font-semibold text-sm mt-0.5">{liveViewingInvoice.customerName}</p>
                 </div>
                 <div>
                   <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Contact Phone</span>
-                  <p className="font-mono mt-0.5">{viewingInvoice.customerPhone || 'N/A'}</p>
+                  <p className="font-mono mt-0.5">{liveViewingInvoice.customerPhone || 'N/A'}</p>
                 </div>
                 <div>
                   <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Area / City</span>
-                  <p className="mt-0.5">{viewingInvoice.customerArea || 'Madurai'}</p>
+                  <p className="mt-0.5">{liveViewingInvoice.customerArea || 'Madurai'}</p>
                 </div>
                 <div>
                   <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Linked Job Card</span>
-                  <p className="font-mono text-blue-600 mt-0.5">{viewingInvoice.jobCardId || 'Direct Billing'}</p>
+                  <p className="font-mono text-blue-600 mt-0.5">{liveViewingInvoice.jobCardId || 'Direct Billing'}</p>
                 </div>
               </div>
 
@@ -1829,12 +1923,12 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                       }`}>
                         <tr>
                           <th className="py-2.5 px-3">Description</th>
-                          {viewingInvoice.billingFirm !== 'pandiyan' && (
+                          {liveViewingInvoice.billingFirm !== 'pandiyan' && (
                             <th className="py-2.5 px-2">HSN/SAC</th>
                           )}
                           <th className="py-2.5 px-2 text-center">Qty</th>
                           <th className="py-2.5 px-2 text-right">Rate (₹)</th>
-                          {viewingInvoice.billingFirm !== 'pandiyan' && (
+                          {liveViewingInvoice.billingFirm !== 'pandiyan' && (
                             <>
                               <th className="py-2.5 px-2 text-center">GST %</th>
                               <th className="py-2.5 px-2 text-right">GST (₹)</th>
@@ -1844,21 +1938,21 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                         </tr>
                       </thead>
                       <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-100'}`}>
-                        {viewingInvoice.items.map((it, idx) => {
-                          const itGst = it.gstPercent !== undefined ? it.gstPercent : (viewingInvoice.billingFirm === 'pandiyan' ? 0 : viewingInvoice.gstPercent);
+                        {liveViewingInvoice.items.map((it, idx) => {
+                          const itGst = it.gstPercent !== undefined ? it.gstPercent : (liveViewingInvoice.billingFirm === 'pandiyan' ? 0 : liveViewingInvoice.gstPercent);
                           const itTax = it.gstAmount ?? Math.round(((it.amount || (it.rate * it.quantity)) * itGst) / 100);
                           const itTotal = it.totalWithGst ?? (it.amount + itTax);
                           return (
                             <tr key={idx}>
                               <td className="py-2 px-3 font-semibold whitespace-pre-line">{it.description}</td>
-                              {viewingInvoice.billingFirm !== 'pandiyan' && (
+                              {liveViewingInvoice.billingFirm !== 'pandiyan' && (
                                 <td className="py-2 px-2 font-mono text-[11px] text-blue-600">
                                   {it.hsnCode || '998713'}
                                 </td>
                               )}
                               <td className="py-2 px-2 text-center font-mono">{it.quantity}</td>
                               <td className="py-2 px-2 text-right font-mono">₹{it.rate.toLocaleString('en-IN')}</td>
-                              {viewingInvoice.billingFirm !== 'pandiyan' && (
+                              {liveViewingInvoice.billingFirm !== 'pandiyan' && (
                                 <>
                                   <td className="py-2 px-2 text-center font-mono font-bold text-blue-600">
                                     {itGst}%
@@ -1889,31 +1983,31 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                     <TrendingUp className="w-4 h-4" /> Bill Profit & Loss Breakdown
                   </span>
                   <span className="text-xs font-bold font-mono px-2 py-0.5 rounded-full bg-emerald-600 text-white">
-                    Net Profit: ₹{Acc.invoiceProfit(viewingInvoice).toLocaleString('en-IN')}
+                    Net Profit: ₹{Acc.invoiceProfit(liveViewingInvoice).toLocaleString('en-IN')}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-2">
                   <div>
                     <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Billed Subtotal</span>
-                    <p className="font-mono font-bold mt-0.5">₹{viewingInvoice.subtotal.toLocaleString('en-IN')}</p>
+                    <p className="font-mono font-bold mt-0.5">₹{liveViewingInvoice.subtotal.toLocaleString('en-IN')}</p>
                   </div>
                   <div>
                     <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Spares Purchase Cost</span>
                     <p className={`font-mono font-bold mt-0.5 ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
-                      -₹{(viewingInvoice.purchaseCostTotal || 0).toLocaleString('en-IN')}
+                      -₹{(liveViewingInvoice.purchaseCostTotal || 0).toLocaleString('en-IN')}
                     </p>
                   </div>
                   <div>
                     <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Extra Manual Cost</span>
                     <p className={`font-mono font-bold mt-0.5 ${isDark ? 'text-rose-400' : 'text-rose-700'}`}>
-                      -₹{(viewingInvoice.manualExtraCost || 0).toLocaleString('en-IN')}
+                      -₹{(liveViewingInvoice.manualExtraCost || 0).toLocaleString('en-IN')}
                     </p>
                   </div>
                   <div>
                     <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Profit Margin</span>
                     <p className="font-mono font-bold text-emerald-600 mt-0.5">
-                      {Acc.netOfDiscount(viewingInvoice).taxable > 0 ? Math.round((Acc.invoiceProfit(viewingInvoice) / Acc.netOfDiscount(viewingInvoice).taxable) * 100) : 0}% Margin
+                      {Acc.netOfDiscount(liveViewingInvoice).taxable > 0 ? Math.round((Acc.invoiceProfit(liveViewingInvoice) / Acc.netOfDiscount(liveViewingInvoice).taxable) * 100) : 0}% Margin
                     </p>
                   </div>
                 </div>
@@ -1926,81 +2020,77 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                   <div>
                     <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Subtotal</span>
-                    <p className="font-mono font-bold text-sm mt-0.5">₹{viewingInvoice.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p className="font-mono font-bold text-sm mt-0.5">₹{liveViewingInvoice.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                   </div>
-                  {viewingInvoice.billingFirm !== 'pandiyan' && (viewingInvoice.taxAmount || 0) > 0 && (() => {
-                    const gstRate = viewingInvoice.gstPercent || 18;
+                  {liveViewingInvoice.billingFirm !== 'pandiyan' && (liveViewingInvoice.taxAmount || 0) > 0 && (() => {
+                    const gstRate = liveViewingInvoice.gstPercent || 18;
                     const halfRate = (gstRate / 2).toFixed(gstRate % 2 === 0 ? 0 : 1);
                     return (
                       <>
                         <div>
                           <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>CGST ({halfRate}%)</span>
-                          <p className="font-mono font-bold text-sm text-blue-600 mt-0.5">+₹{((viewingInvoice.taxAmount || 0) / 2).toFixed(2)}</p>
+                          <p className="font-mono font-bold text-sm text-blue-600 mt-0.5">+₹{((liveViewingInvoice.taxAmount || 0) / 2).toFixed(2)}</p>
                         </div>
                         <div>
                           <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>SGST ({halfRate}%)</span>
-                          <p className="font-mono font-bold text-sm text-blue-600 mt-0.5">+₹{((viewingInvoice.taxAmount || 0) / 2).toFixed(2)}</p>
+                          <p className="font-mono font-bold text-sm text-blue-600 mt-0.5">+₹{((liveViewingInvoice.taxAmount || 0) / 2).toFixed(2)}</p>
                         </div>
                       </>
                     );
                   })()}
-                  {viewingInvoice.discount !== undefined && viewingInvoice.discount > 0 && (
+                  {liveViewingInvoice.discount !== undefined && liveViewingInvoice.discount > 0 && (
                     <div>
                       <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Discount</span>
-                      <p className="font-mono font-bold text-sm text-rose-600 mt-0.5">-₹{viewingInvoice.discount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                      <p className="font-mono font-bold text-sm text-rose-600 mt-0.5">-₹{liveViewingInvoice.discount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                     </div>
                   )}
-                  {viewingInvoice.roundOff !== undefined && viewingInvoice.roundOff !== 0 && (
+                  {liveViewingInvoice.roundOff !== undefined && liveViewingInvoice.roundOff !== 0 && (
                     <div>
                       <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Round Off</span>
-                      <p className="font-mono font-bold text-sm text-slate-500 mt-0.5">{viewingInvoice.roundOff > 0 ? '+' : ''}₹{viewingInvoice.roundOff.toFixed(2)}</p>
+                      <p className="font-mono font-bold text-sm text-slate-500 mt-0.5">{liveViewingInvoice.roundOff > 0 ? '+' : ''}₹{liveViewingInvoice.roundOff.toFixed(2)}</p>
                     </div>
                   )}
                   <div>
                     <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Grand Total</span>
-                    <p className="font-mono font-bold text-sm text-emerald-600 mt-0.5">₹{viewingInvoice.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p className="font-mono font-bold text-sm text-emerald-600 mt-0.5">₹{liveViewingInvoice.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                   </div>
                   <div>
                     <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Amount Paid</span>
-                    <p className="font-mono font-bold text-sm text-emerald-600 mt-0.5">₹{viewingInvoice.paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                    <p className="font-mono font-bold text-sm text-emerald-600 mt-0.5">₹{liveViewingInvoice.paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                   </div>
                   <div>
-                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Payment Mode</span>
-                    <p className="font-bold uppercase mt-0.5">{viewingInvoice.paymentMode}</p>
+                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Payment Status</span>
+                    <p className="font-bold uppercase mt-0.5">{liveViewingInvoice.paymentStatus}</p>
                   </div>
-                  <div>
-                    <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>UPI / Reference</span>
-                    <p className="font-mono text-blue-600 mt-0.5">{viewingInvoice.paymentReference || 'None on record'}</p>
-                  </div>
-                  {viewingInvoice.type === 'invoice' && viewingInvoice.status !== 'cancelled' && Acc.amountDue(viewingInvoice) > 0 && (
+                  {liveViewingInvoice.type === 'invoice' && liveViewingInvoice.status !== 'cancelled' && Acc.amountDue(liveViewingInvoice) > 0 && (
                     <div>
                       <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Balance Due</span>
                       <p className="font-mono font-bold text-sm text-rose-600 mt-0.5">
-                        ₹{Acc.amountDue(viewingInvoice).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        {Acc.daysOverdue(viewingInvoice) > 0 && (
-                          <span className="ml-1.5 text-[10px] font-sans font-bold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded">{Acc.daysOverdue(viewingInvoice)} days overdue</span>
+                        ₹{Acc.amountDue(liveViewingInvoice).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {Acc.daysOverdue(liveViewingInvoice) > 0 && (
+                          <span className="ml-1.5 text-[10px] font-sans font-bold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded">{Acc.daysOverdue(liveViewingInvoice)} days overdue</span>
                         )}
                       </p>
                     </div>
                   )}
-                  {viewingInvoice.dueDate && (
+                  {liveViewingInvoice.dueDate && (
                     <div>
                       <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Due Date</span>
-                      <p className="font-mono mt-0.5">{viewingInvoice.dueDate}</p>
+                      <p className="font-mono mt-0.5">{liveViewingInvoice.dueDate}</p>
                     </div>
                   )}
-                  {viewingInvoice.customerGstin && (
+                  {liveViewingInvoice.customerGstin && (
                     <div>
                       <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Customer GSTIN</span>
-                      <p className="font-mono font-bold mt-0.5">{viewingInvoice.customerGstin}</p>
+                      <p className="font-mono font-bold mt-0.5">{liveViewingInvoice.customerGstin}</p>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Payment history (every receipt / refund recorded against this bill) */}
+              {/* Payment history (every incremental receipt / reversal recorded against this bill) */}
               {(() => {
-                const pays = Acc.paymentsOf(cashFlow, viewingInvoice.id);
+                const pays = getInvoicePaymentRecords(liveViewingInvoice, invoicePayments, cashFlow);
                 if (pays.length === 0) return null;
                 return (
                   <div className={`p-4 rounded-xl border space-y-2 ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
@@ -2008,24 +2098,71 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                       <IndianRupee className="w-3.5 h-3.5" /> Payment History ({pays.length})
                     </span>
                     <div className="divide-y divide-slate-200 dark:divide-slate-800 text-xs">
-                      {pays.map(pm => (
-                        <div key={pm.id} className="flex items-center justify-between py-1.5 gap-3">
-                          <div className="min-w-0">
-                            <p className="font-semibold truncate">{pm.category}</p>
-                            <p className="text-[10px] text-slate-500 font-mono">{pm.date} · {pm.paymentMode}{pm.referenceNumber ? ` · ${pm.referenceNumber}` : ''}</p>
+                      {pays.map(pm => {
+                        const accLabel = formatAccountLabel(pm.accountType, pm.bankAccountId, bankAccounts, pm.paymentMode);
+                        const canReverse = isAdmin && !pm.isReversed && pm.amount > 0 && invoicePayments.some(ip => ip.id === pm.id);
+                        return (
+                          <div key={pm.id} className={`flex items-center justify-between py-2 gap-3 ${pm.isReversed ? 'opacity-50' : ''}`}>
+                            <div className="min-w-0">
+                              <p className={`font-semibold truncate ${pm.isReversed ? 'line-through' : ''}`}>
+                                {pm.paymentReference || 'Receipt'} · {accLabel}
+                                {pm.isReversed && (
+                                  <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">REVERSED</span>
+                                )}
+                              </p>
+                              <p className="text-[10px] text-slate-500 font-mono">
+                                {pm.date} · {pm.paymentMode.toUpperCase()}
+                                {pm.transactionRef ? ` · Ref: ${pm.transactionRef}` : ''}
+                                {pm.notes ? ` · ${pm.notes}` : ''}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className={`font-mono font-bold ${pm.isReversed ? 'line-through text-slate-400' : pm.amount >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                {pm.amount >= 0 ? '+' : ''}₹{Math.abs(pm.amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </span>
+                              {canReverse && (
+                                reversingPaymentId === pm.id ? (
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        reverseInvoicePayment(pm.id, 'Reversed from Invoice Details');
+                                        setReversingPaymentId(null);
+                                      }}
+                                      className="px-2 py-0.5 text-[10px] font-bold bg-rose-600 text-white rounded cursor-pointer"
+                                    >
+                                      Confirm Reverse
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setReversingPaymentId(null)}
+                                      className="px-1.5 py-0.5 text-[10px] text-slate-500 cursor-pointer"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setReversingPaymentId(pm.id)}
+                                    className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold text-rose-600 border border-rose-300 rounded hover:bg-rose-50 cursor-pointer"
+                                    title="Audit-safe reverse payment"
+                                  >
+                                    <RotateCcw className="w-3 h-3" /> Reverse
+                                  </button>
+                                )
+                              )}
+                            </div>
                           </div>
-                          <span className={`font-mono font-bold shrink-0 ${pm.type === 'income' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                            {pm.type === 'income' ? '+' : '-'}₹{pm.amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 );
               })()}
 
               {/* If attached physical receipt exists */}
-              {viewingInvoice.attachedBillImage && (
+              {liveViewingInvoice.attachedBillImage && (
                 <div className={`p-4 rounded-xl border space-y-2 ${
                   isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
                 }`}>
@@ -2035,18 +2172,18 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                     </span>
                     <button
                       type="button"
-                      onClick={() => setZoomedBillPhoto(viewingInvoice.attachedBillImage || null)}
+                      onClick={() => setZoomedBillPhoto(liveViewingInvoice.attachedBillImage || null)}
                       className="text-xs text-blue-600 hover:underline flex items-center gap-1 cursor-pointer font-semibold"
                     >
                       <Maximize2 className="w-3.5 h-3.5" /> Enlarge Photo
                     </button>
                   </div>
                   <div 
-                    onClick={() => setZoomedBillPhoto(viewingInvoice.attachedBillImage || null)}
+                    onClick={() => setZoomedBillPhoto(liveViewingInvoice.attachedBillImage || null)}
                     className="max-h-60 overflow-hidden rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer text-center bg-black/10"
                   >
                     <img 
-                      src={viewingInvoice.attachedBillImage} 
+                      src={liveViewingInvoice.attachedBillImage} 
                       alt="Physical Bill Photo" 
                       className="max-h-60 w-auto object-contain mx-auto"
                     />
@@ -2054,11 +2191,11 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                 </div>
               )}
 
-              {viewingInvoice.notes && (
+              {liveViewingInvoice.notes && (
                 <div className={`p-3 rounded-lg border text-xs italic ${
                   isDark ? 'bg-slate-950 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-700'
                 }`}>
-                  Note: {viewingInvoice.notes}
+                  Note: {liveViewingInvoice.notes}
                 </div>
               )}
             </div>
@@ -2067,19 +2204,29 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
             <div className={`p-4 border-t flex items-center justify-between flex-wrap gap-2 ${
               isDark ? 'border-slate-800' : 'border-slate-200'
             }`}>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                {liveViewingInvoice.type === 'invoice' && liveViewingInvoice.status !== 'cancelled' && Acc.amountDue(liveViewingInvoice) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setCollectModalInvoice(liveViewingInvoice)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg cursor-pointer shadow-xs"
+                  >
+                    <Wallet className="w-3.5 h-3.5" /> Collect Payment (₹{Acc.amountDue(liveViewingInvoice).toLocaleString('en-IN')})
+                  </button>
+                )}
+
                 <button
                   type="button"
-                  onClick={() => setPrintableInvoice(viewingInvoice)}
+                  onClick={() => setPrintableInvoice(liveViewingInvoice)}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5" /> Print Voucher Slip
                 </button>
 
-                {viewingInvoice.type === 'quotation' && viewingInvoice.status !== 'cancelled' && (
+                {liveViewingInvoice.type === 'quotation' && liveViewingInvoice.status !== 'cancelled' && (
                   <button
                     type="button"
-                    onClick={() => setConfirmConvertModal(viewingInvoice)}
+                    onClick={() => setConfirmConvertModal(liveViewingInvoice)}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg cursor-pointer shadow-xs"
                     title="Convert Quotation into Official Tax Invoice"
                   >
@@ -2089,39 +2236,39 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
 
                 <button
                   type="button"
-                  onClick={() => handleOpenEditModal(viewingInvoice)}
+                  onClick={() => handleOpenEditModal(liveViewingInvoice)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border cursor-pointer ${
                     isDark ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-slate-100 border-slate-300 text-slate-700'
                   }`}
                 >
-                  <Edit3 className="w-3.5 h-3.5" /> {viewingInvoice.type === 'quotation' ? 'Edit Quotation' : 'Edit Bill'}
+                  <Edit3 className="w-3.5 h-3.5" /> {liveViewingInvoice.type === 'quotation' ? 'Edit Quotation' : 'Edit Bill'}
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => handleDuplicateInvoice(viewingInvoice.id)}
+                  onClick={() => handleDuplicateInvoice(liveViewingInvoice.id)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border cursor-pointer ${
                     isDark ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-slate-100 border-slate-300 text-slate-700'
                   }`}
                 >
-                  <Copy className="w-3.5 h-3.5" /> {viewingInvoice.type === 'quotation' ? 'Copy Quotation' : 'Duplicate'}
+                  <Copy className="w-3.5 h-3.5" /> {liveViewingInvoice.type === 'quotation' ? 'Copy Quotation' : 'Duplicate'}
                 </button>
 
-                {viewingInvoice.paymentStatus !== 'paid' && viewingInvoice.status !== 'cancelled' && (
+                {liveViewingInvoice.type === 'invoice' && liveViewingInvoice.paymentStatus !== 'paid' && liveViewingInvoice.status !== 'cancelled' && Acc.amountDue(liveViewingInvoice) > 0 && (
                   <button
                     type="button"
-                    onClick={() => handleSendPaymentReminderWhatsApp(viewingInvoice)}
+                    onClick={() => handleOpenWhatsAppPending(liveViewingInvoice)}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-emerald-600 hover:bg-emerald-50 border border-emerald-300 cursor-pointer"
-                    title="Send Payment Pending Reminder via WhatsApp"
+                    title="Share Payment Pending Reminder via WhatsApp"
                   >
-                    <MessageSquare className="w-3.5 h-3.5" /> WhatsApp Reminder
+                    <MessageSquare className="w-3.5 h-3.5" /> WhatsApp Pending
                   </button>
                 )}
 
-                {canDelete && viewingInvoice.status !== 'cancelled' && (
+                {canDelete && liveViewingInvoice.status !== 'cancelled' && (
                   <button
                     type="button"
-                    onClick={() => handleCancelInvoice(viewingInvoice.id)}
+                    onClick={() => handleCancelInvoice(liveViewingInvoice.id)}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-amber-600 hover:bg-amber-50 border border-amber-300 cursor-pointer"
                     title="Cancel Bill (Admin Only)"
                   >
@@ -2132,7 +2279,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                 {canDelete && (
                   <button
                     type="button"
-                    onClick={() => handleDeleteInvoice(viewingInvoice.id, viewingInvoice.invoiceNumber)}
+                    onClick={() => handleDeleteInvoice(liveViewingInvoice.id, liveViewingInvoice.invoiceNumber)}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg text-rose-600 hover:bg-rose-50 border border-rose-300 cursor-pointer"
                     title="Permanently Delete Bill (Admin Only)"
                   >
@@ -3272,7 +3419,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-3 border-t border-slate-200 dark:border-slate-800 items-end">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-200 dark:border-slate-800 items-center">
                   {/* Grand Total */}
                   <div>
                     <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
@@ -3288,92 +3435,39 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                     />
                   </div>
 
-                  {/* Payment Status */}
-                  <div>
-                    <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                      Payment Status
-                    </label>
-                    <select
-                      value={paymentStatus}
-                      onChange={(e) => {
-                        const newStatus = e.target.value as any;
-                        setPaymentStatus(newStatus);
-                        if (newStatus === 'paid') setPaidAmount(grandTotalCalc);
-                        else if (newStatus === 'unpaid') setPaidAmount(0);
-                      }}
-                      className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
-                        isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
-                      }`}
-                    >
-                      <option value="paid">Paid in Full</option>
-                      <option value="partial">Partial Payment</option>
-                      <option value="unpaid">Unpaid / Credit</option>
-                    </select>
+                  {/* Read-only Payment Collection Info Banner (Bill creation separated from payment collection) */}
+                  <div className={`sm:col-span-2 p-3 rounded-xl border text-xs ${
+                    isDark ? 'bg-amber-950/25 border-amber-800/60 text-amber-200' : 'bg-amber-50 border-amber-200 text-amber-900'
+                  }`}>
+                    {editingInvoiceId ? (
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div>
+                          <p className="font-bold">
+                            Collected Paid Amount: ₹{(invoices.find(i => i.id === editingInvoiceId)?.paidAmount || 0).toLocaleString('en-IN')} ({(invoices.find(i => i.id === editingInvoiceId)?.paymentStatus || 'unpaid').toUpperCase()})
+                          </p>
+                          <p className="text-[11px] opacity-80">
+                            Payments are recorded separately via Collect Payment or reversed inside View Bill so Money Flow accounts stay exact.
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="font-bold">Payment Status: Payment Pending (₹0 Paid)</p>
+                        <p className="text-[11px] opacity-85">
+                          Saving this {invoiceType === 'quotation' ? 'quotation' : 'bill'} will NOT record money inflow. After saving, click <strong>Collect Payment</strong> to receive Cash, Bank, UPI, or Other payments.
+                        </p>
+                      </div>
+                    )}
                   </div>
-
-                  {/* Paid Amount */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className={`text-xs font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                        Paid Amount (₹)
-                      </label>
-                      {paymentStatus === 'paid' && (
-                        <span className="text-[10px] text-emerald-600 font-bold">Auto-matched</span>
-                      )}
-                    </div>
-                    <input
-                      type="number"
-                      value={paidAmount}
-                      onChange={(e) => {
-                        const val = Number(e.target.value);
-                        setPaidAmount(val);
-                        if (val >= grandTotalCalc) setPaymentStatus('paid');
-                        else if (val > 0) setPaymentStatus('partial');
-                        else setPaymentStatus('unpaid');
-                      }}
-                      className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
-                        isDark ? 'bg-slate-950 border border-slate-800 text-emerald-400 font-bold' : 'bg-white border border-slate-300 text-emerald-700 font-bold'
-                      }`}
-                    />
-                  </div>
-
-                  {/* Payment Mode */}
-                  <div>
-                    <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                      Payment Mode
-                    </label>
-                    <select
-                      value={paymentMode}
-                      onChange={(e) => setPaymentMode(e.target.value as PaymentMode)}
-                      className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
-                        isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
-                      }`}
-                    >
-                      <option value="upi">UPI / GPay / PhonePe</option>
-                      <option value="cash">Cash in Hand</option>
-                      <option value="bank_transfer">Bank Transfer (NEFT / IMPS)</option>
-                      <option value="card">Debit / Credit Card</option>
-                      <option value="cheque">Cheque</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* UPI Ref / Reference No */}
-                <div className="pt-1">
-                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                    UPI Transaction ID / UTR / Reference No
-                  </label>
-                  <input
-                    type="text"
-                    value={paymentReference}
-                    onChange={(e) => setPaymentReference(e.target.value)}
-                    placeholder="e.g. UPI Ref 429104820129 or IMPS-912"
-                    className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
-                      isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
-                    }`}
-                  />
                 </div>
               </div>
+
+              {invoiceFormError && (
+                <div className="p-3 rounded-xl border border-rose-500/40 bg-rose-500/10 text-rose-500 text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{invoiceFormError}</span>
+                </div>
+              )}
 
               {/* Attach Physical Bill / Voucher Photo */}
               <div className="space-y-1">
@@ -3426,7 +3520,11 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                   type="submit"
                   className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-md shadow-blue-600/20 cursor-pointer"
                 >
-                  {editingInvoiceId ? 'Update Bill & Recalculate Profit' : 'Save Invoice & Record Inflow'}
+                  {editingInvoiceId
+                    ? 'Update Bill & Recalculate Totals'
+                    : invoiceType === 'quotation'
+                      ? 'Save Quotation'
+                      : 'Save Invoice (Payment Pending)'}
                 </button>
               </div>
             </form>
@@ -3434,96 +3532,101 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
         </div>
       )}
 
-      {/* Manual Expense Modal */}
+      {/* Manual Expense Modal with 3-Level Category & Payment Account Selector */}
       {isAddExpenseOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 ${
+          <div className={`border rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto shadow-2xl p-6 space-y-4 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className={`flex items-center justify-between pb-2 border-b ${
               isDark ? 'border-slate-800' : 'border-slate-200'
             }`}>
               <h3 className={`text-sm font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>Add Workshop Expense</h3>
-              <button onClick={() => setIsAddExpenseOpen(false)} className="text-slate-400 hover:text-slate-200">
+              <button onClick={() => setIsAddExpenseOpen(false)} className="text-slate-400 hover:text-slate-200 cursor-pointer">
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleAddExpenseSubmit} className="space-y-3">
-              <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Category</label>
-                <select
-                  value={expenseCategory}
-                  onChange={(e) => setExpenseCategory(e.target.value)}
-                  className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
-                    isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
-                  }`}
-                >
-                  <option value="Workshop Rent & Electricity">Workshop Rent & Electricity</option>
-                  <option value="Internet & Broadband">Internet & Broadband</option>
-                  <option value="Tools, Soldering & Consumables">Tools, Soldering & Consumables</option>
-                  <option value="Technician Travel / Conveyance">Technician Travel / Conveyance</option>
-                  <option value="Tea, Refreshments & Misc">Tea, Refreshments & Misc</option>
-                </select>
-              </div>
-
-              <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Description</label>
-                <input
-                  type="text"
-                  required
-                  value={expenseDesc}
-                  onChange={(e) => setExpenseDesc(e.target.value)}
-                  placeholder="e.g. EB Bill October 2026"
-                  className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
-                    isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
+            <form onSubmit={handleAddExpenseSubmit} className="space-y-3.5">
+              <MoneyFlowCategoryPicker
+                flowType="expense"
+                categoryId={expenseCatId}
+                subcategoryId={expenseSubId}
+                secondSubcategoryId={expenseThirdId}
+                onChange={(sel) => {
+                  setExpenseCatId(sel.categoryId);
+                  setExpenseCatName(sel.categoryName);
+                  setExpenseSubId(sel.subcategoryId);
+                  setExpenseSubName(sel.subcategoryName);
+                  setExpenseThirdId(sel.secondSubcategoryId);
+                  setExpenseThirdName(sel.secondSubcategoryName);
+                }}
+                isDark={isDark}
+              />
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Amount (₹)</label>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Date *</label>
+                  <input
+                    type="date"
+                    required
+                    value={expenseDate}
+                    onChange={(e) => setExpenseDate(e.target.value)}
+                    className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
+                      isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
+                    }`}
+                  />
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Amount (₹) *</label>
                   <input
                     type="number"
                     required
-                    value={expenseAmount}
+                    min="0.01"
+                    step="0.01"
+                    value={expenseAmount || ''}
                     onChange={(e) => setExpenseAmount(Number(e.target.value))}
+                    placeholder="0.00"
                     className={`w-full rounded-lg px-3 py-2 text-xs font-mono font-bold focus:outline-none ${
                       isDark ? 'bg-slate-950 border border-slate-800 text-rose-400' : 'bg-white border border-slate-300 text-rose-700'
                     }`}
                   />
                 </div>
-                <div>
-                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Mode</label>
-                  <select
-                    value={expenseMode}
-                    onChange={(e) => setExpenseMode(e.target.value as any)}
-                    className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
-                      isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
-                    }`}
-                  >
-                    <option value="upi">UPI / GPay</option>
-                    <option value="cash">Cash</option>
-                    <option value="bank_transfer">Bank Transfer</option>
-                  </select>
-                </div>
               </div>
 
               <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                  UPI / Transaction Reference ID
-                </label>
+                <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Description *</label>
                 <input
                   type="text"
-                  value={expenseRef}
-                  onChange={(e) => setExpenseRef(e.target.value)}
-                  placeholder="e.g. UPI Ref / UTR / Receipt No"
-                  className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
+                  required
+                  value={expenseDesc}
+                  onChange={(e) => setExpenseDesc(e.target.value)}
+                  placeholder="e.g. Office lunch / Petrol / EB Bill"
+                  className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
                     isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
                   }`}
                 />
               </div>
+
+              <PaymentAccountSelector
+                paymentModeChoice={expenseModeChoice}
+                onChangePaymentModeChoice={setExpenseModeChoice}
+                accountType={expenseAccountType}
+                onChangeAccountType={setExpenseAccountType}
+                bankAccountId={expenseBankAccountId}
+                onChangeBankAccountId={setExpenseBankAccountId}
+                transactionRef={expenseRef}
+                onChangeTransactionRef={setExpenseRef}
+                bankAccounts={bankAccounts}
+                isDark={isDark}
+              />
+
+              {expenseFormError && (
+                <div className="p-2.5 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-500 text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{expenseFormError}</span>
+                </div>
+              )}
 
               <div className={`flex items-center justify-end gap-2 pt-3 border-t ${
                 isDark ? 'border-slate-800' : 'border-slate-200'

@@ -21,10 +21,20 @@ import {
   CheckCircle2,
   Users,
   Award,
-  Star
+  Star,
+  IndianRupee,
+  Receipt
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
-import { Customer, LeadSource } from '../types';
+import { Customer, Invoice, LeadSource } from '../types';
+import { CollectPaymentModal } from './CollectPaymentModal';
+import { WhatsAppPendingModal } from './WhatsAppPendingModal';
+import {
+  CustomerFinancialSummary,
+  formatAccountLabel,
+  getCustomerFinancialSummary,
+} from '../utils/moneyFlow';
+import { amountDue } from '../utils/accounting';
 
 interface CustomerDirectoryProps {
   onOpenNewJobWithCustomer: (customer: Customer) => void;
@@ -49,6 +59,10 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
     syncCustomerToContacts,
     generateVCard,
     downloadVCard,
+    invoices,
+    invoicePayments,
+    customerPaymentAllocations,
+    bankAccounts,
     theme,
     canDelete
   } = useSgs();
@@ -62,6 +76,15 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
   const [selectedAbout, setSelectedAbout] = useState<string>('all');
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [customerToast, setCustomerToast] = useState<string | null>(null);
+
+  // Customer Financial Ledger, Collect Payment & WhatsApp Pending Modals
+  const [ledgerCustomer, setLedgerCustomer] = useState<Customer | null>(null);
+  const [collectModalState, setCollectModalState] = useState<{
+    mode: 'single_invoice' | 'customer_multi';
+    customer?: Customer | null;
+    invoice?: Invoice | null;
+  } | null>(null);
+  const [waPendingCustomer, setWaPendingCustomer] = useState<Customer | null>(null);
 
   // Form State for Add / Edit
   const [formData, setFormData] = useState<{
@@ -132,6 +155,15 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
       return matchesSearch && matchesArea && matchesReference && matchesAbout;
     });
   }, [customers, searchQuery, selectedArea, selectedReference, selectedAbout]);
+
+  // Customer-wise financial summary across all bills (no bill merging; individual dues summed)
+  const customerFinanceMap = useMemo(() => {
+    const map = new Map<string, CustomerFinancialSummary>();
+    customers.forEach(c => {
+      map.set(c.id, getCustomerFinancialSummary(c, invoices, invoicePayments, customerPaymentAllocations));
+    });
+    return map;
+  }, [customers, invoices, invoicePayments, customerPaymentAllocations]);
 
   // Filtered Lead Sources for Autocomplete
   const matchingLeadSources = useMemo(() => {
@@ -486,6 +518,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
                 <th className="py-3 px-4">Category</th>
                 <th className="py-3 px-4">Lead Source (Referrer)</th>
                 <th className="py-3 px-4">Occupation / Details</th>
+                <th className="py-3 px-4 text-right">Bills &amp; Pending</th>
                 <th className="py-3 px-4 text-center">Google Contacts</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
@@ -493,7 +526,7 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
             <tbody className={`divide-y ${isDark ? 'divide-slate-800/70' : 'divide-slate-100'}`}>
               {filteredCustomers.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className={`py-12 text-center text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                  <td colSpan={10} className={`py-12 text-center text-xs ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
                     No customer matches found with current search filters.
                   </td>
                 </tr>
@@ -587,6 +620,45 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
                         {customer.details || '—'}
                       </td>
 
+                      {/* Bills & Pending Summary */}
+                      <td className="py-3 px-4 text-right font-mono">
+                        {(() => {
+                          const fin = customerFinanceMap.get(customer.id);
+                          if (!fin || (fin.totalBills === 0 && fin.unallocatedCredit === 0)) {
+                            return <span className={isDark ? 'text-slate-600' : 'text-slate-400'}>—</span>;
+                          }
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setLedgerCustomer(customer)}
+                              className="text-right hover:underline cursor-pointer space-y-0.5 ml-auto block"
+                              title="Click to inspect all bills and collect payment"
+                            >
+                              <div className="flex items-center justify-end gap-1">
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-500 font-bold">
+                                  {fin.totalBills} Bill{fin.totalBills === 1 ? '' : 's'}
+                                </span>
+                                {fin.totalPending > 0 ? (
+                                  <span className="font-bold text-amber-500">
+                                    Due ₹{fin.totalPending.toLocaleString('en-IN')}
+                                  </span>
+                                ) : (
+                                  <span className="font-bold text-emerald-500">Settled</span>
+                                )}
+                              </div>
+                              <div className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                Billed ₹{fin.totalBilled.toLocaleString('en-IN')} · Paid ₹{fin.totalPaid.toLocaleString('en-IN')}
+                              </div>
+                              {fin.unallocatedCredit > 0 && (
+                                <div className="text-[10px] text-cyan-500 font-semibold">
+                                  Credit ₹{fin.unallocatedCredit.toLocaleString('en-IN')}
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })()}
+                      </td>
+
                       {/* Google Contacts status & 1-click sync */}
                       <td className="py-3 px-4 text-center">
                         <button
@@ -614,6 +686,20 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
 
                       <td className="py-3 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {/* Bills Ledger & Collect */}
+                          <button
+                            type="button"
+                            onClick={() => setLedgerCustomer(customer)}
+                            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                              (customerFinanceMap.get(customer.id)?.totalPending || 0) > 0
+                                ? 'text-amber-500 hover:bg-amber-500/10'
+                                : (isDark ? 'text-slate-400 hover:text-emerald-300 hover:bg-slate-800' : 'text-slate-600 hover:text-emerald-700 hover:bg-emerald-50')
+                            }`}
+                            title="View Customer Bills Ledger & Collect Payment"
+                          >
+                            <Receipt className="w-3.5 h-3.5" />
+                          </button>
+
                           {/* Create Job Card */}
                           <button
                             onClick={() => onOpenNewJobWithCustomer(customer)}
@@ -1033,6 +1119,216 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
           </div>
         </div>
       )}
+
+      {/* Customer Financial Ledger & Multi-Bill Modal */}
+      {ledgerCustomer && (() => {
+        const fin = getCustomerFinancialSummary(ledgerCustomer, invoices, invoicePayments, customerPaymentAllocations);
+        return (
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className={`border rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden ${
+              isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+            }`}>
+              <div className={`px-6 py-4 border-b flex items-center justify-between ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+                <div>
+                  <h3 className="text-base font-bold">{ledgerCustomer.name} — Bills &amp; Payment Ledger</h3>
+                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {ledgerCustomer.phone || 'No phone'} · {ledgerCustomer.area || 'Madurai'}
+                  </p>
+                </div>
+                <button onClick={() => setLedgerCustomer(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 overflow-y-auto space-y-4 text-xs flex-1">
+                {/* Summary KPIs */}
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+                  <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                    <span className="text-[10px] uppercase text-slate-400 block">Total Bills</span>
+                    <span className="text-base font-bold font-mono">{fin.totalBills}</span>
+                  </div>
+                  <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                    <span className="text-[10px] uppercase text-slate-400 block">Total Billed</span>
+                    <span className="text-base font-bold font-mono text-blue-500">₹{fin.totalBilled.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                    <span className="text-[10px] uppercase text-slate-400 block">Total Paid</span>
+                    <span className="text-base font-bold font-mono text-emerald-500">₹{fin.totalPaid.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className={`p-3 rounded-xl border ${isDark ? 'bg-amber-950/30 border-amber-900/60' : 'bg-amber-50 border-amber-200'}`}>
+                    <span className="text-[10px] uppercase text-amber-500 block">Total Pending</span>
+                    <span className="text-base font-bold font-mono text-amber-500">₹{fin.totalPending.toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                    <span className="text-[10px] uppercase text-cyan-500 block">Advance Credit</span>
+                    <span className="text-base font-bold font-mono text-cyan-500">₹{fin.unallocatedCredit.toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCollectModalState({
+                        mode: 'customer_multi',
+                        customer: ledgerCustomer,
+                      })
+                    }
+                    className="px-3.5 py-2 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <IndianRupee className="w-3.5 h-3.5" />
+                    <span>Collect Payment (Allocate Across Bills)</span>
+                  </button>
+                  {fin.pendingInvoices.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setWaPendingCustomer(ledgerCustomer)}
+                      className="px-3.5 py-2 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Share Pending via WhatsApp</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Individual Invoices */}
+                <div className="space-y-2">
+                  <h4 className="font-bold uppercase tracking-wider text-[11px] text-slate-400">
+                    Individual Bills ({fin.allInvoices.length})
+                  </h4>
+                  {fin.allInvoices.length === 0 ? (
+                    <p className="text-slate-500 italic py-4 text-center">No invoices recorded for this customer yet.</p>
+                  ) : (
+                    <div className={`rounded-xl border overflow-hidden ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+                      <table className="w-full text-left text-xs">
+                        <thead className={`text-[10px] uppercase ${isDark ? 'bg-slate-950 text-slate-400' : 'bg-slate-50 text-slate-600'}`}>
+                          <tr>
+                            <th className="py-2 px-3">Invoice #</th>
+                            <th className="py-2 px-3">Date</th>
+                            <th className="py-2 px-3 text-right">Bill Total</th>
+                            <th className="py-2 px-3 text-right">Paid</th>
+                            <th className="py-2 px-3 text-right">Pending Due</th>
+                            <th className="py-2 px-3 text-center">Status</th>
+                            <th className="py-2 px-3 text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-100'}`}>
+                          {fin.allInvoices.map(inv => {
+                            const due = amountDue(inv);
+                            return (
+                              <tr key={inv.id}>
+                                <td className="py-2 px-3 font-mono font-bold text-blue-500">{inv.invoiceNumber}</td>
+                                <td className="py-2 px-3 font-mono">{inv.date}</td>
+                                <td className="py-2 px-3 text-right font-mono">₹{(inv.grandTotal || 0).toLocaleString('en-IN')}</td>
+                                <td className="py-2 px-3 text-right font-mono text-emerald-500">₹{(inv.paidAmount || 0).toLocaleString('en-IN')}</td>
+                                <td className="py-2 px-3 text-right font-mono font-bold text-amber-500">₹{due.toLocaleString('en-IN')}</td>
+                                <td className="py-2 px-3 text-center">
+                                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                    due === 0
+                                      ? 'bg-emerald-500/15 text-emerald-500'
+                                      : inv.paidAmount > 0
+                                        ? 'bg-amber-500/15 text-amber-500'
+                                        : 'bg-rose-500/15 text-rose-500'
+                                  }`}>
+                                    {due === 0 ? 'Paid' : inv.paidAmount > 0 ? 'Partial' : 'Unpaid'}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 text-right">
+                                  {due > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setCollectModalState({
+                                          mode: 'single_invoice',
+                                          invoice: inv,
+                                          customer: ledgerCustomer,
+                                        })
+                                      }
+                                      className="px-2 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold cursor-pointer"
+                                    >
+                                      Collect
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* Payment History */}
+                {fin.paymentRecords.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="font-bold uppercase tracking-wider text-[11px] text-slate-400">
+                      Payment History ({fin.paymentRecords.length})
+                    </h4>
+                    <div className="space-y-1.5">
+                      {fin.paymentRecords.map(p => (
+                        <div
+                          key={p.id}
+                          className={`p-2.5 rounded-lg border flex items-center justify-between text-[11px] ${
+                            p.isReversed ? 'opacity-60 line-through' : ''
+                          } ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}
+                        >
+                          <div>
+                            <span className="font-mono font-bold">{p.paymentReference}</span>
+                            <span className="mx-1.5 text-slate-400">·</span>
+                            <span>{p.date}</span>
+                            <span className="mx-1.5 text-slate-400">·</span>
+                            <span className="text-blue-500 font-semibold">{p.invoiceNumber || 'Advance / Unallocated'}</span>
+                            <span className="mx-1.5 text-slate-400">·</span>
+                            <span>{formatAccountLabel(p.accountType, p.bankAccountId, bankAccounts, p.paymentMode)}</span>
+                            {p.isReversed && (
+                              <span className="ml-2 px-1.5 py-0.5 rounded bg-rose-500/15 text-rose-500 text-[9px] font-bold uppercase no-underline">
+                                Reversed
+                              </span>
+                            )}
+                          </div>
+                          <span className="font-mono font-bold text-emerald-500">₹{p.amount.toLocaleString('en-IN')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Collect Payment Modal */}
+      {collectModalState && (
+        <CollectPaymentModal
+          isOpen={!!collectModalState}
+          onClose={() => setCollectModalState(null)}
+          mode={collectModalState.mode}
+          invoice={collectModalState.invoice}
+          customer={collectModalState.customer}
+          onPaymentSaved={(msg) => {
+            setCustomerToast(msg);
+            setTimeout(() => setCustomerToast(null), 4000);
+          }}
+        />
+      )}
+
+      {/* WhatsApp Combined Pending Modal */}
+      {waPendingCustomer && (() => {
+        const fin = getCustomerFinancialSummary(waPendingCustomer, invoices, invoicePayments, customerPaymentAllocations);
+        return (
+          <WhatsAppPendingModal
+            isOpen={!!waPendingCustomer}
+            onClose={() => setWaPendingCustomer(null)}
+            customerName={waPendingCustomer.name}
+            customerPhone={waPendingCustomer.phone}
+            pendingInvoices={fin.pendingInvoices}
+            totalOutstanding={fin.totalPending}
+          />
+        );
+      })()}
 
     </div>
   );

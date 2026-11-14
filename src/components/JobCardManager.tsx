@@ -59,6 +59,9 @@ import { useSgs } from '../context/SgsContext';
 import { JobCard, JobStatus, DeviceCategory, ServiceSalesType, Customer, JobTimelineEvent } from '../types';
 import { WorkAllocationBoard } from './WorkAllocationBoard';
 import { JobCardStatusList } from './JobCardStatusList';
+import { CollectPaymentModal } from './CollectPaymentModal';
+import { WhatsAppPendingModal } from './WhatsAppPendingModal';
+import { getJobCardFinancialSummary, formatAccountLabel } from '../utils/moneyFlow';
 
 interface JobCardManagerProps {
   isCreateModalOpen: boolean;
@@ -100,6 +103,10 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
     addJobTimelineEvent,
     toggleLinkJobAndVendorBill,
     vendorBills,
+    quotations,
+    invoices,
+    invoicePayments,
+    bankAccounts,
     getWhatsAppLinks, 
     employees,
     updateJobPriority,
@@ -125,6 +132,10 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
 
   // "Show Job" Full Details & Management Modal (Module 2)
   const [detailedJob, setDetailedJob] = useState<JobCard | null>(null);
+
+  // Payment Collection & WhatsApp Pending Modals for Job Card
+  const [collectPaymentJob, setCollectPaymentJob] = useState<JobCard | null>(null);
+  const [waPendingJob, setWaPendingJob] = useState<JobCard | null>(null);
 
   // Stock Invoice Linking Modal State
   const [linkingJob, setLinkingJob] = useState<JobCard | null>(null);
@@ -2808,6 +2819,17 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                   </button>
                 )}
 
+                {/* Collect Payment / Advance */}
+                <button
+                  type="button"
+                  onClick={() => setCollectPaymentJob(job)}
+                  className="px-2.5 py-1 text-xs font-bold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors cursor-pointer flex items-center gap-1 shrink-0 shadow-xs"
+                  title="Collect advance or invoice payment for this job card"
+                >
+                  <IndianRupee className="w-3.5 h-3.5" />
+                  <span>Collect Payment / Advance</span>
+                </button>
+
                 {/* Link to Manual Quotation */}
                 {onNavigateToQuotation && (
                   <button
@@ -2819,7 +2841,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                     className={`px-2.5 py-1 text-xs font-bold rounded-lg border transition-colors cursor-pointer flex items-center gap-1 shrink-0 ${
                       isDark ? 'bg-amber-950/50 border-amber-800 text-amber-300 hover:bg-amber-700 hover:text-white' : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-600 hover:text-white'
                     }`}
-                    title="Generate comparative quotation proposal (Model 1 & 2) for this job"
+                    title="Generate comparative quotation proposal (Model 1-5) for this job"
                   >
                     <FileText className="w-3.5 h-3.5 text-amber-500" />
                     <span>Manual Quote</span>
@@ -2987,29 +3009,172 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                       )}
                     </div>
 
-                    {/* Financial Summary */}
-                    <div className={`p-4 rounded-xl border space-y-2 ${
-                      isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
-                    }`}>
-                      <span className={`font-bold uppercase tracking-wider text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                        Financial & Cost Estimates
-                      </span>
-                      <div className="grid grid-cols-2 gap-3 pt-1">
-                        <div>
-                          <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Initial Cost Estimate</span>
-                          <p className="font-mono font-bold text-sm">₹{job.estimatedCost?.toLocaleString('en-IN') || 0}</p>
+                    {/* Quotation, Billing & Payment Summary */}
+                    {(() => {
+                      const jobFin = getJobCardFinancialSummary(job, quotations, invoices, invoicePayments);
+                      return (
+                        <div className={`p-4 rounded-xl border space-y-3 ${
+                          isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                        }`}>
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <span className={`font-bold uppercase tracking-wider text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                              Quotation, Billing & Payments
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setCollectPaymentJob(job)}
+                                className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-blue-600 hover:bg-blue-700 text-white cursor-pointer flex items-center gap-1"
+                              >
+                                <IndianRupee className="w-3 h-3" />
+                                <span>Collect Payment</span>
+                              </button>
+                              {jobFin.totalPending > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setWaPendingJob(job)}
+                                  className="px-2.5 py-1 text-[11px] font-bold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer flex items-center gap-1"
+                                >
+                                  <MessageSquare className="w-3 h-3" />
+                                  <span>Share Pending WA</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                            <div className={`p-2 rounded-lg border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+                              <span className={`text-[10px] block ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Initial Est.</span>
+                              <p className="font-mono font-bold text-xs">₹{(job.estimatedCost || 0).toLocaleString('en-IN')}</p>
+                            </div>
+                            <div className={`p-2 rounded-lg border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+                              <span className={`text-[10px] block ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Total Billed</span>
+                              <p className="font-mono font-bold text-xs text-blue-500">₹{jobFin.totalBilled.toLocaleString('en-IN')}</p>
+                            </div>
+                            <div className={`p-2 rounded-lg border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+                              <span className={`text-[10px] block ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Total Paid</span>
+                              <p className="font-mono font-bold text-xs text-emerald-500">₹{jobFin.totalPaid.toLocaleString('en-IN')}</p>
+                              {jobFin.totalUnlinkedAdvance > 0 && (
+                                <span className="text-[9px] text-emerald-400 block">
+                                  Incl. ₹{jobFin.totalUnlinkedAdvance.toLocaleString('en-IN')} adv
+                                </span>
+                              )}
+                            </div>
+                            <div className={`p-2 rounded-lg border ${
+                              jobFin.totalPending > 0
+                                ? (isDark ? 'bg-amber-950/30 border-amber-900/60' : 'bg-amber-50 border-amber-200')
+                                : (isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200')
+                            }`}>
+                              <span className={`text-[10px] block ${jobFin.totalPending > 0 ? 'text-amber-500' : (isDark ? 'text-slate-400' : 'text-slate-500')}`}>
+                                Pending Due
+                              </span>
+                              <p className={`font-mono font-bold text-xs ${jobFin.totalPending > 0 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                                ₹{jobFin.totalPending.toLocaleString('en-IN')}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Linked Quotations & Model 1..5 Totals */}
+                          {jobFin.quotationModelSummaries.length > 0 && (
+                            <div className="space-y-2 pt-1">
+                              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+                                Quotation Models ({jobFin.quotationModelSummaries.length})
+                              </span>
+                              {jobFin.quotationModelSummaries.map(qs => (
+                                <div
+                                  key={qs.quotationId}
+                                  className={`p-2.5 rounded-lg border space-y-1.5 ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}
+                                >
+                                  <div className="flex items-center justify-between text-[11px]">
+                                    <span className="font-mono font-bold text-amber-500">
+                                      {qs.quotationNumber} · v{qs.version} ({qs.historyCount} rev)
+                                    </span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 font-semibold uppercase">
+                                      {qs.status} · Selected: {qs.selectedModel}
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                    {qs.models.map(m => {
+                                      const isSel = qs.selectedModel === m.key;
+                                      return (
+                                        <div
+                                          key={m.key}
+                                          className={`px-2 py-1 rounded border text-[11px] flex items-center justify-between ${
+                                            isSel
+                                              ? (isDark ? 'bg-amber-950/40 border-amber-700 text-amber-300' : 'bg-amber-50 border-amber-300 text-amber-900')
+                                              : (isDark ? 'bg-slate-950/60 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-700')
+                                          }`}
+                                        >
+                                          <span className="truncate mr-2 font-medium">{m.key}: {m.label}</span>
+                                          <span className="font-mono font-bold shrink-0">₹{m.total.toLocaleString('en-IN')}</span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Linked Invoices */}
+                          {jobFin.invoices.length > 0 && (
+                            <div className="space-y-1.5 pt-1">
+                              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-cyan-400' : 'text-cyan-700'}`}>
+                                Linked Invoices ({jobFin.invoices.length})
+                              </span>
+                              {jobFin.invoices.map(inv => {
+                                const due = Math.max(0, (inv.grandTotal || 0) - (inv.paidAmount || 0));
+                                return (
+                                  <div
+                                    key={inv.id}
+                                    className={`px-2.5 py-2 rounded-lg border flex items-center justify-between text-[11px] ${
+                                      isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+                                    }`}
+                                  >
+                                    <div>
+                                      <span className="font-mono font-bold text-cyan-500">{inv.invoiceNumber}</span>
+                                      <span className="text-slate-400 ml-2">{inv.date}</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 font-mono">
+                                      <span>Bill ₹{(inv.grandTotal || 0).toLocaleString('en-IN')}</span>
+                                      <span className="text-emerald-500">Paid ₹{(inv.paidAmount || 0).toLocaleString('en-IN')}</span>
+                                      {due > 0 ? (
+                                        <span className="text-amber-500 font-bold">Due ₹{due.toLocaleString('en-IN')}</span>
+                                      ) : (
+                                        <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-500 font-bold text-[9px]">PAID</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+
+                          {/* Unlinked Job Advances */}
+                          {jobFin.unlinkedAdvances.length > 0 && (
+                            <div className="space-y-1 pt-1">
+                              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                                Recorded Advances ({jobFin.unlinkedAdvances.length})
+                              </span>
+                              {jobFin.unlinkedAdvances.map(adv => (
+                                <div
+                                  key={adv.id}
+                                  className={`px-2.5 py-1.5 rounded-lg border flex items-center justify-between text-[11px] ${
+                                    isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+                                  }`}
+                                >
+                                  <span>
+                                    <span className="font-mono font-bold">{adv.paymentReference}</span> · {adv.date} ·{' '}
+                                    {formatAccountLabel(adv.accountType, adv.bankAccountId, bankAccounts, adv.paymentMode)}
+                                  </span>
+                                  <span className="font-mono font-bold text-emerald-500">₹{adv.amount.toLocaleString('en-IN')}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
-                        <div>
-                          <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Final Billed Cost</span>
-                          <p className="font-mono font-bold text-sm text-emerald-500">₹{job.finalCost?.toLocaleString('en-IN') || 0}</p>
-                        </div>
-                      </div>
-                      {job.invoiceId && (
-                        <p className="text-xs pt-1 text-cyan-500 font-medium">
-                          Linked Invoice: <span className="font-mono font-bold">{job.invoiceId}</span>
-                        </p>
-                      )}
-                    </div>
+                      );
+                    })()}
 
                     {/* Linked Stock Invoices Card */}
                     <div className={`p-4 rounded-xl border space-y-3 ${
@@ -4251,6 +4416,33 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
               </div>
             </div>
           </div>
+        );
+      })()}
+
+      {/* Job Card Payment / Advance Collection Modal */}
+      {collectPaymentJob && (
+        <CollectPaymentModal
+          isOpen={!!collectPaymentJob}
+          onClose={() => setCollectPaymentJob(null)}
+          mode="job_advance"
+          jobCard={collectPaymentJob}
+          onPaymentSaved={(msg) => showToast(msg)}
+        />
+      )}
+
+      {/* Job Card WhatsApp Payment Pending Modal */}
+      {waPendingJob && (() => {
+        const jobFin = getJobCardFinancialSummary(waPendingJob, quotations, invoices, invoicePayments);
+        const pendingInvs = jobFin.invoices.filter(i => (i.grandTotal || 0) - (i.paidAmount || 0) > 0);
+        return (
+          <WhatsAppPendingModal
+            isOpen={!!waPendingJob}
+            onClose={() => setWaPendingJob(null)}
+            customerName={waPendingJob.customerName}
+            customerPhone={waPendingJob.customerPhone}
+            pendingInvoices={pendingInvs}
+            totalOutstanding={jobFin.totalPending}
+          />
         );
       })()}
 

@@ -84,22 +84,147 @@ service cloud.firestore {
       allow read: if isAllowedUser();
       allow write: if isAdmin();
     }
-  
-    // ---- Extra synced collections (multi-device sync) ----
-    function isStaffColl(c) {
-      return c in ['inventory', 'stock_transactions', 'lead_sources', 'vendors',
-                   'quotation_categories', 'quotation_subcategories', 'quotation_products'];
+
+    // Inventory & Stock Movements
+    match /inventory/{itemId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /stock_transactions/{txId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
     }
 
-    function isAdminColl(c) {
-      return c in ['cashflow', 'bank_accounts', 'employees', 'attendance', 'salary_payments',
-                   'work_allocations', 'salary_advances'];
+    // Money Flow & Accounting Ledgers
+    match /cashflow/{entryId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /bank_accounts/{accId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /money_flow_categories/{catId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /invoice_payments/{payId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /vendor_payments/{payId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /customer_payment_allocations/{allocId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
     }
 
-    match /{coll}/{docId} {
-      allow read, create, update: if isStaffColl(coll) && isAllowedUser();
-      allow delete: if isStaffColl(coll) && isAdmin();
-      allow read, write: if isAdminColl(coll) && isAdmin();
+    // Lead Sources & Vendors
+    match /lead_sources/{leadId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /vendors/{vendorId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+
+    // Staff, Attendance, Salary & Work Allocations
+    match /employees/{empId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /attendance/{attId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /salary_payments/{salId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /work_allocations/{allocId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /salary_advances/{advId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+
+    // Manual Quotation Catalogue
+    match /quotation_categories/{catId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /quotation_subcategories/{subId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /quotation_products/{prodId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+
+    // Advanced Financial Management (Loans, EMI, Recurring, Savings, Investments)
+    match /loans/{loanId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /loan_payments/{payId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /recurring_expenses/{recId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /recurring_due_entries/{dueId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /savings_accounts/{savId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /savings_transactions/{txId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /investments/{invId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
+    }
+    match /investment_transactions/{txId} {
+      allow read: if isAllowedUser();
+      allow create, update: if isAllowedUser();
+      allow delete: if isAdmin();
     }
   }
 }

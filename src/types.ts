@@ -45,7 +45,7 @@ export interface JobTimelineEvent {
   userId?: string;
 }
 
-export type PaymentMode = 'cash' | 'upi' | 'bank_transfer' | 'card' | 'cheque';
+export type PaymentMode = 'cash' | 'upi' | 'bank_transfer' | 'card' | 'cheque' | 'other';
 
 export type LeadCategory = 
   | 'network' 
@@ -353,33 +353,164 @@ export interface BankAccount {
   createdAt: string;
 }
 
+export type MoneyFlowCategoryType = 'income' | 'expense' | 'both';
+export type PaymentAccountType = 'cash' | 'bank';
+export type PaymentModeChoice = 'cash' | 'bank' | 'upi' | 'other';
+
+export interface MoneyFlowCategory {
+  id: string;
+  name: string;
+  level: 1 | 2 | 3; // 1 = Category, 2 = Subcategory, 3 = 2nd Subcategory
+  parentId: string | null;
+  type: MoneyFlowCategoryType;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+}
+
+export interface InvoicePaymentRecord {
+  id: string;
+  paymentReference: string;
+  uniqueSourceKey?: string;
+  invoiceId?: string;
+  invoiceNumber?: string;
+  jobCardId?: string;
+  customerId: string;
+  customerName: string;
+  customerPhone?: string;
+  amount: number;
+  date: string;
+  paymentMode: PaymentMode;
+  paymentModeChoice?: PaymentModeChoice;
+  accountType: PaymentAccountType;
+  bankAccountId?: string;
+  bankAccountName?: string;
+  transactionRef?: string;
+  notes?: string;
+  isAdvance?: boolean;
+  allocationId?: string;
+  cashFlowEntryId?: string;
+  isReversed?: boolean;
+  reversedAt?: string;
+  reversalReason?: string;
+  createdBy?: string;
+  createdAt: string;
+}
+
+export interface CustomerPaymentAllocationItem {
+  invoiceId: string;
+  invoiceNumber: string;
+  amount: number;
+}
+
+export interface CustomerPaymentAllocation {
+  id: string;
+  uniqueSourceKey?: string;
+  customerId: string;
+  customerName: string;
+  customerPhone?: string;
+  jobCardId?: string;
+  totalAmount: number;
+  allocatedTotal: number;
+  unallocatedAmount: number;
+  date: string;
+  paymentMode: PaymentMode;
+  accountType: PaymentAccountType;
+  bankAccountId?: string;
+  bankAccountName?: string;
+  transactionRef?: string;
+  notes?: string;
+  allocations: CustomerPaymentAllocationItem[];
+  cashFlowEntryId?: string;
+  isReversed?: boolean;
+  createdBy?: string;
+  createdAt: string;
+}
+
+export interface VendorPaymentRecord {
+  id: string;
+  uniqueSourceKey?: string;
+  vendorBillId: string;
+  vendorBillNumber?: string;
+  vendorId?: string;
+  vendorName: string;
+  amount: number;
+  date: string;
+  paymentMode: PaymentMode;
+  accountType: PaymentAccountType;
+  bankAccountId?: string;
+  bankAccountName?: string;
+  transactionRef?: string;
+  notes?: string;
+  cashFlowEntryId?: string;
+  isReversed?: boolean;
+  createdBy?: string;
+  createdAt: string;
+}
+
+export type CashFlowAccountingNature =
+  | 'operating'
+  | 'transfer'
+  | 'loan_principal'
+  | 'loan_interest'
+  | 'loan_disbursement'
+  | 'savings_transfer'
+  | 'investment_transfer'
+  | 'investment_return';
+
 export interface CashFlowEntry {
   id: string;
   date: string;
   type: 'income' | 'expense' | 'transfer';
-  category: string; // e.g. "Customer Payment", "Service Charge", "Vendor Spares", "Office Expenses", "Internal Transfer"
+  accountingNature?: CashFlowAccountingNature;
+  category: string; // Display Category name (Level 1) for backward compatibility
+  categoryId?: string;
+  categoryName?: string;
+  subcategory?: string;
+  subcategoryId?: string;
+  secondSubcategory?: string;
+  secondSubcategoryId?: string;
   description: string;
   amount: number;
   paymentMode: PaymentMode;
+  paymentModeChoice?: PaymentModeChoice;
   referenceId?: string; // Invoice ID or Vendor Bill ID or Job Card ID
   referenceNumber?: string; // UPI UTR, Cheque No, Transaction Ref
   // Money Flow & Accounts Management
-  accountType?: 'cash' | 'bank'; // 'cash' or 'bank' (defaults to 'cash' for backward compatibility)
+  accountType?: 'cash' | 'bank'; // 'cash' or 'bank'
   bankAccountId?: string; // Bank account ID if accountType === 'bank'
   toAccountType?: 'cash' | 'bank'; // Destination account for transfers
   toBankAccountId?: string; // Destination bank account for transfers
   isTransfer?: boolean; // True for internal transfers (excluded from P&L / Income / Expense metrics)
-  transferType?: 'cash_to_bank' | 'bank_to_cash' | 'bank_to_bank';
+  transferType?: 'cash_to_bank' | 'bank_to_cash' | 'bank_to_bank' | 'to_savings' | 'from_savings' | 'to_investment' | 'from_investment';
   payeeOrCustomer?: string; // Contact or company name
   customerId?: string;
   vendorId?: string;
   jobCardId?: string;
   invoiceId?: string;
+  invoiceNumber?: string;
   vendorBillId?: string;
+  loanId?: string;
+  loanPaymentId?: string;
+  recurringExpenseId?: string;
+  recurringDueId?: string;
+  savingsAccountId?: string;
+  investmentId?: string;
+  sourceModule?: 'billing' | 'job_card' | 'customer' | 'vendor' | 'salary' | 'money_flow' | 'transfer' | 'loan' | 'recurring' | 'savings' | 'investment' | 'other';
+  sourceDocId?: string;
+  paymentRecordId?: string;
+  uniqueSourceKey?: string;
+  isEstimated?: boolean;
   attachmentUrl?: string; // Scanned bill, receipt, or payment voucher image
   notes?: string;
+  isReversed?: boolean;
+  reversedAt?: string;
+  reversalReason?: string;
+  createdBy?: string;
   createdAt?: string;
 }
+
 
 export interface QuickServicePreset {
   name: string;
@@ -436,6 +567,7 @@ export interface AdminSettings {
   quotationTerms?: string; // Default terms for manual quotations
   // Money Flow & Accounts
   openingCashBalance?: number; // Starting cash in hand balance (₹)
+  defaultReminderDays?: number; // Configurable upcoming payment reminder days
 }
 
 export interface Employee {
@@ -448,6 +580,13 @@ export interface Employee {
   salaryType?: 'monthly' | 'daily';
   dailySalary: number; // Daily wage e.g. 750
   monthlySalary?: number; // e.g. 19500
+  salaryEffectiveDate?: string;
+  salaryPaymentDay?: number; // Day of month (1-31) when salary is due
+  preferredPaymentMode?: PaymentMode;
+  preferredAccountType?: PaymentAccountType;
+  preferredBankAccountId?: string;
+  salaryStatus?: 'active' | 'paused';
+  salaryNotes?: string;
   weeklyOff?: string; // e.g. "Sunday"
   joiningDate: string;
   status: 'active' | 'inactive';
@@ -696,3 +835,265 @@ export interface PriceCodeMappingVersion {
   changedBy?: string;
   notes?: string;
 }
+
+// ============================================================================
+// ADVANCED FINANCIAL MANAGEMENT ADD-ON
+// Loans, Gold Loan, EMI, Recurring Expenses, Savings & Investments
+// ============================================================================
+
+export type LoanType =
+  | 'personal'
+  | 'business'
+  | 'gold'
+  | 'vehicle'
+  | 'home'
+  | 'bank'
+  | 'private_finance'
+  | 'other';
+
+export type InterestType = 'reducing' | 'flat' | 'manual';
+export type LoanStatus = 'active' | 'completed' | 'closed';
+export type GoldInterestFrequency = 'monthly' | 'quarterly' | 'bullet' | 'custom';
+
+export interface LoanAccount {
+  id: string;
+  loanName: string;
+  loanType: LoanType;
+  lenderName: string;
+  maskedAccountNumber?: string;
+  startDate: string; // YYYY-MM-DD
+  originalAmount: number;
+  outstandingPrincipal: number;
+  interestRate: number; // % per annum
+  interestType: InterestType;
+  tenureMonths: number;
+  emiAmount: number;
+  emiDueDay: number; // Day of month (1-31)
+  firstEmiDate?: string;
+  lastEmiDate?: string;
+  processingCharges: number;
+  linkedBankAccountId?: string;
+  notes?: string;
+  status: LoanStatus;
+  totalPrincipalRepaid: number;
+  totalInterestPaid: number;
+  totalChargesPaid: number;
+  // Gold Loan specific fields
+  pledgeReferenceNumber?: string;
+  goldWeightGrams?: number;
+  goldPurity?: string;
+  pledgedDate?: string;
+  interestPaymentFrequency?: GoldInterestFrequency;
+  interestDueDate?: string;
+  renewalMaturityDate?: string;
+  interestPending?: number;
+  closedDate?: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+}
+
+export type LoanPaymentKind = 'emi' | 'interest_only' | 'principal_prepayment' | 'closure';
+
+export interface LoanPayment {
+  id: string;
+  loanId: string;
+  loanName: string;
+  loanType: LoanType;
+  emiPeriod?: string; // YYYY-MM when tied to an EMI schedule period
+  dueDate?: string;
+  paymentDate: string; // YYYY-MM-DD
+  paymentKind: LoanPaymentKind;
+  totalPaid: number;
+  principalComponent: number;
+  interestComponent: number;
+  chargesComponent: number;
+  isEstimatedBreakdown?: boolean;
+  paymentMode: PaymentMode;
+  paymentModeChoice?: PaymentModeChoice;
+  accountType: PaymentAccountType;
+  bankAccountId?: string;
+  bankAccountName?: string;
+  transactionRef?: string;
+  notes?: string;
+  principalCashFlowId?: string;
+  interestCashFlowId?: string;
+  uniqueSourceKey?: string;
+  isReversed?: boolean;
+  createdAt: string;
+  createdBy?: string;
+}
+
+export type RecurringFrequency = 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom';
+
+export interface RecurringExpense {
+  id: string;
+  name: string;
+  categoryId?: string;
+  categoryName: string;
+  subcategory?: string;
+  subcategoryId?: string;
+  secondSubcategory?: string;
+  secondSubcategoryId?: string;
+  amount: number;
+  frequency: RecurringFrequency;
+  customIntervalDays?: number;
+  startDate: string; // YYYY-MM-DD
+  dueDayOfMonth?: number; // 1-31
+  nextDueDate: string; // YYYY-MM-DD
+  repeatUntil?: string;
+  preferredPaymentMode: PaymentMode;
+  preferredModeChoice?: PaymentModeChoice;
+  preferredAccountType: PaymentAccountType;
+  preferredBankAccountId?: string;
+  reminderDaysBefore: number;
+  notes?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  createdBy?: string;
+}
+
+export type RecurringDueStatus = 'pending' | 'paid' | 'skipped';
+
+export interface RecurringDueEntry {
+  id: string;
+  recurringExpenseId: string;
+  expenseName: string;
+  duePeriod: string; // YYYY-MM or YYYY-MM-DD for weekly/custom
+  dueDate: string; // YYYY-MM-DD
+  amountDue: number;
+  categoryId?: string;
+  categoryName: string;
+  subcategory?: string;
+  subcategoryId?: string;
+  secondSubcategory?: string;
+  secondSubcategoryId?: string;
+  status: RecurringDueStatus;
+  paidAmount?: number;
+  paidDate?: string;
+  paymentMode?: PaymentMode;
+  paymentModeChoice?: PaymentModeChoice;
+  accountType?: PaymentAccountType;
+  bankAccountId?: string;
+  transactionRef?: string;
+  cashFlowEntryId?: string;
+  notes?: string;
+  uniqueSourceKey: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type SavingsAccountType =
+  | 'bank_savings'
+  | 'emergency_fund'
+  | 'business_reserve'
+  | 'personal_savings'
+  | 'other';
+
+export interface SavingsAccount {
+  id: string;
+  name: string;
+  savingsType: SavingsAccountType;
+  institution?: string;
+  linkedBankAccountId?: string; // If linked to an existing operating BankAccount, avoid double counting in net operating total
+  openingBalance: number;
+  currentBalance: number;
+  targetAmount?: number;
+  startDate: string;
+  notes?: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavingsTransaction {
+  id: string;
+  savingsAccountId: string;
+  savingsAccountName: string;
+  type: 'deposit' | 'withdraw' | 'transfer_in' | 'transfer_out';
+  amount: number;
+  date: string;
+  accountType: PaymentAccountType;
+  bankAccountId?: string;
+  paymentMode: PaymentMode;
+  paymentModeChoice?: PaymentModeChoice;
+  transactionRef?: string;
+  notes?: string;
+  cashFlowEntryId?: string;
+  uniqueSourceKey?: string;
+  isReversed?: boolean;
+  createdAt: string;
+  createdBy?: string;
+}
+
+export type InvestmentType = 'fd' | 'rd' | 'mutual_fund' | 'stocks' | 'gold' | 'other';
+export type InvestmentStatus = 'active' | 'matured' | 'closed';
+
+export interface InvestmentAccount {
+  id: string;
+  name: string;
+  investmentType: InvestmentType;
+  institution?: string;
+  investmentDate: string;
+  investedAmount: number;
+  currentValue: number; // Manually updated only — never auto-fetched
+  lastValuedAt: string;
+  maturityDate?: string;
+  expectedReturnPercent?: number;
+  linkedBankAccountId?: string;
+  notes?: string;
+  status: InvestmentStatus;
+  realizedProfitLoss: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InvestmentTransaction {
+  id: string;
+  investmentId: string;
+  investmentName: string;
+  type: 'initial' | 'add_capital' | 'withdrawal' | 'valuation_update';
+  amount: number; // Capital invested or principal reduced
+  receivedAmount?: number; // Cash/Bank received on withdrawal
+  realizedGainLoss?: number;
+  previousValue?: number;
+  newValue?: number;
+  date: string;
+  accountType?: PaymentAccountType;
+  bankAccountId?: string;
+  paymentMode?: PaymentMode;
+  paymentModeChoice?: PaymentModeChoice;
+  transactionRef?: string;
+  notes?: string;
+  cashFlowEntryId?: string;
+  uniqueSourceKey?: string;
+  isReversed?: boolean;
+  createdAt: string;
+  createdBy?: string;
+}
+
+export type FinancialAlertSeverity =
+  | 'overdue'
+  | 'due_today'
+  | 'due_tomorrow'
+  | 'due_3_days'
+  | 'due_7_days'
+  | 'upcoming'
+  | 'paid';
+
+export interface FinancialAlertItem {
+  id: string;
+  sourceType: 'loan_emi' | 'gold_interest' | 'gold_renewal' | 'recurring' | 'salary';
+  sourceId: string;
+  duePeriod?: string;
+  title: string;
+  subtitle: string;
+  dueDate: string;
+  amount: number;
+  severity: FinancialAlertSeverity;
+  daysRemaining: number;
+  isPaid: boolean;
+  actionTab: 'loans' | 'emi_calendar' | 'recurring' | 'salary';
+}
+

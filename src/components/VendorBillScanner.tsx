@@ -34,9 +34,22 @@ import {
   Settings2
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
-import { VendorBill, VendorBillItem, PaymentMode, Vendor } from '../types';
+import {
+  VendorBill,
+  VendorBillItem,
+  PaymentMode,
+  PaymentModeChoice,
+  PaymentAccountType,
+  Vendor,
+} from '../types';
 import * as Acc from '../utils/accounting';
 import { calculateFromInclusiveRate, calculateFromBaseRate, GST_PRESET_RATES } from '../utils/gstUtils';
+import { PaymentAccountSelector } from './PaymentAccountSelector';
+import {
+  formatAccountLabel,
+  mapChoiceToPaymentMode,
+  validatePaymentAccountSelection,
+} from '../utils/moneyFlow';
 
 interface VendorBillScannerProps {
   isScannerModalOpen: boolean;
@@ -51,6 +64,9 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     vendorBills, 
     addVendorBill, 
     updateVendorBillPayment, 
+    recordVendorBillPayment,
+    vendorPayments,
+    bankAccounts,
     updateVendorBill,
     deleteVendorBill,
     vendors, 
@@ -105,29 +121,37 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
   const [roundOff, setRoundOff] = useState<number>(0);
   const [totalAmount, setTotalAmount] = useState<number>(0);
   const [paidAmount, setPaidAmount] = useState<number>(0);
-  const [paymentStatus, setPaymentStatus] = useState<'paid' | 'pending' | 'partial'>('paid');
+  const [paymentStatus, setPaymentStatus] = useState<'paid' | 'pending' | 'partial'>('pending');
   const [paymentMode, setPaymentMode] = useState<PaymentMode>('upi');
+  const [billModeChoice, setBillModeChoice] = useState<PaymentModeChoice>('upi');
+  const [billAccountType, setBillAccountType] = useState<PaymentAccountType>(() =>
+    bankAccounts.length > 0 ? 'bank' : 'cash'
+  );
+  const [billBankAccountId, setBillBankAccountId] = useState<string>(() => bankAccounts[0]?.id || '');
+  const [billFormError, setBillFormError] = useState<string | null>(null);
   const [paymentReference, setPaymentReference] = useState('');
   const [autoUpdateStock, setAutoUpdateStock] = useState(true);
   const [notes, setNotes] = useState('');
-
-  // Auto-fill and keep paidAmount in sync when paymentStatus is 'paid'
-  useEffect(() => {
-    if (paymentStatus === 'paid') {
-      setPaidAmount(totalAmount);
-    }
-  }, [paymentStatus, totalAmount]);
 
   // Stock Search / Picker Drawer
   const [isStockPickerOpen, setIsStockPickerOpen] = useState(false);
   const [stockSearchQuery, setStockSearchQuery] = useState('');
 
-  // Payment update modal
+  // Payment update modal (incremental payment with Cash/Bank/UPI/Other account selection)
   const [selectedBillForPayment, setSelectedBillForPayment] = useState<VendorBill | null>(null);
   const [payModalAmount, setPayModalAmount] = useState<number>(0);
   const [payModalStatus, setPayModalStatus] = useState<'paid' | 'pending' | 'partial'>('paid');
   const [payModalMode, setPayModalMode] = useState<PaymentMode>('upi');
+  const [payModalChoice, setPayModalChoice] = useState<PaymentModeChoice>('upi');
+  const [payModalAccountType, setPayModalAccountType] = useState<PaymentAccountType>(() =>
+    bankAccounts.length > 0 ? 'bank' : 'cash'
+  );
+  const [payModalBankId, setPayModalBankId] = useState<string>(() => bankAccounts[0]?.id || '');
+  const [payModalDate, setPayModalDate] = useState<string>(() => Acc.todayLocal());
   const [payModalRef, setPayModalRef] = useState('');
+  const [payModalNotes, setPayModalNotes] = useState('');
+  const [payModalError, setPayModalError] = useState<string | null>(null);
+  const [isSubmittingBillPay, setIsSubmittingBillPay] = useState(false);
 
   // Bill Detail Viewer Modal & Multi-page Zoom Modal
   const [viewingBill, setViewingBill] = useState<VendorBill | null>(null);
@@ -317,7 +341,6 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
         if (d.invoiceDate) setInvoiceDate(d.invoiceDate);
         if (d.totalAmount) {
           setTotalAmount(d.totalAmount);
-          setPaidAmount(d.totalAmount);
         }
         if (d.taxAmount) setTaxAmount(d.taxAmount);
         setDiscount(0);
@@ -356,7 +379,6 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
             if (Math.abs(gap) > 0 && Math.abs(gap) <= 1) setRoundOff(gap);
           } else {
             setTotalAmount(sGross);
-            setPaidAmount(sGross);
           }
           void sBase;
         }
@@ -519,29 +541,46 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     setTotalAmount(Number(Math.max(0, sumBase + sumGst - (discount || 0) + (roundOff || 0)).toFixed(2)));
   };
 
-  // Auto-sync paidAmount when paymentStatus is 'paid'
-  useEffect(() => {
-    if (paymentStatus === 'paid') {
-      setPaidAmount(totalAmount);
-    }
-  }, [totalAmount, paymentStatus]);
-
   // Save new bill
   const handleSaveBill = (e: React.FormEvent) => {
     e.preventDefault();
+    setBillFormError(null);
     if (!vendorName.trim()) {
-      alert('Please enter or select a vendor name');
+      setBillFormError('Please enter or select a vendor name.');
       return;
     }
     if (!invoiceNumber.trim()) {
-      alert('Please enter invoice / bill number');
+      setBillFormError('Please enter invoice / bill number.');
       return;
     }
     const namedItems = items.filter(it => it.itemName.trim() !== '');
     if (namedItems.length === 0) {
-      alert('Please add at least one item with a name.');
+      setBillFormError('Please add at least one item with a name.');
       return;
     }
+
+    const effectivePaid = paymentStatus === 'pending' ? 0 : Math.max(0, Number(paidAmount) || 0);
+    let resolvedAccountType: PaymentAccountType | undefined;
+    let resolvedBankAccountId: string | undefined;
+    let resolvedPaymentMode: PaymentMode = paymentMode;
+
+    if (effectivePaid > 0) {
+      const check = validatePaymentAccountSelection({
+        paymentModeChoice: billModeChoice,
+        accountType: billAccountType,
+        bankAccountId: billBankAccountId,
+        bankAccounts,
+        transactionRef: paymentReference,
+      });
+      if (!check.valid) {
+        setBillFormError(check.error || 'Please choose a valid Cash or Bank Account for paid amount.');
+        return;
+      }
+      resolvedAccountType = check.resolvedAccountType;
+      resolvedBankAccountId = check.resolvedBankAccountId;
+      resolvedPaymentMode = mapChoiceToPaymentMode(billModeChoice, paymentMode);
+    }
+
     const dup = Acc.findDuplicateVendorBill(vendorBills, vendorName, invoiceNumber);
     if (dup) {
       const proceed = window.confirm(
@@ -571,45 +610,105 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     const effectiveDiscount = Number(discount) || 0;
     const effectiveRoundOff = Number(roundOff) || 0;
 
-    addVendorBill({
-      vendorId: matchedVendorId,
-      vendorName: vendorName.trim(),
-      invoiceNumber: invoiceNumber.trim(),
-      invoiceDate,
-      billImage: billPages[0]?.dataUrl || undefined,
-      billImages: billPages.map(p => p.dataUrl),
-      ocrEngine: selectedEngine,
-      items: namedItems,
-      subtotal: sumBase,
-      taxAmount: Number(taxAmount) || 0,
-      discount: effectiveDiscount,
-      roundOff: effectiveRoundOff,
-      totalAmount,
-      paidAmount: Number(paidAmount) || 0,
-      paymentStatus,
-      paymentMode,
-      paymentReference: paymentReference.trim() || undefined,
-      notes,
-    }, autoUpdateStock);
+    addVendorBill(
+      {
+        vendorId: matchedVendorId,
+        vendorName: vendorName.trim(),
+        invoiceNumber: invoiceNumber.trim(),
+        invoiceDate,
+        billImage: billPages[0]?.dataUrl || undefined,
+        billImages: billPages.map(p => p.dataUrl),
+        ocrEngine: selectedEngine,
+        items: namedItems,
+        subtotal: sumBase,
+        taxAmount: Number(taxAmount) || 0,
+        discount: effectiveDiscount,
+        roundOff: effectiveRoundOff,
+        totalAmount,
+        paidAmount: effectivePaid,
+        paymentStatus: effectivePaid >= totalAmount && totalAmount > 0 ? 'paid' : effectivePaid > 0 ? 'partial' : 'pending',
+        paymentMode: resolvedPaymentMode,
+        paymentReference: paymentReference.trim() || undefined,
+        notes,
+      },
+      autoUpdateStock,
+      resolvedAccountType
+        ? {
+            accountType: resolvedAccountType,
+            bankAccountId: resolvedBankAccountId,
+            paymentModeChoice: billModeChoice,
+          }
+        : undefined
+    );
 
     setBillPages([]);
+    setPaidAmount(0);
+    setPaymentStatus('pending');
+    setBillFormError(null);
     setIsScannerModalOpen(false);
   };
 
-  // Record payment for bill
+  const openVendorPaymentModal = (bill: VendorBill) => {
+    const remaining = Math.max(0, Number((bill.totalAmount - (bill.paidAmount || 0)).toFixed(2)));
+    setSelectedBillForPayment(bill);
+    setPayModalAmount(remaining > 0 ? remaining : 0);
+    setPayModalStatus(remaining > 0 ? 'paid' : bill.paymentStatus);
+    setPayModalDate(Acc.todayLocal());
+    setPayModalChoice('upi');
+    setPayModalAccountType(bankAccounts.length > 0 ? 'bank' : 'cash');
+    setPayModalBankId(bankAccounts[0]?.id || '');
+    setPayModalMode('upi');
+    setPayModalRef('');
+    setPayModalNotes('');
+    setPayModalError(null);
+  };
+
+  // Record incremental vendor payment linked to Cash/Bank Money Flow
   const handleConfirmPaymentUpdate = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedBillForPayment) return;
+    if (!selectedBillForPayment || isSubmittingBillPay) return;
+    setPayModalError(null);
 
-    updateVendorBillPayment(
-      selectedBillForPayment.id,
-      payModalAmount,
-      payModalStatus,
-      payModalMode,
-      payModalRef
-    );
+    const amt = Number(payModalAmount) || 0;
+    if (amt <= 0) {
+      setPayModalError('Please enter a payment amount greater than ₹0.');
+      return;
+    }
 
-    setSelectedBillForPayment(null);
+    const check = validatePaymentAccountSelection({
+      paymentModeChoice: payModalChoice,
+      accountType: payModalAccountType,
+      bankAccountId: payModalBankId,
+      bankAccounts,
+      transactionRef: payModalRef,
+    });
+    if (!check.valid) {
+      setPayModalError(check.error || 'Please choose a valid Cash or Bank Account.');
+      return;
+    }
+
+    setIsSubmittingBillPay(true);
+    try {
+      const res = recordVendorBillPayment({
+        vendorBillId: selectedBillForPayment.id,
+        amount: amt,
+        date: payModalDate || Acc.todayLocal(),
+        paymentMode: mapChoiceToPaymentMode(payModalChoice, payModalMode),
+        paymentModeChoice: payModalChoice,
+        accountType: check.resolvedAccountType,
+        bankAccountId: check.resolvedBankAccountId,
+        transactionRef: payModalRef.trim() || undefined,
+        notes: payModalNotes.trim() || undefined,
+        uniqueSourceKey: `vendor-pay-${selectedBillForPayment.id}-${payModalDate}-${amt}-${Date.now()}`,
+      });
+      if (!res.success) {
+        setPayModalError(res.error || 'Could not record vendor payment.');
+        return;
+      }
+      setSelectedBillForPayment(null);
+    } finally {
+      setIsSubmittingBillPay(false);
+    }
   };
 
   // Vendor Register / Edit Handlers
@@ -1150,13 +1249,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                   </span>
                                   {b.paymentStatus !== 'paid' && (
                                     <button
-                                      onClick={() => {
-                                        setSelectedBillForPayment(b);
-                                        setPayModalAmount(b.paidAmount);
-                                        setPayModalStatus(b.paymentStatus);
-                                        setPayModalMode(b.paymentMode || 'upi');
-                                        setPayModalRef(b.paymentReference || '');
-                                      }}
+                                      onClick={() => openVendorPaymentModal(b)}
                                       className="text-[10px] font-semibold text-blue-600 hover:underline cursor-pointer"
                                     >
                                       Pay
@@ -1559,16 +1652,10 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                     <div className="flex items-center gap-2">
                                       <button
                                         type="button"
-                                        onClick={() => {
-                                          setSelectedBillForPayment(bill);
-                                          setPayModalAmount(bill.paidAmount);
-                                          setPayModalStatus(bill.paymentStatus);
-                                          setPayModalMode(bill.paymentMode || 'upi');
-                                          setPayModalRef(bill.paymentReference || '');
-                                        }}
+                                        onClick={() => openVendorPaymentModal(bill)}
                                         className="flex-1 py-1.5 px-3 text-xs font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-xs cursor-pointer text-center"
                                       >
-                                        Update Payment / Ref
+                                        Record Vendor Payment
                                       </button>
                                       <button
                                         type="button"
@@ -2867,39 +2954,32 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Payment Mode</label>
-                      <select
-                        value={paymentMode}
-                        onChange={(e) => setPaymentMode(e.target.value as PaymentMode)}
-                        className={`w-full rounded-lg px-3 py-1.5 text-xs ${
-                          isDark ? 'bg-slate-900 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
-                        }`}
-                      >
-                        <option value="upi">UPI / GPay / PhonePe</option>
-                        <option value="cash">Cash in Hand</option>
-                        <option value="bank_transfer">Bank IMPS / NEFT</option>
-                        <option value="card">Debit / Credit Card</option>
-                        <option value="cheque">Cheque</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                        UPI Ref / UTR / Cheque No
-                      </label>
-                      <input
-                        type="text"
-                        value={paymentReference}
-                        onChange={(e) => setPaymentReference(e.target.value)}
-                        placeholder="e.g. UPI-9988221144"
-                        className={`w-full rounded-lg px-3 py-1.5 text-xs font-mono ${
-                          isDark ? 'bg-slate-900 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
-                        }`}
+                  {Number(paidAmount) > 0 && paymentStatus !== 'pending' && (
+                    <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-900/70 border-slate-800' : 'bg-white border-slate-200'}`}>
+                      <PaymentAccountSelector
+                        paymentModeChoice={billModeChoice}
+                        onChangePaymentModeChoice={(c) => {
+                          setBillModeChoice(c);
+                          setPaymentMode(mapChoiceToPaymentMode(c));
+                        }}
+                        accountType={billAccountType}
+                        onChangeAccountType={setBillAccountType}
+                        bankAccountId={billBankAccountId}
+                        onChangeBankAccountId={setBillBankAccountId}
+                        transactionRef={paymentReference}
+                        onChangeTransactionRef={setPaymentReference}
+                        bankAccounts={bankAccounts}
+                        isDark={isDark}
+                        labelPrefix="Paid From"
                       />
                     </div>
-                  </div>
+                  )}
+
+                  {billFormError && (
+                    <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/40 text-rose-500 text-xs font-semibold">
+                      {billFormError}
+                    </div>
+                  )}
 
                   <div className="flex items-center gap-2 pt-1">
                     <input
@@ -3101,114 +3181,130 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
         </div>
       )}
 
-      {/* Payment Record Modal */}
-      {selectedBillForPayment && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200 ${
-            isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
-          }`}>
-            <div className="flex items-center justify-between border-b pb-3 border-slate-200 dark:border-slate-800">
-              <div>
-                <h3 className="text-sm font-bold">Update Bill Payment & Ref</h3>
-                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  {selectedBillForPayment.vendorName} · {selectedBillForPayment.invoiceNumber}
-                </p>
+      {/* Incremental Vendor Payment Modal with Cash / Bank Account Selection */}
+      {selectedBillForPayment && (() => {
+        const currentBill = vendorBills.find(b => b.id === selectedBillForPayment.id) || selectedBillForPayment;
+        const alreadyPaid = currentBill.paidAmount || 0;
+        const remainingDue = Math.max(0, Number((currentBill.totalAmount - alreadyPaid).toFixed(2)));
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className={`border rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto ${
+              isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+            }`}>
+              <div className="flex items-center justify-between border-b pb-3 border-slate-200 dark:border-slate-800">
+                <div>
+                  <h3 className="text-sm font-bold">Record Vendor Bill Payment</h3>
+                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {currentBill.vendorName} · {currentBill.invoiceNumber}
+                  </p>
+                </div>
+                <button onClick={() => setSelectedBillForPayment(null)} className="text-slate-400 hover:text-slate-600 cursor-pointer">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button onClick={() => setSelectedBillForPayment(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            <form onSubmit={handleConfirmPaymentUpdate} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold mb-1">Paid Amount (₹)</label>
-                <input
-                  type="number"
-                  min="0"
-                  max={selectedBillForPayment.totalAmount}
-                  value={payModalAmount}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    setPayModalAmount(val);
-                    if (val >= selectedBillForPayment.totalAmount) setPayModalStatus('paid');
-                    else if (val > 0) setPayModalStatus('partial');
-                    else setPayModalStatus('pending');
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className={`p-2 rounded-lg border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                  <span className="text-[10px] text-slate-400 block">Total Bill</span>
+                  <span className="font-mono font-bold">₹{currentBill.totalAmount.toLocaleString('en-IN')}</span>
+                </div>
+                <div className={`p-2 rounded-lg border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                  <span className="text-[10px] text-slate-400 block">Paid So Far</span>
+                  <span className="font-mono font-bold text-emerald-500">₹{alreadyPaid.toLocaleString('en-IN')}</span>
+                </div>
+                <div className={`p-2 rounded-lg border ${isDark ? 'bg-amber-950/30 border-amber-900/60' : 'bg-amber-50 border-amber-200'}`}>
+                  <span className="text-[10px] text-amber-500 block">Remaining Due</span>
+                  <span className="font-mono font-bold text-amber-500">₹{remainingDue.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+
+              <form onSubmit={handleConfirmPaymentUpdate} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1">Amount Paying Now (₹) *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="0.01"
+                      max={remainingDue > 0 ? remainingDue : currentBill.totalAmount}
+                      value={payModalAmount}
+                      onChange={(e) => setPayModalAmount(Number(e.target.value))}
+                      className={`w-full rounded-lg px-3 py-2 text-xs font-mono font-bold ${
+                        isDark ? 'bg-slate-950 border border-slate-800 text-emerald-400' : 'bg-slate-50 border border-slate-300 text-emerald-700'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1">Payment Date *</label>
+                    <input
+                      type="date"
+                      required
+                      value={payModalDate}
+                      onChange={(e) => setPayModalDate(e.target.value)}
+                      className={`w-full rounded-lg px-3 py-2 text-xs font-mono ${
+                        isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
+                      }`}
+                    />
+                  </div>
+                </div>
+
+                <PaymentAccountSelector
+                  paymentModeChoice={payModalChoice}
+                  onChangePaymentModeChoice={(c) => {
+                    setPayModalChoice(c);
+                    setPayModalMode(mapChoiceToPaymentMode(c));
                   }}
-                  className={`w-full rounded-lg px-3 py-2 text-xs font-mono font-bold ${
-                    isDark ? 'bg-slate-950 border border-slate-800 text-emerald-400' : 'bg-slate-50 border border-slate-300 text-emerald-700'
-                  }`}
+                  accountType={payModalAccountType}
+                  onChangeAccountType={setPayModalAccountType}
+                  bankAccountId={payModalBankId}
+                  onChangeBankAccountId={setPayModalBankId}
+                  transactionRef={payModalRef}
+                  onChangeTransactionRef={setPayModalRef}
+                  bankAccounts={bankAccounts}
+                  isDark={isDark}
+                  labelPrefix="Pay From"
                 />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Total Bill: ₹{selectedBillForPayment.totalAmount.toLocaleString('en-IN')}
-                </p>
-              </div>
 
-              <div>
-                <label className="block text-xs font-semibold mb-1">Payment Status</label>
-                <select
-                  value={payModalStatus}
-                  onChange={(e) => setPayModalStatus(e.target.value as any)}
-                  className={`w-full rounded-lg px-3 py-2 text-xs ${
-                    isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
-                  }`}
-                >
-                  <option value="paid">Fully Paid</option>
-                  <option value="partial">Partially Paid</option>
-                  <option value="pending">Pending</option>
-                </select>
-              </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1">Notes</label>
+                  <input
+                    type="text"
+                    value={payModalNotes}
+                    onChange={(e) => setPayModalNotes(e.target.value)}
+                    placeholder="e.g. Part settlement for hardware batch"
+                    className={`w-full rounded-lg px-3 py-2 text-xs ${
+                      isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
+                    }`}
+                  />
+                </div>
 
-              <div>
-                <label className="block text-xs font-semibold mb-1">Payment Mode</label>
-                <select
-                  value={payModalMode}
-                  onChange={(e) => setPayModalMode(e.target.value as PaymentMode)}
-                  className={`w-full rounded-lg px-3 py-2 text-xs ${
-                    isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
-                  }`}
-                >
-                  <option value="upi">UPI (GPay / PhonePe / Paytm)</option>
-                  <option value="cash">Cash</option>
-                  <option value="bank_transfer">Bank Transfer (IMPS / NEFT)</option>
-                  <option value="card">Card</option>
-                  <option value="cheque">Cheque</option>
-                </select>
-              </div>
+                {payModalError && (
+                  <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/40 text-rose-500 text-xs font-semibold">
+                    {payModalError}
+                  </div>
+                )}
 
-              <div>
-                <label className="block text-xs font-semibold mb-1">
-                  UPI Ref / UTR / Transaction ID
-                </label>
-                <input
-                  type="text"
-                  value={payModalRef}
-                  onChange={(e) => setPayModalRef(e.target.value)}
-                  placeholder="e.g. 429381749281 or UTR-998811"
-                  className={`w-full rounded-lg px-3 py-2 text-xs font-mono ${
-                    isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
-                  }`}
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setSelectedBillForPayment(null)}
-                  className="px-3 py-1.5 text-xs rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm"
-                >
-                  Update Payment
-                </button>
-              </div>
-            </form>
+                <div className="flex justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBillForPayment(null)}
+                    className="px-3 py-1.5 text-xs rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSubmittingBillPay}
+                    className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm disabled:opacity-50 cursor-pointer"
+                  >
+                    {isSubmittingBillPay ? 'Saving...' : `Record ₹${(Number(payModalAmount) || 0).toLocaleString('en-IN')} Payment`}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Bill Detail Viewer Modal */}
       {viewingBill && (
@@ -3505,6 +3601,36 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                   </p>
                 </div>
               </div>
+
+              {/* Recorded Vendor Payment History */}
+              {(() => {
+                const billPays = vendorPayments.filter(vp => vp.vendorBillId === viewingBill.id && !vp.isReversed);
+                if (billPays.length === 0) return null;
+                return (
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-[10px] uppercase font-bold text-slate-400">
+                      Recorded Payments ({billPays.length})
+                    </span>
+                    {billPays.map(vp => (
+                      <div
+                        key={vp.id}
+                        className={`p-2 rounded-lg border flex items-center justify-between text-xs ${
+                          isDark ? 'bg-slate-950 border-slate-800' : 'bg-white border-slate-200'
+                        }`}
+                      >
+                        <div>
+                          <span className="font-mono font-bold">{vp.transactionRef || vp.id.slice(-6).toUpperCase()}</span>
+                          <span className="mx-1.5 text-slate-400">·</span>
+                          <span>{vp.date}</span>
+                          <span className="mx-1.5 text-slate-400">·</span>
+                          <span>{formatAccountLabel(vp.accountType, vp.bankAccountId, bankAccounts, vp.paymentMode)}</span>
+                        </div>
+                        <span className="font-mono font-bold text-emerald-500">₹{vp.amount.toLocaleString('en-IN')}</span>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </>
           )}
         </div>

@@ -32,8 +32,30 @@ import {
   PriceCodeMappingVersion,
   AllowedUser,
   UserRole,
-  BankAccount
+  BankAccount,
+  MoneyFlowCategory,
+  MoneyFlowCategoryType,
+  InvoicePaymentRecord,
+  CustomerPaymentAllocation,
+  VendorPaymentRecord,
+  PaymentAccountType,
+  PaymentModeChoice,
+  LoanAccount,
+  LoanPayment,
+  RecurringExpense,
+  RecurringDueEntry,
+  SavingsAccount,
+  SavingsTransaction,
+  InvestmentAccount,
+  InvestmentTransaction,
 } from '../types';
+import {
+  ensureDefaultCategories,
+  createMoneyFlowCategoryNode,
+  renameMoneyFlowCategoryNode,
+  toggleMoneyFlowCategoryNodeActive,
+} from '../utils/moneyFlow';
+import * as AdvFin from '../utils/advancedFinance';
 import { 
   fetchUserRoleFromFirestore, 
   subscribeToAllowedUsers, 
@@ -138,7 +160,11 @@ interface SgsContextType {
   toggleLinkJobAndVendorBill: (jobId: string, vendorBillId: string) => void;
   
   // Vendor Bill methods
-  addVendorBill: (bill: Omit<VendorBill, 'id' | 'createdAt'>, updateStock?: boolean) => VendorBill;
+  addVendorBill: (
+    bill: Omit<VendorBill, 'id' | 'createdAt'>,
+    updateStock?: boolean,
+    accountMeta?: { accountType?: PaymentAccountType; bankAccountId?: string; paymentModeChoice?: PaymentModeChoice }
+  ) => VendorBill;
   updateVendorBillPayment: (
     id: string, 
     paidAmount: number, 
@@ -175,6 +201,31 @@ interface SgsContextType {
   updateCashFlowEntry: (id: string, updates: Partial<CashFlowEntry>) => void;
   deleteCashFlowEntry: (id: string) => void;
 
+  // Money Flow 3-Level Categories & Payment Ledger Records
+  moneyFlowCategories: MoneyFlowCategory[];
+  addMoneyFlowCategory: (input: {
+    name: string;
+    level: 1 | 2 | 3;
+    parentId: string | null;
+    type: MoneyFlowCategoryType;
+  }) => { category?: MoneyFlowCategory; error?: string };
+  updateMoneyFlowCategory: (id: string, name: string) => { success: boolean; error?: string };
+  toggleMoneyFlowCategoryActive: (id: string, isActive?: boolean) => void;
+
+  invoicePayments: InvoicePaymentRecord[];
+  vendorPayments: VendorPaymentRecord[];
+  customerPaymentAllocations: CustomerPaymentAllocation[];
+  recordInvoicePayment: (
+    input: Omit<Acc.RecordInvoicePaymentInput, 'createdBy'>
+  ) => { success: boolean; record?: InvoicePaymentRecord; duplicate?: boolean; error?: string };
+  reverseInvoicePayment: (paymentRecordId: string, reason?: string) => void;
+  recordCustomerMultiInvoicePayment: (
+    input: Omit<Acc.RecordCustomerMultiPaymentInput, 'createdBy'>
+  ) => { success: boolean; allocation?: CustomerPaymentAllocation; duplicate?: boolean; error?: string };
+  recordVendorBillPayment: (
+    input: Omit<Acc.RecordVendorPaymentInput, 'createdBy'>
+  ) => { success: boolean; record?: VendorPaymentRecord; duplicate?: boolean; error?: string };
+
   // Money Flow & Bank Accounts
   bankAccounts: BankAccount[];
   addBankAccount: (acc: Omit<BankAccount, 'id' | 'createdAt'>) => BankAccount;
@@ -191,6 +242,61 @@ interface SgsContextType {
     referenceNumber?: string;
     notes?: string;
   }) => void;
+
+  // Loans & Gold Loans
+  loans: LoanAccount[];
+  loanPayments: LoanPayment[];
+  addLoan: (
+    loan: Omit<LoanAccount, 'id' | 'totalPrincipalRepaid' | 'totalInterestPaid' | 'totalChargesPaid' | 'createdAt' | 'updatedAt'>,
+    creditDisbursementTo?: { accountType: PaymentAccountType; bankAccountId?: string }
+  ) => LoanAccount;
+  updateLoan: (id: string, updates: Partial<LoanAccount>) => void;
+  deleteLoan: (id: string) => void;
+  recordLoanPayment: (
+    input: Omit<AdvFin.RecordLoanPaymentInput, 'createdBy'>
+  ) => { success: boolean; payment?: LoanPayment; duplicate?: boolean; error?: string };
+
+  // Recurring Expenses
+  recurringExpenses: RecurringExpense[];
+  recurringDueEntries: RecurringDueEntry[];
+  addRecurringExpense: (
+    tpl: Omit<RecurringExpense, 'id' | 'nextDueDate' | 'createdAt' | 'updatedAt'>
+  ) => RecurringExpense;
+  updateRecurringExpense: (id: string, updates: Partial<RecurringExpense>) => void;
+  toggleRecurringExpenseActive: (id: string, isActive?: boolean) => void;
+  deleteRecurringExpense: (id: string) => void;
+  payRecurringDue: (
+    input: Omit<AdvFin.PayRecurringDueInput, 'createdBy'>
+  ) => { success: boolean; duplicate?: boolean; error?: string };
+  skipRecurringDue: (dueEntryId: string, notes?: string) => void;
+  syncRecurringDuesNow: (asOfDate?: string) => number;
+
+  // Savings & Reserves
+  savingsAccounts: SavingsAccount[];
+  savingsTransactions: SavingsTransaction[];
+  addSavingsAccount: (
+    acc: Omit<SavingsAccount, 'id' | 'currentBalance' | 'createdAt' | 'updatedAt'>,
+    initialTransferFrom?: { accountType: PaymentAccountType; bankAccountId?: string; paymentModeChoice: PaymentModeChoice; transactionRef?: string }
+  ) => SavingsAccount;
+  updateSavingsAccount: (id: string, updates: Partial<SavingsAccount>) => void;
+  deleteSavingsAccount: (id: string) => void;
+  recordSavingsTransaction: (
+    input: Omit<AdvFin.RecordSavingsTxInput, 'createdBy'>
+  ) => { success: boolean; transaction?: SavingsTransaction; duplicate?: boolean; error?: string };
+
+  // Investments
+  investments: InvestmentAccount[];
+  investmentTransactions: InvestmentTransaction[];
+  addInvestment: (
+    inv: Omit<InvestmentAccount, 'id' | 'realizedProfitLoss' | 'lastValuedAt' | 'createdAt' | 'updatedAt'>,
+    initialTransferFrom?: { accountType: PaymentAccountType; bankAccountId?: string; paymentModeChoice: PaymentModeChoice; transactionRef?: string }
+  ) => InvestmentAccount;
+  updateInvestment: (id: string, updates: Partial<InvestmentAccount>) => void;
+  updateInvestmentValuation: (id: string, newCurrentValue: number, date?: string, notes?: string) => void;
+  deleteInvestment: (id: string) => void;
+  recordInvestmentTransaction: (
+    input: Omit<AdvFin.RecordInvestmentTxInput, 'createdBy'>
+  ) => { success: boolean; transaction?: InvestmentTransaction; duplicate?: boolean; error?: string };
   
   // Admin Settings
   updateAdminSettings: (updates: Partial<AdminSettings>) => void;
@@ -225,8 +331,29 @@ interface SgsContextType {
   deleteEmployee: (id: string) => void;
   markAttendance: (employeeId: string, date: string, status: AttendanceStatus, notes?: string, checkInTime?: string) => void;
   updateAttendanceRecord: (employeeId: string, date: string, status: AttendanceStatus, notes?: string, checkInTime?: string, checkOutTime?: string, overtimeHours?: number) => void;
-  recordSalaryPayment: (sal: Omit<SalaryPayment, 'id'>) => SalaryPayment;
-  recordSalaryInstallment: (employeeId: string, month: string, installment: { amount: number; paymentDate: string; paymentMode: PaymentMode; referenceNumber?: string; notes?: string; paidBy?: string }, totalPayableContext?: number) => void;
+  recordSalaryPayment: (
+    sal: Omit<SalaryPayment, 'id'> & {
+      accountType?: PaymentAccountType;
+      bankAccountId?: string;
+      paymentModeChoice?: PaymentModeChoice;
+    }
+  ) => SalaryPayment;
+  recordSalaryInstallment: (
+    employeeId: string,
+    month: string,
+    installment: {
+      amount: number;
+      paymentDate: string;
+      paymentMode: PaymentMode;
+      paymentModeChoice?: PaymentModeChoice;
+      accountType?: PaymentAccountType;
+      bankAccountId?: string;
+      referenceNumber?: string;
+      notes?: string;
+      paidBy?: string;
+    },
+    totalPayableContext?: number
+  ) => void;
   allocateWorkToEmployee: (allocation: Omit<WorkAllocation, 'id'>) => WorkAllocation;
   removeWorkAllocation: (id: string) => void;
   shareJobToEmployeeWhatsApp: (employeeId: string, jobCardId: string, workNotes?: string, priorityOrder?: number) => string;
@@ -452,6 +579,129 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return DEFAULT_BANK_ACCOUNTS;
     } catch {
       return DEFAULT_BANK_ACCOUNTS;
+    }
+  });
+
+  const [moneyFlowCategories, setMoneyFlowCategories] = useState<MoneyFlowCategory[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_money_flow_categories`);
+      if (stored) {
+        const parsed: MoneyFlowCategory[] = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return deduplicateById(parsed, 'mfc');
+      }
+      return ensureDefaultCategories([]);
+    } catch {
+      return ensureDefaultCategories([]);
+    }
+  });
+
+  const [invoicePayments, setInvoicePayments] = useState<InvoicePaymentRecord[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_invoice_payments`);
+      const raw: InvoicePaymentRecord[] = stored ? JSON.parse(stored) : [];
+      return Array.isArray(raw) ? deduplicateById(raw, 'invpay') : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [vendorPayments, setVendorPayments] = useState<VendorPaymentRecord[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_vendor_payments`);
+      const raw: VendorPaymentRecord[] = stored ? JSON.parse(stored) : [];
+      return Array.isArray(raw) ? deduplicateById(raw, 'vpay') : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [customerPaymentAllocations, setCustomerPaymentAllocations] = useState<CustomerPaymentAllocation[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_customer_allocations`);
+      const raw: CustomerPaymentAllocation[] = stored ? JSON.parse(stored) : [];
+      return Array.isArray(raw) ? deduplicateById(raw, 'allocpay') : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [loans, setLoans] = useState<LoanAccount[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_loans`);
+      const raw: LoanAccount[] = stored ? JSON.parse(stored) : [];
+      return Array.isArray(raw) ? deduplicateById(raw, 'loan') : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [loanPayments, setLoanPayments] = useState<LoanPayment[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_loan_payments`);
+      const raw: LoanPayment[] = stored ? JSON.parse(stored) : [];
+      return Array.isArray(raw) ? deduplicateById(raw, 'loanpay') : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_recurring_expenses`);
+      const raw: RecurringExpense[] = stored ? JSON.parse(stored) : [];
+      return Array.isArray(raw) ? deduplicateById(raw, 'recexp') : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [recurringDueEntries, setRecurringDueEntries] = useState<RecurringDueEntry[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_recurring_due_entries`);
+      const raw: RecurringDueEntry[] = stored ? JSON.parse(stored) : [];
+      return Array.isArray(raw) ? deduplicateById(raw, 'recdue') : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [savingsAccounts, setSavingsAccounts] = useState<SavingsAccount[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_savings_accounts`);
+      const raw: SavingsAccount[] = stored ? JSON.parse(stored) : [];
+      return Array.isArray(raw) ? deduplicateById(raw, 'sav') : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [savingsTransactions, setSavingsTransactions] = useState<SavingsTransaction[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_savings_transactions`);
+      const raw: SavingsTransaction[] = stored ? JSON.parse(stored) : [];
+      return Array.isArray(raw) ? deduplicateById(raw, 'savtx') : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [investments, setInvestments] = useState<InvestmentAccount[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_investments`);
+      const raw: InvestmentAccount[] = stored ? JSON.parse(stored) : [];
+      return Array.isArray(raw) ? deduplicateById(raw, 'invest') : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [investmentTransactions, setInvestmentTransactions] = useState<InvestmentTransaction[]>(() => {
+    try {
+      const stored = localStorage.getItem(`${STORAGE_KEY}_investment_transactions`);
+      const raw: InvestmentTransaction[] = stored ? JSON.parse(stored) : [];
+      return Array.isArray(raw) ? deduplicateById(raw, 'invtx') : [];
+    } catch {
+      return [];
     }
   });
 
@@ -906,6 +1156,10 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useCollectionSync('stock_transactions', stockTransactions, setStockTransactions, syncOn);
   useCollectionSync('cashflow', cashFlow, setCashFlow, syncOn);
   useCollectionSync('bank_accounts', bankAccounts, setBankAccounts, syncOn);
+  useCollectionSync('money_flow_categories', moneyFlowCategories, setMoneyFlowCategories, syncOn);
+  useCollectionSync('invoice_payments', invoicePayments, setInvoicePayments, syncOn);
+  useCollectionSync('vendor_payments', vendorPayments, setVendorPayments, syncOn);
+  useCollectionSync('customer_payment_allocations', customerPaymentAllocations, setCustomerPaymentAllocations, syncOn);
   useCollectionSync('lead_sources', leadSources, setLeadSources, syncOn);
   useCollectionSync('vendors', vendors, setVendors, syncOn);
   useCollectionSync('employees', employees, setEmployees, syncOn);
@@ -916,6 +1170,14 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useCollectionSync('quotation_categories', quotationCategories, setQuotationCategories, syncOn);
   useCollectionSync('quotation_subcategories', quotationSubcategories, setQuotationSubcategories, syncOn);
   useCollectionSync('quotation_products', quotationProducts, setQuotationProducts, syncOn);
+  useCollectionSync('loans', loans, setLoans, syncOn);
+  useCollectionSync('loan_payments', loanPayments, setLoanPayments, syncOn);
+  useCollectionSync('recurring_expenses', recurringExpenses, setRecurringExpenses, syncOn);
+  useCollectionSync('recurring_due_entries', recurringDueEntries, setRecurringDueEntries, syncOn);
+  useCollectionSync('savings_accounts', savingsAccounts, setSavingsAccounts, syncOn);
+  useCollectionSync('savings_transactions', savingsTransactions, setSavingsTransactions, syncOn);
+  useCollectionSync('investments', investments, setInvestments, syncOn);
+  useCollectionSync('investment_transactions', investmentTransactions, setInvestmentTransactions, syncOn);
 
   useDocSync('admin_settings', adminSettings, setAdminSettings, syncOn);
   useDocSync('price_code_mapping', activePriceCodeMapping, setActivePriceCodeMapping, syncOn);
@@ -986,6 +1248,117 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.warn('Failed to save bank accounts to localStorage', e);
     }
   }, [bankAccounts]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_money_flow_categories`, JSON.stringify(moneyFlowCategories));
+    } catch (e) {
+      console.warn('Failed to save money flow categories to localStorage', e);
+    }
+  }, [moneyFlowCategories]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_invoice_payments`, JSON.stringify(invoicePayments));
+    } catch (e) {
+      console.warn('Failed to save invoice payments to localStorage', e);
+    }
+  }, [invoicePayments]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_vendor_payments`, JSON.stringify(vendorPayments));
+    } catch (e) {
+      console.warn('Failed to save vendor payments to localStorage', e);
+    }
+  }, [vendorPayments]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_customer_allocations`, JSON.stringify(customerPaymentAllocations));
+    } catch (e) {
+      console.warn('Failed to save customer allocations to localStorage', e);
+    }
+  }, [customerPaymentAllocations]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_loans`, JSON.stringify(loans));
+    } catch (e) {
+      console.warn('Failed to save loans to localStorage', e);
+    }
+  }, [loans]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_loan_payments`, JSON.stringify(loanPayments));
+    } catch (e) {
+      console.warn('Failed to save loan payments to localStorage', e);
+    }
+  }, [loanPayments]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_recurring_expenses`, JSON.stringify(recurringExpenses));
+    } catch (e) {
+      console.warn('Failed to save recurring expenses to localStorage', e);
+    }
+  }, [recurringExpenses]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_recurring_due_entries`, JSON.stringify(recurringDueEntries));
+    } catch (e) {
+      console.warn('Failed to save recurring due entries to localStorage', e);
+    }
+  }, [recurringDueEntries]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_savings_accounts`, JSON.stringify(savingsAccounts));
+    } catch (e) {
+      console.warn('Failed to save savings accounts to localStorage', e);
+    }
+  }, [savingsAccounts]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_savings_transactions`, JSON.stringify(savingsTransactions));
+    } catch (e) {
+      console.warn('Failed to save savings transactions to localStorage', e);
+    }
+  }, [savingsTransactions]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_investments`, JSON.stringify(investments));
+    } catch (e) {
+      console.warn('Failed to save investments to localStorage', e);
+    }
+  }, [investments]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_investment_transactions`, JSON.stringify(investmentTransactions));
+    } catch (e) {
+      console.warn('Failed to save investment transactions to localStorage', e);
+    }
+  }, [investmentTransactions]);
+
+  // Auto-generate pending recurring expense reminders on mount / template update (NEVER deducts Cash/Bank)
+  useEffect(() => {
+    if (recurringExpenses.length === 0) return;
+    const synced = AdvFin.syncRecurringDueEntries(recurringExpenses, recurringDueEntries, Acc.todayLocal());
+    if (synced.addedCount > 0) {
+      setRecurringDueEntries(synced.recurringDueEntries);
+    }
+    const nextDateChanged = synced.recurringExpenses.some(
+      (tpl, idx) => tpl.nextDueDate !== recurringExpenses[idx]?.nextDueDate
+    );
+    if (nextDateChanged) {
+      setRecurringExpenses(synced.recurringExpenses);
+    }
+  }, [recurringExpenses]);
 
   useEffect(() => {
     try {
@@ -1435,10 +1808,36 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   // Vendor Bill handlers
-  const addVendorBill = (billData: Omit<VendorBill, 'id' | 'createdAt'>, updateStock = true): VendorBill => {
+  const addVendorBill = (
+    billData: Omit<VendorBill, 'id' | 'createdAt'>,
+    updateStock = true,
+    accountMeta?: { accountType?: PaymentAccountType; bankAccountId?: string; paymentModeChoice?: PaymentModeChoice }
+  ): VendorBill => {
     const prev = getLedger();
-    const { state, bill } = Acc.addVendorBillTx(prev, billData, updateStock);
+    const { state, bill } = Acc.addVendorBillTx(prev, billData, updateStock, accountMeta);
     commitLedger(state, prev);
+    if (bill.paidAmount > 0) {
+      const cfMatch = state.cashFlow.find(c => c.referenceId === bill.id && !c.isReversed);
+      const bank = accountMeta?.bankAccountId ? bankAccounts.find(b => b.id === accountMeta.bankAccountId) : undefined;
+      const vp: VendorPaymentRecord = {
+        id: Acc.uid('vpay'),
+        vendorBillId: bill.id,
+        vendorBillNumber: bill.invoiceNumber,
+        vendorId: bill.vendorId,
+        vendorName: bill.vendorName,
+        amount: bill.paidAmount,
+        date: bill.invoiceDate || Acc.todayLocal(),
+        paymentMode: bill.paymentMode || 'upi',
+        accountType: accountMeta?.accountType || (bill.paymentMode === 'cash' ? 'cash' : 'bank'),
+        bankAccountId: accountMeta?.bankAccountId,
+        bankAccountName: bank?.bankName,
+        transactionRef: bill.paymentReference,
+        cashFlowEntryId: cfMatch?.id,
+        createdBy: currentUserEmail || 'CRM User',
+        createdAt: new Date().toISOString(),
+      };
+      setVendorPayments(old => [vp, ...old]);
+    }
     return bill;
   };
 
@@ -1602,10 +2001,16 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Cash Flow & Money Flow
   const addCashFlowEntry = (entryData: Omit<CashFlowEntry, 'id'>) => {
+    if (entryData.uniqueSourceKey && cashFlow.some(c => !c.isReversed && c.uniqueSourceKey === entryData.uniqueSourceKey)) {
+      return;
+    }
+    const accType: PaymentAccountType = entryData.accountType || (entryData.paymentMode === 'cash' ? 'cash' : 'bank');
     const newEntry: CashFlowEntry = {
       ...entryData,
       id: Acc.uid('cf'),
-      accountType: entryData.accountType || (entryData.paymentMode === 'cash' ? 'cash' : 'bank'),
+      accountType: accType,
+      bankAccountId: accType === 'bank' ? entryData.bankAccountId : undefined,
+      createdBy: entryData.createdBy || currentUserEmail || 'CRM User',
       createdAt: entryData.createdAt || new Date().toISOString(),
     };
     setCashFlow(prev => [newEntry, ...prev]);
@@ -1617,6 +2022,124 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteCashFlowEntry = (id: string) => {
     setCashFlow(prev => prev.filter(entry => entry.id !== id));
+  };
+
+  // Money Flow 3-Level Category Management
+  const addMoneyFlowCategory = (input: {
+    name: string;
+    level: 1 | 2 | 3;
+    parentId: string | null;
+    type: MoneyFlowCategoryType;
+  }): { category?: MoneyFlowCategory; error?: string } => {
+    try {
+      const res = createMoneyFlowCategoryNode(moneyFlowCategories, {
+        ...input,
+        createdBy: currentUserEmail || 'CRM User',
+      });
+      setMoneyFlowCategories(res.categories);
+      return { category: res.category };
+    } catch (err: any) {
+      return { error: err?.message || 'Could not add category' };
+    }
+  };
+
+  const updateMoneyFlowCategory = (id: string, name: string): { success: boolean; error?: string } => {
+    try {
+      const next = renameMoneyFlowCategoryNode(moneyFlowCategories, id, name);
+      setMoneyFlowCategories(next);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Could not rename category' };
+    }
+  };
+
+  const toggleMoneyFlowCategoryActive = (id: string, isActive?: boolean) => {
+    setMoneyFlowCategories(prev => toggleMoneyFlowCategoryNodeActive(prev, id, isActive));
+  };
+
+  // Incremental Invoice / Job Advance Payment Collection
+  const recordInvoicePayment = (
+    input: Omit<Acc.RecordInvoicePaymentInput, 'createdBy'>
+  ): { success: boolean; record?: InvoicePaymentRecord; duplicate?: boolean; error?: string } => {
+    try {
+      const prev = getLedger();
+      const res = Acc.recordInvoicePaymentTx(prev, invoicePayments, {
+        ...input,
+        createdBy: currentUserEmail || 'CRM User',
+      });
+      if (!res.duplicate) {
+        commitLedger(res.state, prev);
+        setInvoicePayments(res.invoicePayments);
+        if (input.invoiceId) {
+          const updatedInv = res.state.invoices.find(i => i.id === input.invoiceId);
+          if (updatedInv) {
+            saveInvoiceToFirestore(updatedInv).catch(err => console.warn('Could not save invoice payment to Firestore:', err));
+          }
+        }
+      }
+      return { success: true, record: res.record, duplicate: res.duplicate };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Payment could not be recorded' };
+    }
+  };
+
+  const reverseInvoicePayment = (paymentRecordId: string, reason = 'Payment reversed by Admin') => {
+    const prev = getLedger();
+    const res = Acc.reverseInvoicePaymentTx(prev, invoicePayments, paymentRecordId, reason);
+    commitLedger(res.state, prev);
+    setInvoicePayments(res.invoicePayments);
+    const affected = invoicePayments.find(p => p.id === paymentRecordId);
+    if (affected?.invoiceId) {
+      const updatedInv = res.state.invoices.find(i => i.id === affected.invoiceId);
+      if (updatedInv) {
+        saveInvoiceToFirestore(updatedInv).catch(err => console.warn('Could not update invoice after reversal:', err));
+      }
+    }
+  };
+
+  const recordCustomerMultiInvoicePayment = (
+    input: Omit<Acc.RecordCustomerMultiPaymentInput, 'createdBy'>
+  ): { success: boolean; allocation?: CustomerPaymentAllocation; duplicate?: boolean; error?: string } => {
+    try {
+      const prev = getLedger();
+      const res = Acc.recordCustomerMultiPaymentTx(prev, invoicePayments, customerPaymentAllocations, {
+        ...input,
+        createdBy: currentUserEmail || 'CRM User',
+      });
+      if (!res.duplicate) {
+        commitLedger(res.state, prev);
+        setInvoicePayments(res.invoicePayments);
+        setCustomerPaymentAllocations(res.customerAllocations);
+        res.allocation.allocations.forEach(a => {
+          const updatedInv = res.state.invoices.find(i => i.id === a.invoiceId);
+          if (updatedInv) {
+            saveInvoiceToFirestore(updatedInv).catch(err => console.warn('Could not sync allocated invoice:', err));
+          }
+        });
+      }
+      return { success: true, allocation: res.allocation, duplicate: res.duplicate };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Customer payment allocation failed' };
+    }
+  };
+
+  const recordVendorBillPayment = (
+    input: Omit<Acc.RecordVendorPaymentInput, 'createdBy'>
+  ): { success: boolean; record?: VendorPaymentRecord; duplicate?: boolean; error?: string } => {
+    try {
+      const prev = getLedger();
+      const res = Acc.recordVendorPaymentTx(prev, vendorPayments, {
+        ...input,
+        createdBy: currentUserEmail || 'CRM User',
+      });
+      if (!res.duplicate) {
+        commitLedger(res.state, prev);
+        setVendorPayments(res.vendorPayments);
+      }
+      return { success: true, record: res.record, duplicate: res.duplicate };
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Vendor payment could not be recorded' };
+    }
   };
 
   // Bank Accounts Management
@@ -1695,7 +2218,313 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCashFlow(prev => [transferEntry, ...prev]);
   };
 
-  // Convert Quotation directly to Official Tax Invoice
+  // ==========================================================================
+  // ADVANCED FINANCIAL MANAGEMENT (LOANS, RECURRING, SAVINGS, INVESTMENTS)
+  // ==========================================================================
+
+  const addLoan = (
+    loanData: Omit<LoanAccount, 'id' | 'totalPrincipalRepaid' | 'totalInterestPaid' | 'totalChargesPaid' | 'createdAt' | 'updatedAt'>,
+    creditDisbursementTo?: { accountType: PaymentAccountType; bankAccountId?: string }
+  ): LoanAccount => {
+    const now = new Date().toISOString();
+    const newLoan: LoanAccount = {
+      ...loanData,
+      id: Acc.uid('loan'),
+      totalPrincipalRepaid: 0,
+      totalInterestPaid: 0,
+      totalChargesPaid: 0,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: currentUserEmail || 'CRM User',
+    };
+    setLoans(prev => [newLoan, ...prev]);
+
+    if (creditDisbursementTo && newLoan.originalAmount > 0) {
+      addCashFlowEntry({
+        date: newLoan.startDate || Acc.todayLocal(),
+        type: 'income',
+        accountingNature: 'loan_disbursement',
+        category: 'Loan Disbursement',
+        categoryName: 'Loan Disbursement',
+        description: `Loan Disbursed: ${newLoan.loanName} (${newLoan.lenderName})`,
+        amount: newLoan.originalAmount,
+        paymentMode: creditDisbursementTo.accountType === 'cash' ? 'cash' : 'bank_transfer',
+        accountType: creditDisbursementTo.accountType,
+        bankAccountId: creditDisbursementTo.accountType === 'bank' ? creditDisbursementTo.bankAccountId : undefined,
+        payeeOrCustomer: newLoan.lenderName,
+        loanId: newLoan.id,
+        sourceModule: 'loan',
+        sourceDocId: newLoan.id,
+      });
+    }
+    return newLoan;
+  };
+
+  const updateLoan = (id: string, updates: Partial<LoanAccount>) => {
+    const now = new Date().toISOString();
+    setLoans(prev => prev.map(l => (l.id === id ? { ...l, ...updates, updatedAt: now } : l)));
+  };
+
+  const deleteLoan = (id: string) => {
+    setLoans(prev => prev.filter(l => l.id !== id));
+  };
+
+  const recordLoanPayment = (
+    input: Omit<AdvFin.RecordLoanPaymentInput, 'createdBy'>
+  ): { success: boolean; payment?: LoanPayment; duplicate?: boolean; error?: string } => {
+    const res = AdvFin.recordLoanPaymentTx(loans, loanPayments, cashFlow, {
+      ...input,
+      createdBy: currentUserEmail || 'CRM User',
+    });
+    if (res.error) {
+      return { success: false, error: res.error };
+    }
+    if (!res.duplicate) {
+      setLoans(res.loans);
+      setLoanPayments(res.loanPayments);
+      setCashFlow(res.cashFlow);
+    }
+    return { success: true, payment: res.payment, duplicate: res.duplicate };
+  };
+
+  const addRecurringExpense = (
+    tplData: Omit<RecurringExpense, 'id' | 'nextDueDate' | 'createdAt' | 'updatedAt'>
+  ): RecurringExpense => {
+    const now = new Date().toISOString();
+    const newTpl: RecurringExpense = {
+      ...tplData,
+      id: Acc.uid('recexp'),
+      nextDueDate: tplData.startDate,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: currentUserEmail || 'CRM User',
+    };
+    const nextTpls = [newTpl, ...recurringExpenses];
+    const synced = AdvFin.syncRecurringDueEntries(nextTpls, recurringDueEntries, Acc.todayLocal());
+    setRecurringExpenses(synced.recurringExpenses);
+    setRecurringDueEntries(synced.recurringDueEntries);
+    return synced.recurringExpenses.find(t => t.id === newTpl.id) || newTpl;
+  };
+
+  const updateRecurringExpense = (id: string, updates: Partial<RecurringExpense>) => {
+    const now = new Date().toISOString();
+    // Editing template NEVER changes historical paid due entries or historical cashFlow transactions!
+    setRecurringExpenses(prev =>
+      prev.map(t => (t.id === id ? { ...t, ...updates, updatedAt: now } : t))
+    );
+  };
+
+  const toggleRecurringExpenseActive = (id: string, isActive?: boolean) => {
+    const now = new Date().toISOString();
+    setRecurringExpenses(prev =>
+      prev.map(t =>
+        t.id === id ? { ...t, isActive: isActive !== undefined ? isActive : !t.isActive, updatedAt: now } : t
+      )
+    );
+  };
+
+  const deleteRecurringExpense = (id: string) => {
+    setRecurringExpenses(prev => prev.filter(t => t.id !== id));
+    setRecurringDueEntries(prev => prev.filter(d => d.recurringExpenseId !== id || d.status === 'paid'));
+  };
+
+  const payRecurringDue = (
+    input: Omit<AdvFin.PayRecurringDueInput, 'createdBy'>
+  ): { success: boolean; duplicate?: boolean; error?: string } => {
+    const res = AdvFin.payRecurringDueTx(recurringDueEntries, cashFlow, {
+      ...input,
+      createdBy: currentUserEmail || 'CRM User',
+    });
+    if (res.error) return { success: false, error: res.error };
+    if (!res.duplicate) {
+      setRecurringDueEntries(res.recurringDueEntries);
+      setCashFlow(res.cashFlow);
+    }
+    return { success: true, duplicate: res.duplicate };
+  };
+
+  const skipRecurringDue = (dueEntryId: string, notes?: string) => {
+    const now = new Date().toISOString();
+    setRecurringDueEntries(prev =>
+      prev.map(d =>
+        d.id === dueEntryId && d.status === 'pending'
+          ? { ...d, status: 'skipped' as const, notes: notes || d.notes, updatedAt: now }
+          : d
+      )
+    );
+  };
+
+  const syncRecurringDuesNow = (asOfDate: string = Acc.todayLocal()): number => {
+    const synced = AdvFin.syncRecurringDueEntries(recurringExpenses, recurringDueEntries, asOfDate);
+    setRecurringExpenses(synced.recurringExpenses);
+    setRecurringDueEntries(synced.recurringDueEntries);
+    return synced.addedCount;
+  };
+
+  const addSavingsAccount = (
+    accData: Omit<SavingsAccount, 'id' | 'currentBalance' | 'createdAt' | 'updatedAt'>,
+    initialTransferFrom?: {
+      accountType: PaymentAccountType;
+      bankAccountId?: string;
+      paymentModeChoice: PaymentModeChoice;
+      transactionRef?: string;
+    }
+  ): SavingsAccount => {
+    const now = new Date().toISOString();
+    const openAmt = Number(accData.openingBalance) || 0;
+    const newAcc: SavingsAccount = {
+      ...accData,
+      id: Acc.uid('sav'),
+      openingBalance: initialTransferFrom ? 0 : openAmt,
+      currentBalance: initialTransferFrom ? 0 : openAmt,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const nextSavings = [newAcc, ...savingsAccounts];
+    if (initialTransferFrom && openAmt > 0) {
+      const res = AdvFin.recordSavingsTx(nextSavings, savingsTransactions, cashFlow, {
+        savingsAccountId: newAcc.id,
+        type: 'transfer_in',
+        amount: openAmt,
+        date: accData.startDate || Acc.todayLocal(),
+        accountType: initialTransferFrom.accountType,
+        bankAccountId: initialTransferFrom.bankAccountId,
+        paymentMode: initialTransferFrom.accountType === 'cash' ? 'cash' : 'bank_transfer',
+        paymentModeChoice: initialTransferFrom.paymentModeChoice,
+        transactionRef: initialTransferFrom.transactionRef,
+        notes: 'Initial savings funding transfer',
+        createdBy: currentUserEmail || 'CRM User',
+      });
+      setSavingsAccounts(res.savingsAccounts);
+      setSavingsTransactions(res.savingsTransactions);
+      setCashFlow(res.cashFlow);
+      return res.savingsAccounts.find(s => s.id === newAcc.id) || newAcc;
+    }
+    setSavingsAccounts(nextSavings);
+    return newAcc;
+  };
+
+  const updateSavingsAccount = (id: string, updates: Partial<SavingsAccount>) => {
+    const now = new Date().toISOString();
+    setSavingsAccounts(prev => prev.map(s => (s.id === id ? { ...s, ...updates, updatedAt: now } : s)));
+  };
+
+  const deleteSavingsAccount = (id: string) => {
+    setSavingsAccounts(prev => prev.filter(s => s.id !== id));
+  };
+
+  const recordSavingsTransaction = (
+    input: Omit<AdvFin.RecordSavingsTxInput, 'createdBy'>
+  ): { success: boolean; transaction?: SavingsTransaction; duplicate?: boolean; error?: string } => {
+    const res = AdvFin.recordSavingsTx(savingsAccounts, savingsTransactions, cashFlow, {
+      ...input,
+      createdBy: currentUserEmail || 'CRM User',
+    });
+    if (res.error) return { success: false, error: res.error };
+    if (!res.duplicate) {
+      setSavingsAccounts(res.savingsAccounts);
+      setSavingsTransactions(res.savingsTransactions);
+      setCashFlow(res.cashFlow);
+    }
+    return { success: true, transaction: res.transaction, duplicate: res.duplicate };
+  };
+
+  const addInvestment = (
+    invData: Omit<InvestmentAccount, 'id' | 'realizedProfitLoss' | 'lastValuedAt' | 'createdAt' | 'updatedAt'>,
+    initialTransferFrom?: {
+      accountType: PaymentAccountType;
+      bankAccountId?: string;
+      paymentModeChoice: PaymentModeChoice;
+      transactionRef?: string;
+    }
+  ): InvestmentAccount => {
+    const now = new Date().toISOString();
+    const initialAmt = Number(invData.investedAmount) || 0;
+    const newInv: InvestmentAccount = {
+      ...invData,
+      id: Acc.uid('invest'),
+      investedAmount: initialTransferFrom ? 0 : initialAmt,
+      currentValue: initialTransferFrom ? 0 : (Number(invData.currentValue) || initialAmt),
+      lastValuedAt: invData.investmentDate || Acc.todayLocal(),
+      realizedProfitLoss: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const nextInvs = [newInv, ...investments];
+    if (initialTransferFrom && initialAmt > 0) {
+      const res = AdvFin.recordInvestmentTx(nextInvs, investmentTransactions, cashFlow, {
+        investmentId: newInv.id,
+        type: 'add_capital',
+        amount: initialAmt,
+        date: invData.investmentDate || Acc.todayLocal(),
+        accountType: initialTransferFrom.accountType,
+        bankAccountId: initialTransferFrom.bankAccountId,
+        paymentMode: initialTransferFrom.accountType === 'cash' ? 'cash' : 'bank_transfer',
+        paymentModeChoice: initialTransferFrom.paymentModeChoice,
+        transactionRef: initialTransferFrom.transactionRef,
+        notes: 'Initial investment transfer',
+        createdBy: currentUserEmail || 'CRM User',
+      });
+      setInvestments(res.investments);
+      setInvestmentTransactions(res.investmentTransactions);
+      setCashFlow(res.cashFlow);
+      return res.investments.find(i => i.id === newInv.id) || newInv;
+    }
+    setInvestments(nextInvs);
+    return newInv;
+  };
+
+  const updateInvestment = (id: string, updates: Partial<InvestmentAccount>) => {
+    const now = new Date().toISOString();
+    setInvestments(prev => prev.map(i => (i.id === id ? { ...i, ...updates, updatedAt: now } : i)));
+  };
+
+  const updateInvestmentValuation = (id: string, newCurrentValue: number, date?: string, notes?: string) => {
+    const target = investments.find(i => i.id === id);
+    if (!target) return;
+    const now = new Date().toISOString();
+    const valDate = date || Acc.todayLocal();
+    const cleanVal = Acc.round2(Math.max(0, Number(newCurrentValue) || 0));
+    const tx: InvestmentTransaction = {
+      id: Acc.uid('invtx'),
+      investmentId: id,
+      investmentName: target.name,
+      type: 'valuation_update',
+      amount: 0,
+      previousValue: target.currentValue,
+      newValue: cleanVal,
+      date: valDate,
+      notes: notes || 'Manual market / current valuation update',
+      createdBy: currentUserEmail || 'CRM User',
+      createdAt: now,
+    };
+    setInvestments(prev =>
+      prev.map(i => (i.id === id ? { ...i, currentValue: cleanVal, lastValuedAt: valDate, updatedAt: now } : i))
+    );
+    setInvestmentTransactions(prev => [tx, ...prev]);
+  };
+
+  const deleteInvestment = (id: string) => {
+    setInvestments(prev => prev.filter(i => i.id !== id));
+  };
+
+  const recordInvestmentTransaction = (
+    input: Omit<AdvFin.RecordInvestmentTxInput, 'createdBy'>
+  ): { success: boolean; transaction?: InvestmentTransaction; duplicate?: boolean; error?: string } => {
+    const res = AdvFin.recordInvestmentTx(investments, investmentTransactions, cashFlow, {
+      ...input,
+      createdBy: currentUserEmail || 'CRM User',
+    });
+    if (res.error) return { success: false, error: res.error };
+    if (!res.duplicate) {
+      setInvestments(res.investments);
+      setInvestmentTransactions(res.investmentTransactions);
+      setCashFlow(res.cashFlow);
+    }
+    return { success: true, transaction: res.transaction, duplicate: res.duplicate };
+  };
+
+  // Convert Quotation directly to Official Tax Invoice (never auto-changes job.status)
   const convertQuotationToInvoice = (quotationId: string): Invoice => {
     const quot = invoices.find(i => i.id === quotationId);
     if (!quot) throw new Error('Quotation not found');
@@ -1710,7 +2539,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     commitLedger(state, prev);
 
     if (quot.jobCardId) {
-      updateJobCard(quot.jobCardId, { invoiceId: converted.id, status: 'billed' as any });
+      updateJobCard(quot.jobCardId, { invoiceId: converted.id });
       addJobTimelineEvent(quot.jobCardId, {
         stage: 'billed',
         stageLabel: `Quotation Converted to Invoice #${converted.invoiceNumber}`,
@@ -1808,9 +2637,16 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const recordSalaryPayment = (salData: Omit<SalaryPayment, 'id'>): SalaryPayment => {
+  const recordSalaryPayment = (
+    salData: Omit<SalaryPayment, 'id'> & {
+      accountType?: PaymentAccountType;
+      bankAccountId?: string;
+      paymentModeChoice?: PaymentModeChoice;
+    }
+  ): SalaryPayment => {
+    const { accountType, bankAccountId, paymentModeChoice, ...cleanSal } = salData;
     const newSal: SalaryPayment = {
-      ...salData,
+      ...cleanSal,
       id: `sal-${Date.now()}`,
     };
     setSalaryPayments(prev => [newSal, ...prev]);
@@ -1818,13 +2654,24 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Add to cashflow if marked paid
     if (newSal.status === 'paid' && newSal.netPaid > 0) {
       const emp = employees.find(e => e.id === newSal.employeeId);
+      const resolvedAccType: PaymentAccountType = accountType || (newSal.paymentMode === 'cash' ? 'cash' : 'bank');
       addCashFlowEntry({
         date: newSal.paymentDate,
         type: 'expense',
         category: 'Salary & Staff Wages',
+        categoryId: 'mfc-salary',
+        categoryName: 'Salary & Staff Wages',
+        subcategory: 'Monthly Salary',
+        subcategoryId: 'mfc-salary-monthly',
         description: `Staff Salary: ${emp?.name || 'Employee'} (${newSal.month})`,
         amount: newSal.netPaid,
         paymentMode: newSal.paymentMode || 'upi',
+        paymentModeChoice,
+        accountType: resolvedAccType,
+        bankAccountId: resolvedAccType === 'bank' ? bankAccountId : undefined,
+        payeeOrCustomer: emp?.name || 'Employee',
+        sourceModule: 'salary',
+        sourceDocId: newSal.id,
         referenceId: newSal.id,
         referenceNumber: newSal.referenceNumber || '',
       });
@@ -1840,6 +2687,9 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       amount: number;
       paymentDate: string;
       paymentMode: PaymentMode;
+      paymentModeChoice?: PaymentModeChoice;
+      accountType?: PaymentAccountType;
+      bankAccountId?: string;
       referenceNumber?: string;
       notes?: string;
       paidBy?: string;
@@ -1902,14 +2752,26 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     // Also record cashflow outflow
     const emp = employees.find(e => e.id === employeeId);
+    const resolvedAccType: PaymentAccountType = installment.accountType || (installment.paymentMode === 'cash' ? 'cash' : 'bank');
     addCashFlowEntry({
       date: installment.paymentDate,
       type: 'expense',
       category: 'Salary & Staff Wages',
+      categoryId: 'mfc-salary',
+      categoryName: 'Salary & Staff Wages',
+      subcategory: 'Monthly Salary',
+      subcategoryId: 'mfc-salary-monthly',
       description: `Staff Salary Payout: ${emp?.name || 'Staff'} (${month}) - ₹${installment.amount}`,
       amount: installment.amount,
       paymentMode: installment.paymentMode || 'upi',
+      paymentModeChoice: installment.paymentModeChoice,
+      accountType: resolvedAccType,
+      bankAccountId: resolvedAccType === 'bank' ? installment.bankAccountId : undefined,
+      payeeOrCustomer: emp?.name || 'Staff',
+      sourceModule: 'salary',
+      sourceDocId: employeeId,
       referenceNumber: installment.referenceNumber || '',
+      notes: installment.notes,
     });
   };
 
@@ -2531,6 +3393,9 @@ Please update your diagnostic notes and call status upon inspection.
     setStockTransactions([]);
     setInvoices([]);
     setCashFlow([]);
+    setInvoicePayments([]);
+    setVendorPayments([]);
+    setCustomerPaymentAllocations([]);
     setLeadSources([]);
     setVendors([]);
     setEmployees([]);
@@ -2539,6 +3404,14 @@ Please update your diagnostic notes and call status upon inspection.
     setWorkAllocations([]);
     setSalaryAdvances([]);
     setQuotations([]);
+    setLoans([]);
+    setLoanPayments([]);
+    setRecurringExpenses([]);
+    setRecurringDueEntries([]);
+    setSavingsAccounts([]);
+    setSavingsTransactions([]);
+    setInvestments([]);
+    setInvestmentTransactions([]);
 
     try {
       localStorage.setItem(`${STORAGE_KEY}_customers`, JSON.stringify([]));
@@ -2548,6 +3421,17 @@ Please update your diagnostic notes and call status upon inspection.
       localStorage.setItem(`${STORAGE_KEY}_stock_tx`, JSON.stringify([]));
       localStorage.setItem(`${STORAGE_KEY}_invoices`, JSON.stringify([]));
       localStorage.setItem(`${STORAGE_KEY}_cashflow`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_invoice_payments`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_vendor_payments`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_customer_allocations`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_loans`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_loan_payments`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_recurring_expenses`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_recurring_due_entries`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_savings_accounts`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_savings_transactions`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_investments`, JSON.stringify([]));
+      localStorage.setItem(`${STORAGE_KEY}_investment_transactions`, JSON.stringify([]));
       localStorage.setItem(`${STORAGE_KEY}_lead_sources`, JSON.stringify([]));
       localStorage.setItem(`${STORAGE_KEY}_vendors`, JSON.stringify([]));
       localStorage.setItem(`${STORAGE_KEY}_employees`, JSON.stringify([]));
@@ -2654,6 +3538,19 @@ Please update your diagnostic notes and call status upon inspection.
       stockTransactions,
       invoices,
       cashFlow,
+      bankAccounts,
+      moneyFlowCategories,
+      invoicePayments,
+      vendorPayments,
+      customerPaymentAllocations,
+      loans,
+      loanPayments,
+      recurringExpenses,
+      recurringDueEntries,
+      savingsAccounts,
+      savingsTransactions,
+      investments,
+      investmentTransactions,
       leadSources,
       vendors,
       employees,
@@ -2683,6 +3580,19 @@ Please update your diagnostic notes and call status upon inspection.
       if (parsed.stockTransactions && Array.isArray(parsed.stockTransactions)) setStockTransactions(parsed.stockTransactions);
       if (parsed.invoices && Array.isArray(parsed.invoices)) setInvoices(parsed.invoices);
       if (parsed.cashFlow && Array.isArray(parsed.cashFlow)) setCashFlow(parsed.cashFlow);
+      if (parsed.bankAccounts && Array.isArray(parsed.bankAccounts)) setBankAccounts(parsed.bankAccounts);
+      if (parsed.moneyFlowCategories && Array.isArray(parsed.moneyFlowCategories)) setMoneyFlowCategories(parsed.moneyFlowCategories);
+      if (parsed.invoicePayments && Array.isArray(parsed.invoicePayments)) setInvoicePayments(parsed.invoicePayments);
+      if (parsed.vendorPayments && Array.isArray(parsed.vendorPayments)) setVendorPayments(parsed.vendorPayments);
+      if (parsed.customerPaymentAllocations && Array.isArray(parsed.customerPaymentAllocations)) setCustomerPaymentAllocations(parsed.customerPaymentAllocations);
+      if (parsed.loans && Array.isArray(parsed.loans)) setLoans(parsed.loans);
+      if (parsed.loanPayments && Array.isArray(parsed.loanPayments)) setLoanPayments(parsed.loanPayments);
+      if (parsed.recurringExpenses && Array.isArray(parsed.recurringExpenses)) setRecurringExpenses(parsed.recurringExpenses);
+      if (parsed.recurringDueEntries && Array.isArray(parsed.recurringDueEntries)) setRecurringDueEntries(parsed.recurringDueEntries);
+      if (parsed.savingsAccounts && Array.isArray(parsed.savingsAccounts)) setSavingsAccounts(parsed.savingsAccounts);
+      if (parsed.savingsTransactions && Array.isArray(parsed.savingsTransactions)) setSavingsTransactions(parsed.savingsTransactions);
+      if (parsed.investments && Array.isArray(parsed.investments)) setInvestments(parsed.investments);
+      if (parsed.investmentTransactions && Array.isArray(parsed.investmentTransactions)) setInvestmentTransactions(parsed.investmentTransactions);
       if (parsed.leadSources && Array.isArray(parsed.leadSources)) setLeadSources(parsed.leadSources);
       if (parsed.vendors && Array.isArray(parsed.vendors)) setVendors(parsed.vendors);
       if (parsed.employees && Array.isArray(parsed.employees)) setEmployees(parsed.employees);
@@ -2865,11 +3775,50 @@ Please update your diagnostic notes and call status upon inspection.
         addCashFlowEntry,
         updateCashFlowEntry,
         deleteCashFlowEntry,
+        moneyFlowCategories,
+        addMoneyFlowCategory,
+        updateMoneyFlowCategory,
+        toggleMoneyFlowCategoryActive,
+        invoicePayments,
+        vendorPayments,
+        customerPaymentAllocations,
+        recordInvoicePayment,
+        reverseInvoicePayment,
+        recordCustomerMultiInvoicePayment,
+        recordVendorBillPayment,
         addBankAccount,
         updateBankAccount,
         deleteBankAccount,
         toggleBankAccountStatus,
         transferFunds,
+        loans,
+        loanPayments,
+        addLoan,
+        updateLoan,
+        deleteLoan,
+        recordLoanPayment,
+        recurringExpenses,
+        recurringDueEntries,
+        addRecurringExpense,
+        updateRecurringExpense,
+        toggleRecurringExpenseActive,
+        deleteRecurringExpense,
+        payRecurringDue,
+        skipRecurringDue,
+        syncRecurringDuesNow,
+        savingsAccounts,
+        savingsTransactions,
+        addSavingsAccount,
+        updateSavingsAccount,
+        deleteSavingsAccount,
+        recordSavingsTransaction,
+        investments,
+        investmentTransactions,
+        addInvestment,
+        updateInvestment,
+        updateInvestmentValuation,
+        deleteInvestment,
+        recordInvestmentTransaction,
         addEmployee,
         updateEmployee,
         deleteEmployee,

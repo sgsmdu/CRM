@@ -34,7 +34,18 @@ import {
   Eye
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
-import { Employee, AttendanceStatus, PaymentMode, JobCard, SalaryPayment } from '../types';
+import {
+  Employee,
+  AttendanceStatus,
+  PaymentMode,
+  PaymentModeChoice,
+  PaymentAccountType,
+  JobCard,
+  SalaryPayment,
+} from '../types';
+import { PaymentAccountSelector } from './PaymentAccountSelector';
+import { mapChoiceToPaymentMode, paymentModeToChoice, validatePaymentAccountSelection } from '../utils/moneyFlow';
+import { getMonthlyStaffSalarySummary } from '../utils/advancedFinance';
 
 export const EmployeeManager: React.FC = () => {
   const { 
@@ -46,8 +57,10 @@ export const EmployeeManager: React.FC = () => {
     markAttendance,
     updateAttendanceRecord,
     salaryPayments,
+    salaryAdvances,
     recordSalaryPayment,
     recordSalaryInstallment,
+    bankAccounts,
     jobCards,
     workAllocations,
     allocateWorkToEmployee,
@@ -90,6 +103,12 @@ export const EmployeeManager: React.FC = () => {
   const [installmentAmount, setInstallmentAmount] = useState<number>(0);
   const [installmentDate, setInstallmentDate] = useState<string>(() => todayLocal());
   const [installmentMode, setInstallmentMode] = useState<PaymentMode>('upi');
+  const [instModeChoice, setInstModeChoice] = useState<PaymentModeChoice>('upi');
+  const [instAccountType, setInstAccountType] = useState<PaymentAccountType>(() =>
+    bankAccounts.length > 0 ? 'bank' : 'cash'
+  );
+  const [instBankId, setInstBankId] = useState<string>(() => bankAccounts[0]?.id || '');
+  const [instModalError, setInstModalError] = useState<string | null>(null);
   const [installmentRef, setInstallmentRef] = useState<string>('');
   const [installmentNotes, setInstallmentNotes] = useState<string>('');
 
@@ -119,6 +138,16 @@ export const EmployeeManager: React.FC = () => {
   const [empRole, setEmpRole] = useState('Senior Chip-Level Technician');
   const [empDailySalary, setEmpDailySalary] = useState<number>(750);
   const [empMonthlySalary, setEmpMonthlySalary] = useState<number>(19500);
+  const [empSalaryType, setEmpSalaryType] = useState<'monthly' | 'daily'>('daily');
+  const [empSalaryEffectiveDate, setEmpSalaryEffectiveDate] = useState<string>(() => todayLocal());
+  const [empSalaryPaymentDay, setEmpSalaryPaymentDay] = useState<number>(5);
+  const [empPreferredMode, setEmpPreferredMode] = useState<PaymentMode>('upi');
+  const [empPreferredAccountType, setEmpPreferredAccountType] = useState<PaymentAccountType>(() =>
+    bankAccounts.length > 0 ? 'bank' : 'cash'
+  );
+  const [empPreferredBankId, setEmpPreferredBankId] = useState<string>(() => bankAccounts[0]?.id || '');
+  const [empSalaryStatus, setEmpSalaryStatus] = useState<'active' | 'paused'>('active');
+  const [empSalaryNotes, setEmpSalaryNotes] = useState('');
   const [empUpiId, setEmpUpiId] = useState('');
   const [empNotes, setEmpNotes] = useState('');
 
@@ -129,6 +158,14 @@ export const EmployeeManager: React.FC = () => {
     setEmpRole('Senior Chip-Level Technician');
     setEmpDailySalary(750);
     setEmpMonthlySalary(19500);
+    setEmpSalaryType('daily');
+    setEmpSalaryEffectiveDate(todayLocal());
+    setEmpSalaryPaymentDay(5);
+    setEmpPreferredMode('upi');
+    setEmpPreferredAccountType(bankAccounts.length > 0 ? 'bank' : 'cash');
+    setEmpPreferredBankId(bankAccounts[0]?.id || '');
+    setEmpSalaryStatus('active');
+    setEmpSalaryNotes('');
     setEmpUpiId('');
     setEmpNotes('');
     setIsAddEmpModalOpen(true);
@@ -141,6 +178,14 @@ export const EmployeeManager: React.FC = () => {
     setEmpRole(emp.role);
     setEmpDailySalary(emp.dailySalary || 750);
     setEmpMonthlySalary(emp.monthlySalary || (emp.dailySalary * 26));
+    setEmpSalaryType(emp.salaryType || 'daily');
+    setEmpSalaryEffectiveDate(emp.salaryEffectiveDate || emp.joiningDate || todayLocal());
+    setEmpSalaryPaymentDay(emp.salaryPaymentDay || 5);
+    setEmpPreferredMode(emp.preferredPaymentMode || 'upi');
+    setEmpPreferredAccountType(emp.preferredAccountType || (bankAccounts.length > 0 ? 'bank' : 'cash'));
+    setEmpPreferredBankId(emp.preferredBankAccountId || bankAccounts[0]?.id || '');
+    setEmpSalaryStatus(emp.salaryStatus || 'active');
+    setEmpSalaryNotes(emp.salaryNotes || '');
     setEmpUpiId(emp.upiId || '');
     setEmpNotes(emp.notes || '');
     setIsAddEmpModalOpen(true);
@@ -164,11 +209,29 @@ export const EmployeeManager: React.FC = () => {
   const currentMonth = todayLocal().substring(0, 7);
   const [salaryMonth, setSalaryMonth] = useState<string>(currentMonth);
 
+  const monthlySalarySummary = useMemo(
+    () =>
+      getMonthlyStaffSalarySummary(
+        employees,
+        salaryPayments,
+        attendanceRecords,
+        salaryAdvances,
+        salaryMonth
+      ),
+    [employees, salaryPayments, attendanceRecords, salaryAdvances, salaryMonth]
+  );
+
   // Pay Salary Modal
   const [payingEmp, setPayingEmp] = useState<Employee | null>(null);
   const [payAdvanceDeduction, setPayAdvanceDeduction] = useState<number>(0);
   const [payBonus, setPayBonus] = useState<number>(0);
   const [payMode, setPayMode] = useState<PaymentMode>('upi');
+  const [payModeChoice, setPayModeChoice] = useState<PaymentModeChoice>('upi');
+  const [payAccountType, setPayAccountType] = useState<PaymentAccountType>(() =>
+    bankAccounts.length > 0 ? 'bank' : 'cash'
+  );
+  const [payBankId, setPayBankId] = useState<string>(() => bankAccounts[0]?.id || '');
+  const [payModalError, setPayModalError] = useState<string | null>(null);
   const [payRef, setPayRef] = useState('');
 
   // Pending Jobs available for allocation (only active pending jobs, excluding work_completed, completed, delivered, billed)
@@ -219,12 +282,20 @@ export const EmployeeManager: React.FC = () => {
     if (!empName.trim() || !empPhone.trim()) return;
 
     if (editingEmpId) {
-      const updatedData = {
+      const updatedData: Partial<Employee> = {
         name: empName.trim(),
         phone: empPhone.trim(),
         role: empRole.trim(),
+        salaryType: empSalaryType,
         dailySalary: empDailySalary || 700,
         monthlySalary: empMonthlySalary || (empDailySalary * 26),
+        salaryEffectiveDate: empSalaryEffectiveDate || undefined,
+        salaryPaymentDay: Math.max(1, Math.min(31, Number(empSalaryPaymentDay) || 5)),
+        preferredPaymentMode: empPreferredMode,
+        preferredAccountType: empPreferredAccountType,
+        preferredBankAccountId: empPreferredAccountType === 'bank' ? empPreferredBankId : undefined,
+        salaryStatus: empSalaryStatus,
+        salaryNotes: empSalaryNotes.trim() || undefined,
         upiId: empUpiId.trim(),
         notes: empNotes.trim()
       };
@@ -238,8 +309,16 @@ export const EmployeeManager: React.FC = () => {
         name: empName.trim(),
         phone: empPhone.trim(),
         role: empRole.trim(),
+        salaryType: empSalaryType,
         dailySalary: empDailySalary || 700,
         monthlySalary: empMonthlySalary || (empDailySalary * 26),
+        salaryEffectiveDate: empSalaryEffectiveDate || todayLocal(),
+        salaryPaymentDay: Math.max(1, Math.min(31, Number(empSalaryPaymentDay) || 5)),
+        preferredPaymentMode: empPreferredMode,
+        preferredAccountType: empPreferredAccountType,
+        preferredBankAccountId: empPreferredAccountType === 'bank' ? empPreferredBankId : undefined,
+        salaryStatus: empSalaryStatus,
+        salaryNotes: empSalaryNotes.trim() || undefined,
         joiningDate: todayLocal(),
         status: 'active',
         upiId: empUpiId.trim(),
@@ -322,6 +401,21 @@ export const EmployeeManager: React.FC = () => {
   const handleConfirmInstallmentPayment = (e: React.FormEvent) => {
     e.preventDefault();
     if (!payingInstallment || installmentAmount <= 0) return;
+    setInstModalError(null);
+
+    const check = validatePaymentAccountSelection({
+      paymentModeChoice: instModeChoice,
+      accountType: instAccountType,
+      bankAccountId: instBankId,
+      bankAccounts,
+      transactionRef: installmentRef,
+    });
+    if (!check.valid) {
+      setInstModalError(check.error || 'Please select a valid Cash or Bank Account.');
+      return;
+    }
+
+    const resolvedMode = mapChoiceToPaymentMode(instModeChoice, installmentMode);
 
     recordSalaryInstallment(
       payingInstallment.emp.id,
@@ -329,7 +423,10 @@ export const EmployeeManager: React.FC = () => {
       {
         amount: Number(installmentAmount),
         paymentDate: installmentDate,
-        paymentMode: installmentMode,
+        paymentMode: resolvedMode,
+        paymentModeChoice: instModeChoice,
+        accountType: check.resolvedAccountType,
+        bankAccountId: check.resolvedBankAccountId,
         referenceNumber: installmentRef.trim() || `PAY-${Date.now().toString().slice(-4)}`,
         notes: installmentNotes.trim() || `Multi-paid installment for ${salaryMonth}`,
         paidBy: 'Admin'
@@ -342,11 +439,25 @@ export const EmployeeManager: React.FC = () => {
     setInstallmentAmount(0);
     setInstallmentRef('');
     setInstallmentNotes('');
+    setInstModalError(null);
   };
 
   // Handle Pay Salary Submission
   const handleConfirmSalaryPayment = () => {
     if (!payingEmp) return;
+    setPayModalError(null);
+
+    const check = validatePaymentAccountSelection({
+      paymentModeChoice: payModeChoice,
+      accountType: payAccountType,
+      bankAccountId: payBankId,
+      bankAccounts,
+      transactionRef: payRef,
+    });
+    if (!check.valid) {
+      setPayModalError(check.error || 'Please select a valid Cash or Bank Account.');
+      return;
+    }
 
     const summary = getMonthlyAttendanceSummary(payingEmp.id, salaryMonth);
     const calculatedBase = payingEmp.dailySalary 
@@ -354,6 +465,7 @@ export const EmployeeManager: React.FC = () => {
       : (payingEmp.monthlySalary || 18000);
 
     const netPayable = Math.max(0, calculatedBase + payBonus - payAdvanceDeduction);
+    const resolvedMode = mapChoiceToPaymentMode(payModeChoice, payMode);
 
     recordSalaryPayment({
       employeeId: payingEmp.id,
@@ -367,7 +479,10 @@ export const EmployeeManager: React.FC = () => {
       bonus: payBonus,
       netPaid: netPayable,
       paymentDate: todayLocal(),
-      paymentMode: payMode,
+      paymentMode: resolvedMode,
+      paymentModeChoice: payModeChoice,
+      accountType: check.resolvedAccountType,
+      bankAccountId: check.resolvedBankAccountId,
       referenceNumber: payRef || `SAL-${payingEmp.name.substring(0, 3).toUpperCase()}-${salaryMonth}`,
       status: 'paid',
       notes: `Salary for ${salaryMonth} (${summary.effectiveDays} working days)`
@@ -377,6 +492,7 @@ export const EmployeeManager: React.FC = () => {
     setPayAdvanceDeduction(0);
     setPayBonus(0);
     setPayRef('');
+    setPayModalError(null);
   };
 
   return (
@@ -785,6 +901,38 @@ export const EmployeeManager: React.FC = () => {
             </div>
           </div>
 
+          {/* Monthly Staff Salary KPI Summary */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div className={`p-3.5 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <span className="text-[10px] font-bold uppercase text-slate-400">Active Staff</span>
+              <div className="mt-1 text-xl font-bold font-mono">{monthlySalarySummary.totalStaff}</div>
+            </div>
+            <div className={`p-3.5 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <span className="text-[10px] font-bold uppercase text-blue-500">Monthly Commitment</span>
+              <div className="mt-1 text-xl font-bold font-mono text-blue-600 dark:text-blue-400">
+                ₹{monthlySalarySummary.totalMonthlySalaryCommitment.toLocaleString('en-IN')}
+              </div>
+            </div>
+            <div className={`p-3.5 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <span className="text-[10px] font-bold uppercase text-emerald-500">Paid This Month</span>
+              <div className="mt-1 text-xl font-bold font-mono text-emerald-600">
+                ₹{monthlySalarySummary.paidThisMonth.toLocaleString('en-IN')}
+              </div>
+            </div>
+            <div className={`p-3.5 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <span className="text-[10px] font-bold uppercase text-amber-500">Pending Salary</span>
+              <div className="mt-1 text-xl font-bold font-mono text-amber-600">
+                ₹{monthlySalarySummary.pendingThisMonth.toLocaleString('en-IN')}
+              </div>
+            </div>
+            <div className={`p-3.5 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <span className="text-[10px] font-bold uppercase text-purple-500">Active Advances</span>
+              <div className="mt-1 text-xl font-bold font-mono text-purple-600">
+                ₹{monthlySalarySummary.activeAdvanceBalance.toLocaleString('en-IN')}
+              </div>
+            </div>
+          </div>
+
           {/* Salary Table */}
           <div className={`rounded-2xl border overflow-hidden ${
             isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'
@@ -874,6 +1022,10 @@ export const EmployeeManager: React.FC = () => {
                               });
                               setInstallmentAmount(balanceDue > 0 ? balanceDue : 1000);
                               setInstallmentDate(todayLocal());
+                              setInstModeChoice(emp.preferredPaymentMode ? paymentModeToChoice(emp.preferredPaymentMode) : 'upi');
+                              setInstallmentMode(emp.preferredPaymentMode || 'upi');
+                              setInstAccountType(emp.preferredAccountType || (bankAccounts.length > 0 ? 'bank' : 'cash'));
+                              setInstBankId(emp.preferredBankAccountId || bankAccounts[0]?.id || '');
                               setInstallmentRef(`UPI-${emp.phone.substring(emp.phone.length - 4)}`);
                               setInstallmentNotes(balanceDue > 0 ? 'Salary payout / partial installment' : 'Bonus / incentive payout');
                             }}
@@ -1168,33 +1320,28 @@ export const EmployeeManager: React.FC = () => {
                 />
               </div>
 
-              <div>
-                <label className="block text-slate-400 font-semibold mb-1">Payment Mode</label>
-                <select
-                  value={payMode}
-                  onChange={(e) => setPayMode(e.target.value as any)}
-                  className={`w-full rounded-lg px-3 py-2 text-xs font-semibold ${
-                    isDark ? 'bg-slate-950 border border-slate-800' : 'bg-slate-50 border border-slate-300'
-                  }`}
-                >
-                  <option value="upi">UPI (GPay / PhonePe / Paytm)</option>
-                  <option value="cash">Cash</option>
-                  <option value="bank_transfer">Bank Transfer (NEFT/IMPS)</option>
-                </select>
-              </div>
+              <PaymentAccountSelector
+                paymentModeChoice={payModeChoice}
+                onChangePaymentModeChoice={(c) => {
+                  setPayModeChoice(c);
+                  setPayMode(mapChoiceToPaymentMode(c));
+                }}
+                accountType={payAccountType}
+                onChangeAccountType={setPayAccountType}
+                bankAccountId={payBankId}
+                onChangeBankAccountId={setPayBankId}
+                transactionRef={payRef}
+                onChangeTransactionRef={setPayRef}
+                bankAccounts={bankAccounts}
+                isDark={isDark}
+                labelPrefix="Pay Salary From"
+              />
 
-              <div>
-                <label className="block text-slate-400 font-semibold mb-1">UPI Ref / Cheque No / Remarks</label>
-                <input
-                  type="text"
-                  value={payRef}
-                  onChange={(e) => setPayRef(e.target.value)}
-                  placeholder="UPI Ref or UTR"
-                  className={`w-full rounded-lg px-3 py-2 text-xs font-mono ${
-                    isDark ? 'bg-slate-950 border border-slate-800' : 'bg-slate-50 border border-slate-300'
-                  }`}
-                />
-              </div>
+              {payModalError && (
+                <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/40 text-rose-500 text-xs font-semibold">
+                  {payModalError}
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
@@ -1219,8 +1366,8 @@ export const EmployeeManager: React.FC = () => {
 
       {/* ADD / EDIT EMPLOYEE MODAL */}
       {isAddEmpModalOpen && (
-        <div className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden p-6 space-y-4 ${
+        <div className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className={`border rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl p-6 space-y-4 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between">
@@ -1277,7 +1424,20 @@ export const EmployeeManager: React.FC = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="block text-slate-400 font-semibold mb-1">Salary Basis</label>
+                  <select
+                    value={empSalaryType}
+                    onChange={(e) => setEmpSalaryType(e.target.value as 'monthly' | 'daily')}
+                    className={`w-full rounded-lg px-2.5 py-2 text-xs font-semibold ${
+                      isDark ? 'bg-slate-950 border border-slate-800' : 'bg-slate-50 border border-slate-300'
+                    }`}
+                  >
+                    <option value="daily">Daily Wage</option>
+                    <option value="monthly">Monthly Fixed</option>
+                  </select>
+                </div>
                 <div>
                   <label className="block text-slate-400 font-semibold mb-1">Daily Wage (₹)</label>
                   <input
@@ -1290,13 +1450,120 @@ export const EmployeeManager: React.FC = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-400 font-semibold mb-1">Monthly Approx (₹)</label>
+                  <label className="block text-slate-400 font-semibold mb-1">Monthly Salary (₹)</label>
                   <input
                     type="number"
                     value={empMonthlySalary}
                     onChange={(e) => setEmpMonthlySalary(Number(e.target.value))}
                     className={`w-full rounded-lg px-3 py-2 text-xs font-mono ${
                       isDark ? 'bg-slate-950 border border-slate-800' : 'bg-slate-50 border border-slate-300'
+                    }`}
+                  />
+                </div>
+              </div>
+
+              {/* Salary Schedule & Payment Profile */}
+              <div className={`p-3 rounded-xl border space-y-2.5 ${
+                isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+              }`}>
+                <span className="text-[10px] font-bold uppercase text-purple-500 block">
+                  Salary Schedule &amp; Preferred Payment Account
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-slate-400 text-[10px] font-semibold mb-1">Effective Date</label>
+                    <input
+                      type="date"
+                      value={empSalaryEffectiveDate}
+                      onChange={(e) => setEmpSalaryEffectiveDate(e.target.value)}
+                      className={`w-full rounded-lg px-2 py-1.5 text-xs font-mono ${
+                        isDark ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-300'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 text-[10px] font-semibold mb-1">Pay Day (1-31)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={empSalaryPaymentDay}
+                      onChange={(e) => setEmpSalaryPaymentDay(Number(e.target.value))}
+                      className={`w-full rounded-lg px-2 py-1.5 text-xs font-mono ${
+                        isDark ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-300'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 text-[10px] font-semibold mb-1">Salary Status</label>
+                    <select
+                      value={empSalaryStatus}
+                      onChange={(e) => setEmpSalaryStatus(e.target.value as 'active' | 'paused')}
+                      className={`w-full rounded-lg px-2 py-1.5 text-xs font-semibold ${
+                        isDark ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-300'
+                      }`}
+                    >
+                      <option value="active">Active</option>
+                      <option value="paused">Paused</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-slate-400 text-[10px] font-semibold mb-1">Preferred Mode</label>
+                    <select
+                      value={empPreferredMode}
+                      onChange={(e) => setEmpPreferredMode(e.target.value as PaymentMode)}
+                      className={`w-full rounded-lg px-2 py-1.5 text-xs ${
+                        isDark ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-300'
+                      }`}
+                    >
+                      <option value="upi">UPI</option>
+                      <option value="bank_transfer">Bank Transfer</option>
+                      <option value="cash">Cash</option>
+                      <option value="cheque">Cheque</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 text-[10px] font-semibold mb-1">Pay From Account</label>
+                    <select
+                      value={empPreferredAccountType}
+                      onChange={(e) => setEmpPreferredAccountType(e.target.value as PaymentAccountType)}
+                      className={`w-full rounded-lg px-2 py-1.5 text-xs ${
+                        isDark ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-300'
+                      }`}
+                    >
+                      <option value="bank">Bank Account</option>
+                      <option value="cash">Cash Account</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 text-[10px] font-semibold mb-1">Bank Account</label>
+                    <select
+                      value={empPreferredBankId}
+                      disabled={empPreferredAccountType !== 'bank'}
+                      onChange={(e) => setEmpPreferredBankId(e.target.value)}
+                      className={`w-full rounded-lg px-2 py-1.5 text-xs disabled:opacity-50 ${
+                        isDark ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-300'
+                      }`}
+                    >
+                      <option value="">-- Any --</option>
+                      {bankAccounts.map(b => (
+                        <option key={b.id} value={b.id}>{b.bankName}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-slate-400 text-[10px] font-semibold mb-1">Salary Notes</label>
+                  <input
+                    type="text"
+                    value={empSalaryNotes}
+                    onChange={(e) => setEmpSalaryNotes(e.target.value)}
+                    placeholder="Increment terms or payout instructions"
+                    className={`w-full rounded-lg px-2.5 py-1.5 text-xs ${
+                      isDark ? 'bg-slate-900 border border-slate-700' : 'bg-white border border-slate-300'
                     }`}
                   />
                 </div>
@@ -1810,51 +2077,35 @@ export const EmployeeManager: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-400 font-semibold mb-1">Payment Date *</label>
-                  <input
-                    type="date"
-                    required
-                    value={installmentDate}
-                    onChange={(e) => setInstallmentDate(e.target.value)}
-                    className={`w-full rounded-xl px-3 py-2 text-xs font-bold ${
-                      isDark ? 'bg-slate-950 border border-slate-700 text-white' : 'bg-slate-50 border border-slate-300 text-slate-900'
-                    }`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-400 font-semibold mb-1">Payment Mode *</label>
-                  <select
-                    value={installmentMode}
-                    onChange={(e) => setInstallmentMode(e.target.value as PaymentMode)}
-                    className={`w-full rounded-xl px-3 py-2 text-xs font-semibold ${
-                      isDark ? 'bg-slate-950 border border-slate-700 text-white' : 'bg-slate-50 border border-slate-300 text-slate-900'
-                    }`}
-                  >
-                    <option value="upi">UPI (GPay / PhonePe / Paytm)</option>
-                    <option value="cash">Cash</option>
-                    <option value="bank_transfer">Bank Transfer (IMPS/NEFT)</option>
-                    <option value="cheque">Cheque</option>
-                  </select>
-                </div>
-              </div>
-
               <div>
-                <label className="block text-slate-400 font-semibold mb-1">
-                  UPI Ref ID / Transaction Ref / Remarks
-                </label>
+                <label className="block text-slate-400 font-semibold mb-1">Payment Date *</label>
                 <input
-                  type="text"
-                  value={installmentRef}
-                  onChange={(e) => setInstallmentRef(e.target.value)}
-                  placeholder="e.g. UPI-98421-PART1 or UTR 429381"
-                  className={`w-full rounded-xl px-3 py-2 text-xs font-mono ${
+                  type="date"
+                  required
+                  value={installmentDate}
+                  onChange={(e) => setInstallmentDate(e.target.value)}
+                  className={`w-full rounded-xl px-3 py-2 text-xs font-bold ${
                     isDark ? 'bg-slate-950 border border-slate-700 text-white' : 'bg-slate-50 border border-slate-300 text-slate-900'
                   }`}
                 />
               </div>
+
+              <PaymentAccountSelector
+                paymentModeChoice={instModeChoice}
+                onChangePaymentModeChoice={(c) => {
+                  setInstModeChoice(c);
+                  setInstallmentMode(mapChoiceToPaymentMode(c));
+                }}
+                accountType={instAccountType}
+                onChangeAccountType={setInstAccountType}
+                bankAccountId={instBankId}
+                onChangeBankAccountId={setInstBankId}
+                transactionRef={installmentRef}
+                onChangeTransactionRef={setInstallmentRef}
+                bankAccounts={bankAccounts}
+                isDark={isDark}
+                labelPrefix="Pay Installment From"
+              />
 
               <div>
                 <label className="block text-slate-400 font-semibold mb-1">Payment Notes / Description</label>
@@ -1868,6 +2119,12 @@ export const EmployeeManager: React.FC = () => {
                   }`}
                 />
               </div>
+
+              {instModalError && (
+                <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/40 text-rose-500 text-xs font-semibold">
+                  {instModalError}
+                </div>
+              )}
 
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
                 <button

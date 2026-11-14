@@ -95,6 +95,173 @@
         "status": { "type": "string" }
       },
       "required": ["id", "quotationNumber", "customerName"]
+    },
+    "MoneyFlowCategory": {
+      "title": "MoneyFlowCategory",
+      "description": "3-level Money Flow category tree (Category -> Subcategory -> 2nd Subcategory)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "level": { "type": "number" },
+        "parentId": { "type": "string" },
+        "type": { "type": "string", "enum": ["income", "expense", "both"] },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["id", "name", "level", "type", "isActive"]
+    },
+    "InvoicePaymentRecord": {
+      "title": "InvoicePaymentRecord",
+      "description": "Incremental customer/invoice/job advance payment receipt record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "invoiceId": { "type": "string" },
+        "customerId": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "paymentMode": { "type": "string" },
+        "accountType": { "type": "string", "enum": ["cash", "bank"] },
+        "bankAccountId": { "type": "string" },
+        "uniqueSourceKey": { "type": "string" }
+      },
+      "required": ["id", "customerId", "amount", "date", "accountType"]
+    },
+    "CustomerPaymentAllocation": {
+      "title": "CustomerPaymentAllocation",
+      "description": "Multi-invoice customer payment allocation with optional unallocated credit",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "customerId": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "allocatedTotal": { "type": "number" },
+        "unallocatedAmount": { "type": "number" },
+        "accountType": { "type": "string" }
+      },
+      "required": ["id", "customerId", "totalAmount", "accountType"]
+    },
+    "VendorPaymentRecord": {
+      "title": "VendorPaymentRecord",
+      "description": "Incremental vendor bill payment record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "vendorBillId": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "accountType": { "type": "string" }
+      },
+      "required": ["id", "vendorBillId", "amount", "date", "accountType"]
+    },
+    "LoanAccount": {
+      "title": "LoanAccount",
+      "description": "Business, personal, gold, vehicle, home or private finance loan liability",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "loanName": { "type": "string" },
+        "loanType": { "type": "string" },
+        "lenderName": { "type": "string" },
+        "originalAmount": { "type": "number" },
+        "outstandingPrincipal": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "loanName", "loanType", "originalAmount", "status"]
+    },
+    "LoanPayment": {
+      "title": "LoanPayment",
+      "description": "EMI, gold interest, principal prepayment or closure payment record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "loanId": { "type": "string" },
+        "totalPaid": { "type": "number" },
+        "principalComponent": { "type": "number" },
+        "interestComponent": { "type": "number" },
+        "paymentDate": { "type": "string" }
+      },
+      "required": ["id", "loanId", "totalPaid", "paymentDate"]
+    },
+    "RecurringExpense": {
+      "title": "RecurringExpense",
+      "description": "Recurring expense template with 3-level category and reminder lead time",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "amount": { "type": "number" },
+        "frequency": { "type": "string" },
+        "nextDueDate": { "type": "string" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["id", "name", "amount", "frequency", "isActive"]
+    },
+    "RecurringDueEntry": {
+      "title": "RecurringDueEntry",
+      "description": "Period due payable reminder entry (never auto-deducts cash/bank)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "recurringExpenseId": { "type": "string" },
+        "duePeriod": { "type": "string" },
+        "dueDate": { "type": "string" },
+        "amountDue": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "recurringExpenseId", "duePeriod", "status"]
+    },
+    "SavingsAccount": {
+      "title": "SavingsAccount",
+      "description": "Separate savings & business reserve account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "savingsType": { "type": "string" },
+        "currentBalance": { "type": "number" }
+      },
+      "required": ["id", "name", "savingsType", "currentBalance"]
+    },
+    "SavingsTransaction": {
+      "title": "SavingsTransaction",
+      "description": "Deposit, withdrawal or transfer to/from savings reserve",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "savingsAccountId": { "type": "string" },
+        "type": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "savingsAccountId", "type", "amount", "date"]
+    },
+    "InvestmentAccount": {
+      "title": "InvestmentAccount",
+      "description": "FD, RD, Mutual Fund, Stocks, Gold or Other Investment tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "investmentType": { "type": "string" },
+        "investedAmount": { "type": "number" },
+        "currentValue": { "type": "number" },
+        "status": { "type": "string" }
+      },
+      "required": ["id", "name", "investmentType", "investedAmount", "currentValue", "status"]
+    },
+    "InvestmentTransaction": {
+      "title": "InvestmentTransaction",
+      "description": "Capital addition, withdrawal, or manual valuation update",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "investmentId": { "type": "string" },
+        "type": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "investmentId", "type", "amount", "date"]
     }
   },
   "firestore": {
@@ -121,6 +288,54 @@
     "/quotations/{quotationId}": {
       "schema": { "$ref": "#/entities/ManualQuotation" },
       "description": "Multi-model quotation proposals"
+    },
+    "/money_flow_categories/{catId}": {
+      "schema": { "$ref": "#/entities/MoneyFlowCategory" },
+      "description": "Dynamic 3-level Money Flow categories"
+    },
+    "/invoice_payments/{payId}": {
+      "schema": { "$ref": "#/entities/InvoicePaymentRecord" },
+      "description": "Per-invoice and advance payment records"
+    },
+    "/customer_payment_allocations/{allocId}": {
+      "schema": { "$ref": "#/entities/CustomerPaymentAllocation" },
+      "description": "Multi-invoice customer payment allocations"
+    },
+    "/vendor_payments/{payId}": {
+      "schema": { "$ref": "#/entities/VendorPaymentRecord" },
+      "description": "Vendor bill payment records"
+    },
+    "/loans/{loanId}": {
+      "schema": { "$ref": "#/entities/LoanAccount" },
+      "description": "Loans and gold loans register"
+    },
+    "/loan_payments/{payId}": {
+      "schema": { "$ref": "#/entities/LoanPayment" },
+      "description": "Loan EMI, interest, and closure payment records"
+    },
+    "/recurring_expenses/{recId}": {
+      "schema": { "$ref": "#/entities/RecurringExpense" },
+      "description": "Recurring expense templates"
+    },
+    "/recurring_due_entries/{dueId}": {
+      "schema": { "$ref": "#/entities/RecurringDueEntry" },
+      "description": "Generated recurring expense due entries"
+    },
+    "/savings_accounts/{savId}": {
+      "schema": { "$ref": "#/entities/SavingsAccount" },
+      "description": "Savings and business reserve accounts"
+    },
+    "/savings_transactions/{txId}": {
+      "schema": { "$ref": "#/entities/SavingsTransaction" },
+      "description": "Savings deposits, withdrawals and transfers"
+    },
+    "/investments/{invId}": {
+      "schema": { "$ref": "#/entities/InvestmentAccount" },
+      "description": "FD, RD, mutual fund, stock, and gold investments"
+    },
+    "/investment_transactions/{txId}": {
+      "schema": { "$ref": "#/entities/InvestmentTransaction" },
+      "description": "Investment contributions, withdrawals, and valuation history"
     }
   }
 }
