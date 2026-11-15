@@ -159,6 +159,14 @@ export const CollectPaymentModal: React.FC<CollectPaymentModalProps> = ({
     }
   }, [isOpen, mode, invoice?.id, customer?.id, jobCard?.id]);
 
+  const allocatedTotal = useMemo(
+    () =>
+      round2(
+        Object.values(allocAmounts).reduce((s, v) => s + Math.max(0, Number(v) || 0), 0)
+      ),
+    [allocAmounts]
+  );
+
   if (!isOpen) return null;
 
   const targetCustomerName =
@@ -167,14 +175,6 @@ export const CollectPaymentModal: React.FC<CollectPaymentModalProps> = ({
     activeInvoice?.customerPhone || customer?.phone || jobCard?.customerPhone || '';
   const targetCustomerId =
     activeInvoice?.customerId || customer?.id || jobCard?.customerId || 'cust-walkin';
-
-  const allocatedTotal = useMemo(
-    () =>
-      round2(
-        Object.values(allocAmounts).reduce((s, v) => s + Math.max(0, Number(v) || 0), 0)
-      ),
-    [allocAmounts]
-  );
 
   const numericAmount = round2(Number(amountInput) || 0);
   const unallocatedCredit =

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { JobCard, JobStatus, Invoice } from '../types';
 import { useSgs } from '../context/SgsContext';
+import { getJobCardFinancialSummary } from '../utils/moneyFlow';
 
 interface JobCardStatusListProps {
   onSelectJob?: (job: JobCard) => void;
@@ -44,7 +45,7 @@ export const JobCardStatusList: React.FC<JobCardStatusListProps> = ({
   onSelectJob,
   onOpenNewJobModal 
 }) => {
-  const { jobCards = [], invoices = [], theme } = useSgs();
+  const { jobCards = [], invoices = [], invoicePayments = [], theme } = useSgs();
   const isDark = theme === 'dark';
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilterCategory, setSelectedFilterCategory] = useState<string>('all');
@@ -244,17 +245,10 @@ export const JobCardStatusList: React.FC<JobCardStatusListProps> = ({
     };
   };
 
-  // Helper to calculate pending amount for a job card
+  // Pending Payment strictly from linked billed invoices (Billed Amount - Total Payments Received).
+  // Never fallback to manual quote, estimatedCost, or finalCost.
   const getJobPendingAmount = (job: JobCard): number => {
-    if (job.invoiceId) {
-      const inv = invoices.find(i => i.invoiceNumber === job.invoiceId || i.id === job.invoiceId);
-      if (inv) {
-        return Math.max(0, (inv.grandTotal || 0) - (inv.paidAmount || 0));
-      }
-    }
-    const total = job.finalCost > 0 ? job.finalCost : (job.estimatedCost || 0);
-    const paid = job.advancePaid || 0;
-    return Math.max(0, total - paid);
+    return getJobCardFinancialSummary(job, [], invoices, invoicePayments).totalPending;
   };
 
   // Helper to format timestamp
@@ -314,7 +308,7 @@ export const JobCardStatusList: React.FC<JobCardStatusListProps> = ({
       }
       text += `\n   Note: ${latest.note}`;
       if (pending > 0) {
-        text += `\n   Pending Balance: ₹${pending.toLocaleString('en-IN')}`;
+        text += `\n   Pending Payment: ₹${pending.toLocaleString('en-IN')}`;
       }
       if (latest.timestamp) {
         text += `\n   Date: ${formatTimestamp(latest.timestamp)}`;
@@ -546,64 +540,60 @@ export const JobCardStatusList: React.FC<JobCardStatusListProps> = ({
                         const latest = getJobLatestNote(job);
                         const pendingAmount = getJobPendingAmount(job);
 
+                        const displayTimestamp = formatTimestamp(latest.timestamp) || job.intakeDate || '';
+
                         return (
                           <div
                             key={job.id}
-                            className={`p-2.5 rounded-xl border transition-all duration-150 ${
+                            className={`px-2.5 py-2 rounded-xl border transition-all duration-150 ${
                               isDark 
                                 ? 'bg-slate-950/70 border-slate-800 hover:border-slate-700 hover:bg-slate-950' 
                                 : 'bg-slate-50/70 border-slate-200 hover:border-blue-300 hover:bg-white shadow-2xs'
                             }`}
                           >
                             <div className="flex items-start justify-between gap-1.5">
-                              <div className="flex items-start gap-2 min-w-0 flex-1">
-                                <span className={`text-xs font-bold pt-0.5 shrink-0 ${isDark ? 'text-slate-400' : 'text-slate-400'}`}>
-                                  {idx + 1}.
-                                </span>
-                                
-                                <div className="min-w-0 flex-1 space-y-1">
-                                  {/* Customer Name in Bold */}
-                                  <div className="flex items-center justify-between gap-1">
-                                    <h4 className={`font-bold text-xs truncate ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-                                      {job.customerName || 'Walk-in Customer'}
-                                    </h4>
-                                  </div>
-
-                                  {/* Job Card Number in smaller text */}
-                                  <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-[11px] font-mono font-bold text-blue-600 dark:text-blue-400">
-                                      {job.jobId || job.id}
-                                    </span>
-                                    {job.deviceBrand && (
-                                      <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate max-w-[140px]">
-                                        • {job.deviceBrand}
+                              <div className="min-w-0 flex-1 space-y-0.5">
+                                {/* Row 1: Numbering + Customer Name • Brand */}
+                                <div className="flex items-baseline gap-1 min-w-0">
+                                  <span className={`text-[11px] font-bold shrink-0 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                    {idx + 1}.
+                                  </span>
+                                  <h4 className={`text-xs font-bold truncate ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
+                                    {job.customerName || 'Walk-in Customer'}
+                                    {job.deviceBrand ? (
+                                      <span className={`font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                        {' '}• {job.deviceBrand}
                                       </span>
-                                    )}
-                                  </div>
-
-                                  {/* Pending Amount where applicable */}
-                                  {pendingAmount > 0 && (
-                                    <div className="text-[11px] font-semibold text-rose-600 dark:text-rose-400">
-                                      Pending: ₹{pendingAmount.toLocaleString('en-IN')}
-                                    </div>
-                                  )}
-
-                                  {/* Latest Note directly below the customer name in smaller text */}
-                                  <p className={`text-[11px] leading-relaxed line-clamp-2 break-words ${
-                                    isDark ? 'text-slate-300' : 'text-slate-600'
-                                  }`}>
-                                    {latest.note}
-                                  </p>
-
-                                  {/* Last Note Timestamp if available */}
-                                  {latest.timestamp && (
-                                    <span className={`text-[10px] block pt-0.5 ${
-                                      isDark ? 'text-slate-400' : 'text-slate-500'
-                                    }`}>
-                                      {formatTimestamp(latest.timestamp)}
-                                    </span>
-                                  )}
+                                    ) : null}
+                                  </h4>
                                 </div>
+
+                                {/* Row 2: Job ID - Timestamp */}
+                                <div className={`text-[11px] truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                  <span className="font-mono font-bold text-blue-600 dark:text-blue-400">
+                                    {job.jobId || job.id}
+                                  </span>
+                                  {displayTimestamp ? (
+                                    <span> - {displayTimestamp}</span>
+                                  ) : null}
+                                </div>
+
+                                {/* Row 3: Pending Payment strictly from billed invoices (amount only) */}
+                                {pendingAmount > 0 && (
+                                  <div className="text-[11px] font-bold text-orange-600 dark:text-orange-400 tabular-nums">
+                                    Pending Payment: ₹{pendingAmount.toLocaleString('en-IN')}
+                                  </div>
+                                )}
+
+                                {/* Row 4: Last Note */}
+                                <p className={`text-[11px] leading-snug line-clamp-2 break-words ${
+                                  isDark ? 'text-slate-300' : 'text-slate-600'
+                                }`}>
+                                  <span className={`font-semibold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                    Last Note:{' '}
+                                  </span>
+                                  {latest.note}
+                                </p>
                               </div>
 
                               {/* Click to open Job Card modal */}
@@ -611,7 +601,7 @@ export const JobCardStatusList: React.FC<JobCardStatusListProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => onSelectJob(job)}
-                                  className={`p-1.5 rounded-lg shrink-0 transition-colors cursor-pointer ${
+                                  className={`p-1 rounded-lg shrink-0 transition-colors cursor-pointer ${
                                     isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'
                                   }`}
                                   title="View & Edit Job Card"

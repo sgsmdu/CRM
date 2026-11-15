@@ -4091,6 +4091,27 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
         </div>
       )}
 
+      {/* Collect Payment Modal (triggered from Invoice table or View Bill modal) */}
+      <CollectPaymentModal
+        isOpen={Boolean(collectModalInvoice)}
+        onClose={() => setCollectModalInvoice(null)}
+        mode="single_invoice"
+        invoice={collectModalInvoice}
+        onPaymentSaved={(msg) => {
+          setConvertToast(msg);
+          setTimeout(() => setConvertToast(null), 4000);
+        }}
+      />
+
+      {/* WhatsApp Payment Pending Reminder Modal */}
+      <WhatsAppPendingModal
+        isOpen={Boolean(whatsAppModalState)}
+        onClose={() => setWhatsAppModalState(null)}
+        customerName={whatsAppModalState?.customerName || ''}
+        customerPhone={whatsAppModalState?.customerPhone || ''}
+        pendingInvoices={whatsAppModalState?.pendingInvoices || []}
+      />
+
     </div>
   );
 };
