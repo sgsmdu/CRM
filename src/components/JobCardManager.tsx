@@ -61,6 +61,7 @@ import { WorkAllocationBoard } from './WorkAllocationBoard';
 import { JobCardStatusList } from './JobCardStatusList';
 import { CollectPaymentModal } from './CollectPaymentModal';
 import { WhatsAppPendingModal } from './WhatsAppPendingModal';
+import { JobCardItem, QuickStageTarget } from './JobCardItem';
 import { getJobCardFinancialSummary, formatAccountLabel } from '../utils/moneyFlow';
 
 interface JobCardManagerProps {
@@ -1001,741 +1002,126 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
         ) : (
           filteredJobs.map((job, idx) => {
             const Icon = categoryIcons[job.category] || Cpu;
-            const statusConfig = statusMap[job.status] || statusMap.received;
             const isCompletedOrDelivered = job.status === 'completed' || job.status === 'delivered';
             const isExpanded = expandedJobIds.includes(job.id);
 
-            // Latest note or comment (Requirement 6)
-            const lastNote = job.technicianNotes || 
-              (job.timeline && job.timeline.length > 0 ? job.timeline[job.timeline.length - 1]?.notes : '') || 
-              job.workOrderNotes || 
-              job.issueDescription || 
-              'No recent notes';
+            const handleOpenTimelineStage = (stage: QuickStageTarget) => {
+              if (stage === 'billed' && onNavigateToBilling) {
+                onNavigateToBilling(job.id);
+                return;
+              }
+              setTimelineModalJob(job);
+              setTimelineTargetStage(stage);
+              if (stage === 'in_process') {
+                setTimelineNotes(job.technicianNotes || 'Started diagnosing hardware');
+              } else if (stage === 'quote_given') {
+                setTimelineQuoteAmount(job.estimatedCost || 1200);
+                setTimelineNotes('Given estimated quote to customer');
+              } else if (stage === 'customer_approval') {
+                setTimelineNotes('Customer approved the quotation & proceeding with work');
+              } else if (stage === 'customer_discussion') {
+                setTimelineNotes('Discussed repair options & part availability with customer');
+              } else if (stage === 'work_completed') {
+                setTimelineNotes('Device fully repaired, tested & quality-checked');
+              } else if (stage === 'billed') {
+                setTimelineNotes('Invoice raised in billing system');
+              } else if (stage === 'pickup_note') {
+                setTimelineNotes('Informed customer device is packed & ready for pickup');
+              } else if (stage === 'call_review') {
+                setTimelineNotes('Customer called back for performance check & satisfaction review');
+              } else if (stage === 'call_close') {
+                setTimelineNotes('Work card and post-service follow-up closed');
+              } else if (stage === 'hold') {
+                setTimelineHoldReason(
+                  job.holdReason || 'Customer requested postponement / awaiting spare shipment'
+                );
+                setTimelineNotes(job.holdReason || 'Put on hold');
+              } else if (stage === 'other') {
+                setTimelineOtherName(job.otherStatusText || 'Outside Lab Rework');
+                setTimelineNotes('Custom workshop transition step');
+              }
+            };
 
             return (
-              <div 
+              <JobCardItem
                 key={`${job.id}-${idx}`}
-                className={`rounded-xl border transition-all overflow-hidden ${
-                  selectedJobIds.includes(job.id)
-                    ? (isDark ? 'bg-blue-950/30 border-blue-600 ring-1 ring-blue-600' : 'bg-blue-50/50 border-blue-400 ring-1 ring-blue-400')
-                    : (isDark ? 'bg-slate-900/80 border-slate-800 hover:border-slate-700' : 'bg-white border-slate-200/90 hover:border-blue-300 shadow-xs')
-                }`}
-              >
-                {/* 1. COLLAPSED MAIN HEADER ROW - ONLY THE MAIN THINGS SHOWN BY DEFAULT (Requirement 6) */}
-                <div 
-                  onClick={() => toggleJobExpand(job.id)}
-                  className={`p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 cursor-pointer select-none transition-colors ${
-                    isExpanded 
-                      ? (isDark ? 'bg-slate-800/60 border-b border-slate-800' : 'bg-slate-100/70 border-b border-slate-200')
-                      : (isDark ? 'hover:bg-slate-800/40' : 'hover:bg-slate-50/70')
-                  }`}
-                  title="Click to expand/collapse full options and workflow actions"
-                >
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
-                    {/* Select Checkbox (stop propagation) */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedJobIds(prev => 
-                          prev.includes(job.id) ? prev.filter(x => x !== job.id) : [...prev, job.id]
-                        );
-                      }}
-                      className="text-slate-400 hover:text-blue-600 transition-colors cursor-pointer shrink-0"
-                      title={selectedJobIds.includes(job.id) ? 'Deselect job' : 'Select job'}
-                    >
-                      {selectedJobIds.includes(job.id) ? (
-                        <CheckSquare className="w-4 h-4 text-blue-600" />
-                      ) : (
-                        <Square className="w-4 h-4 text-slate-400" />
-                      )}
-                    </button>
-
-                    {/* Category Icon */}
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border ${
-                      job.type === 'service' 
-                        ? (isDark ? 'bg-blue-950/60 border-blue-800 text-blue-400' : 'bg-blue-50 border-blue-200 text-blue-600')
-                        : (isDark ? 'bg-indigo-950/60 border-indigo-800 text-indigo-400' : 'bg-indigo-50 border-indigo-200 text-indigo-600')
-                    }`}>
-                      <Icon className="w-4 h-4" />
-                    </div>
-
-                    {/* Main Things Grid: 1. Job Name, 2. Product, 3. Customer Name, 4. Assign Staff, 5. Last Note */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2 md:gap-4 flex-1 min-w-0 items-center text-xs">
-                      
-                      {/* 1. Job Name / ID */}
-                      <div className="min-w-0">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block sm:hidden">Job Name</span>
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-mono font-bold text-blue-600 hover:underline">{job.jobId}</span>
-                          <span className={`text-[9px] uppercase px-1 py-0.2 rounded font-bold ${
-                            job.type === 'service' ? 'bg-blue-500/10 text-blue-600' : 'bg-indigo-500/10 text-indigo-600'
-                          }`}>
-                            {job.type}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-slate-400 block font-mono">
-                          {job.intakeDate}
-                        </span>
-                      </div>
-
-                      {/* 2. Product */}
-                      <div className="min-w-0">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block sm:hidden">Product</span>
-                        <span className={`font-semibold truncate block ${isDark ? 'text-white' : 'text-slate-900'}`} title={job.deviceBrand}>
-                          {job.deviceBrand}
-                        </span>
-                        <span className="text-[10px] text-slate-400 block capitalize">{job.category} {job.serialNumber ? `· S/N: ${job.serialNumber}` : ''}</span>
-                      </div>
-
-                      {/* 3. Customer Name */}
-                      <div className="min-w-0">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block sm:hidden">Customer</span>
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className={`font-bold truncate ${isDark ? 'text-slate-200' : 'text-slate-800'}`} title={job.customerName}>
-                            {job.customerName}
-                          </span>
-                        </div>
-                        <span className="text-[10px] font-mono text-slate-400 block truncate">{job.customerPhone || job.customerArea || 'Madurai'}</span>
-                      </div>
-
-                      {/* 4. Assign Staff */}
-                      <div className="min-w-0">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block sm:hidden">Staff</span>
-                        <div className="flex items-center gap-1">
-                          <UserCheck className="w-3.5 h-3.5 text-purple-600 shrink-0" />
-                          <span className={`truncate font-medium ${job.assignedTechnician ? (isDark ? 'text-purple-300' : 'text-purple-800 font-semibold') : 'text-slate-400 italic'}`}>
-                            {job.assignedTechnician || 'Unassigned'}
-                          </span>
-                        </div>
-                        <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded inline-block mt-0.5 ${
-                          job.priority === 'P1' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300' :
-                          job.priority === 'P2' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300' :
-                          'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
-                        }`}>
-                          {job.priority || 'P2'} {job.priorityOrder ? `#${job.priorityOrder}` : ''}
-                        </span>
-                      </div>
-
-                      {/* 5. Last Note Commend */}
-                      <div className="min-w-0 col-span-1 sm:col-span-2 md:col-span-1">
-                        <span className="text-[10px] uppercase font-bold text-slate-400 block sm:hidden">Last Note</span>
-                        <p className={`text-[11px] truncate italic ${isDark ? 'text-slate-400' : 'text-slate-600'}`} title={lastNote}>
-                          "{lastNote}"
-                        </p>
-                      </div>
-
-                    </div>
-                  </div>
-
-                  {/* Status Badge & Expand Toggle Icon */}
-                  <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
-                    <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full uppercase border ${statusConfig.bg} ${statusConfig.text}`}>
-                      {statusConfig.label}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleJobExpand(job.id);
-                      }}
-                      className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
-                        isDark ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'
-                      }`}
-                      title={isExpanded ? 'Collapse options' : 'Click to expand full options'}
-                    >
-                      {isExpanded ? <ChevronUp className="w-4 h-4 text-blue-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* 2. EXPANDED OPTIONS: ONLY SHOWN WHEN CLICKED (Requirement 6) */}
-                {isExpanded && (
-                  <div className={`p-4 border-t space-y-4 animate-in fade-in duration-200 ${
-                    isDark ? 'bg-slate-950/40 border-slate-800' : 'bg-slate-50/50 border-slate-200'
-                  }`}>
-                    <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
-                      {/* Left Device & Customer Details */}
-                      <div className="flex items-start gap-3 flex-1 min-w-0">
-                  {/* Select Checkbox */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedJobIds(prev => 
-                        prev.includes(job.id) ? prev.filter(x => x !== job.id) : [...prev, job.id]
-                      );
-                    }}
-                    className="mt-2.5 text-slate-400 hover:text-blue-600 transition-colors cursor-pointer shrink-0"
-                    title={selectedJobIds.includes(job.id) ? 'Deselect job' : 'Select job'}
-                  >
-                    {selectedJobIds.includes(job.id) ? (
-                      <CheckSquare className="w-4 h-4 text-blue-600" />
-                    ) : (
-                      <Square className="w-4 h-4 text-slate-400" />
-                    )}
-                  </button>
-
-                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 border ${
-                    job.type === 'service' 
-                      ? (isDark ? 'bg-blue-950/60 border-blue-800 text-blue-400' : 'bg-blue-50 border-blue-200 text-blue-600')
-                      : (isDark ? 'bg-indigo-950/60 border-indigo-800 text-indigo-400' : 'bg-indigo-50 border-indigo-200 text-indigo-600')
-                  }`}>
-                    <Icon className="w-5 h-5" />
-                  </div>
-
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => setDetailedJob(job)}
-                        className={`text-xs font-mono font-bold hover:underline cursor-pointer ${isDark ? 'text-blue-400' : 'text-blue-600'}`}
-                        title="Click to open full job details"
-                      >
-                        {job.jobId}
-                      </button>
-                      <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${
-                        job.type === 'service'
-                          ? (isDark ? 'bg-blue-950 text-blue-400 border-blue-900' : 'bg-blue-50 text-blue-700 border-blue-200')
-                          : (isDark ? 'bg-indigo-950 text-indigo-400 border-indigo-900' : 'bg-indigo-50 text-indigo-700 border-indigo-200')
-                      }`}>
-                        {job.type}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setDetailedJob(job)}
-                        className={`text-xs font-semibold hover:underline text-left cursor-pointer ${isDark ? 'text-white' : 'text-slate-900'} truncate`}
-                      >
-                        {job.deviceBrand}
-                      </button>
-                      {job.serialNumber && (
-                        <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
-                          isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
-                        }`}>
-                          S/N: {job.serialNumber}
-                        </span>
-                      )}
-
-                      {/* Clickable Priority Tag */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPriorityModalJob(job);
-                          setTargetPriority(job.priority || 'P2');
-                          setTargetPriorityOrder(job.priorityOrder || 1);
-                          setPriorityChangeReason(job.priorityChangeReason || 'Customer priority escalation');
-                        }}
-                        className={`text-[10px] font-black uppercase px-2 py-0.5 rounded text-white cursor-pointer hover:opacity-90 transition-opacity shadow-xs ${
-                          job.priority === 'P1' ? 'bg-rose-600' :
-                          job.priority === 'P2' ? 'bg-amber-500' :
-                          job.priority === 'P3' ? 'bg-blue-600' : 'bg-slate-500'
-                        }`}
-                        title="Click to change priority & sequence order"
-                      >
-                        {job.priority || (job.workOrderPriority ? `P${job.workOrderPriority}` : 'P2')} {job.priorityOrder ? `#${job.priorityOrder}` : ''}
-                      </button>
-
-                      {/* Clickable Assigned Tech Chip */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setReassignJobModal(job);
-                          setReassignTechId(job.assignedEmployeeId || '');
-                          setReassignNotes(job.workOrderNotes || '');
-                          setReassignReasonInput('Staff workload assignment');
-                        }}
-                        className={`text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1 border cursor-pointer hover:border-blue-400 transition-colors ${
-                          job.assignedEmployeeId
-                            ? (isDark ? 'bg-purple-950/40 border-purple-800 text-purple-300' : 'bg-purple-50 border-purple-200 text-purple-800 font-semibold')
-                            : (isDark ? 'bg-slate-800 border-slate-700 text-slate-400' : 'bg-slate-100 border-slate-200 text-slate-500')
-                        }`}
-                        title="Click to assign or reassign technician"
-                      >
-                        <UserCheck className="w-3 h-3" />
-                        <span>{job.assignedTechnician ? job.assignedTechnician : 'Unassigned'}</span>
-                      </button>
-                    </div>
-
-                    {/* Customer Row */}
-                    <div className="flex items-center gap-3 text-xs flex-wrap">
-                      <div className="flex items-center gap-1 font-medium">
-                        <User className={`w-3.5 h-3.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
-                        <span className={isDark ? 'text-slate-200' : 'text-slate-800'}>{job.customerName}</span>
-                      </div>
-                      
-                      {job.customerPhone && (
-                        <div className="flex items-center gap-1 font-mono text-[11px]">
-                          <Phone className={`w-3 h-3 ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
-                          <span className={isDark ? 'text-slate-300' : 'text-slate-600'}>{job.customerPhone}</span>
-                        </div>
-                      )}
-
-                      {job.customerArea && (
-                        <span className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                          ({job.customerArea})
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Issue Description */}
-                    <p className={`text-xs italic line-clamp-1 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                      "{job.issueDescription}"
-                    </p>
-
-                    {/* Meta Tags, Dates & Photos */}
-                    <div className="flex items-center gap-3 text-[11px] pt-1 flex-wrap">
-                      <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>
-                        Intake: {job.intakeDate}
-                      </span>
-                      {job.estimatedDelivery && (
-                        <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>
-                          Est Delivery: <strong className={isDark ? 'text-slate-300' : 'text-slate-700'}>{job.estimatedDelivery}</strong>
-                        </span>
-                      )}
-                      <span className={`font-mono font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                        Est: ₹{job.estimatedCost.toLocaleString('en-IN')}
-                      </span>
-
-                      {job.devicePhotos && job.devicePhotos.length > 0 && (
-                        <div className="flex items-center gap-1.5 ml-auto">
-                          <span className={`font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Photos ({job.devicePhotos.length}):</span>
-                          <div className="flex items-center gap-1">
-                            {job.devicePhotos.map((photo, pIdx) => (
-                              <button
-                                key={pIdx}
-                                onClick={() => setActivePhotoLightbox(photo)}
-                                className="w-6 h-6 rounded border border-slate-300 dark:border-slate-700 overflow-hidden hover:opacity-80 transition-opacity cursor-pointer"
-                                title="Click to view full photo"
-                              >
-                                <img src={photo} alt="Device thumbnail" className="w-full h-full object-cover" />
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Interactive Workflow Lifecycle Bar (Tamil brief: In process -> Quote -> Customer approval -> Customer discussion -> Work Completed -> Bill -> Pickup note -> Call review -> Call close -> Hold / Other) */}
-                    <div className="pt-2 flex items-center gap-1.5 flex-wrap">
-                      <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                        Quick Stage Action:
-                      </span>
-
-                      {/* In Process Action */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTimelineModalJob(job);
-                          setTimelineTargetStage('in_process');
-                          setTimelineNotes(job.technicianNotes || 'Started diagnosing hardware');
-                        }}
-                        className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border transition-all cursor-pointer ${
-                          job.status === 'in_process'
-                            ? 'bg-amber-500 text-white font-bold border-amber-600 shadow-xs'
-                            : (isDark ? 'bg-amber-950/40 border-amber-900 text-amber-300 hover:bg-amber-900/60' : 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100')
-                        }`}
-                        title="Click to record In Process start with notes & time"
-                      >
-                        ⚡ In Process
-                      </button>
-
-                      {/* Quote Action */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTimelineModalJob(job);
-                          setTimelineTargetStage('quote_given');
-                          setTimelineQuoteAmount(job.estimatedCost || 1200);
-                          setTimelineNotes('Given estimated quote to customer');
-                        }}
-                        className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border transition-all cursor-pointer ${
-                          job.status === 'quotation_pending'
-                            ? 'bg-orange-500 text-white font-bold border-orange-600 shadow-xs'
-                            : (isDark ? 'bg-orange-950/40 border-orange-900 text-orange-300 hover:bg-orange-900/60' : 'bg-orange-50 border-orange-200 text-orange-800 hover:bg-orange-100')
-                        }`}
-                        title="Record Quotation given with amount & notes"
-                      >
-                        💰 Quote
-                      </button>
-
-                      {/* Customer Approval */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTimelineModalJob(job);
-                          setTimelineTargetStage('customer_approval');
-                          setTimelineNotes('Customer approved the quotation & proceeding with work');
-                        }}
-                        className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border transition-all cursor-pointer ${
-                          job.status === 'customer_approval'
-                            ? 'bg-teal-600 text-white font-bold border-teal-700 shadow-xs'
-                            : (isDark ? 'bg-teal-950/40 border-teal-900 text-teal-300 hover:bg-teal-900/60' : 'bg-teal-50 border-teal-200 text-teal-800 hover:bg-teal-100')
-                        }`}
-                        title="Record Customer Approval"
-                      >
-                        👍 Approval
-                      </button>
-
-                      {/* Customer Discussion */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTimelineModalJob(job);
-                          setTimelineTargetStage('customer_discussion');
-                          setTimelineNotes('Discussed repair options & part availability with customer');
-                        }}
-                        className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border transition-all cursor-pointer ${
-                          job.status === 'customer_discussion'
-                            ? 'bg-indigo-600 text-white font-bold border-indigo-700 shadow-xs'
-                            : (isDark ? 'bg-indigo-950/40 border-indigo-900 text-indigo-300 hover:bg-indigo-900/60' : 'bg-indigo-50 border-indigo-200 text-indigo-800 hover:bg-indigo-100')
-                        }`}
-                        title="Record Customer Discussion with notes"
-                      >
-                        💬 Discussion
-                      </button>
-
-                      {/* Work Completed */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTimelineModalJob(job);
-                          setTimelineTargetStage('work_completed');
-                          setTimelineNotes('Device fully repaired, tested & quality-checked');
-                        }}
-                        className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border transition-all cursor-pointer ${
-                          job.status === 'work_completed'
-                            ? 'bg-green-600 text-white font-bold border-green-700 shadow-xs'
-                            : (isDark ? 'bg-green-950/40 border-green-900 text-green-300 hover:bg-green-900/60' : 'bg-green-50 border-green-200 text-green-800 hover:bg-green-100')
-                        }`}
-                        title="Record Work Completed"
-                      >
-                        ✅ Work Done
-                      </button>
-
-                      {/* Bill (Direct to Billing) */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (onNavigateToBilling) {
-                            onNavigateToBilling(job.id);
-                          } else {
-                            setTimelineModalJob(job);
-                            setTimelineTargetStage('billed');
-                            setTimelineNotes('Invoice raised in billing system');
-                          }
-                        }}
-                        className={`px-2.5 py-0.5 text-[11px] font-bold rounded-md border transition-all cursor-pointer flex items-center gap-1 ${
-                          job.status === 'billed'
-                            ? 'bg-cyan-600 text-white border-cyan-700 shadow-xs'
-                            : (isDark ? 'bg-cyan-950/50 border-cyan-800 text-cyan-300 hover:bg-cyan-700 hover:text-white' : 'bg-cyan-50 border-cyan-300 text-cyan-800 hover:bg-cyan-600 hover:text-white')
-                        }`}
-                        title="Click to generate bill - opens Billing directly"
-                      >
-                        <FileText className="w-3 h-3" />
-                        <span>🧾 Bill Now</span>
-                      </button>
-
-                      {/* Manual Quote */}
-                      {onNavigateToQuotation && (
-                        <button
-                          type="button"
-                          onClick={() => onNavigateToQuotation(job)}
-                          className={`px-2.5 py-0.5 text-[11px] font-bold rounded-md border transition-all cursor-pointer flex items-center gap-1 ${
-                            isDark 
-                              ? 'bg-amber-950/50 border-amber-800 text-amber-300 hover:bg-amber-700 hover:text-white' 
-                              : 'bg-amber-50 border-amber-300 text-amber-800 hover:bg-amber-600 hover:text-white'
-                          }`}
-                          title="Generate Comparative Manual Quotation (Model 1 & 2) for this Job Card"
-                        >
-                          <FileText className="w-3 h-3 text-amber-500" />
-                          <span>📋 Manual Quote</span>
-                        </button>
-                      )}
-
-                      {/* Link to Stock Invoice */}
-                      <button
-                        type="button"
-                        onClick={() => setLinkingJob(job)}
-                        className={`px-2.5 py-0.5 text-[11px] font-bold rounded-md border transition-all cursor-pointer flex items-center gap-1 ${
-                          (job.linkedVendorBillIds && job.linkedVendorBillIds.length > 0)
-                            ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
-                            : (isDark 
-                                ? 'bg-purple-950/40 border-purple-800 text-purple-300 hover:bg-purple-700 hover:text-white' 
-                                : 'bg-purple-50 border-purple-300 text-purple-800 hover:bg-purple-600 hover:text-white')
-                        }`}
-                        title="Link stock purchase invoices to this job card"
-                      >
-                        <Link2 className="w-3 h-3 text-purple-400" />
-                        <span>Link to Stock Invoice</span>
-                        {job.linkedVendorBillIds && job.linkedVendorBillIds.length > 0 && (
-                          <span className="ml-0.5 px-1.5 py-0.2 bg-black/20 text-white rounded text-[10px]">
-                            {job.linkedVendorBillIds.length}
-                          </span>
-                        )}
-                      </button>
-
-                      {/* Pickup Note */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTimelineModalJob(job);
-                          setTimelineTargetStage('pickup_note');
-                          setTimelineNotes('Informed customer device is packed & ready for pickup');
-                        }}
-                        className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border transition-all cursor-pointer ${
-                          job.status === 'pickup_ready' || job.status === 'completed'
-                            ? 'bg-blue-600 text-white font-bold border-blue-700 shadow-xs'
-                            : (isDark ? 'bg-blue-950/40 border-blue-900 text-blue-300 hover:bg-blue-900/60' : 'bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100')
-                        }`}
-                        title="Record Pickup Note"
-                      >
-                        📦 Pickup Note
-                      </button>
-
-                      {/* Call Review */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTimelineModalJob(job);
-                          setTimelineTargetStage('call_review');
-                          setTimelineNotes('Customer called back for performance check & satisfaction review');
-                        }}
-                        className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border transition-all cursor-pointer ${
-                          isDark ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700' : 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200'
-                        }`}
-                        title="Record Call Review"
-                      >
-                        ⭐ Call Review
-                      </button>
-
-                      {/* Call Close */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTimelineModalJob(job);
-                          setTimelineTargetStage('call_close');
-                          setTimelineNotes('Work card and post-service follow-up closed');
-                        }}
-                        className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border transition-all cursor-pointer ${
-                          job.status === 'delivered'
-                            ? 'bg-slate-700 text-white font-bold border-slate-800 shadow-xs'
-                            : (isDark ? 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800' : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100')
-                        }`}
-                        title="Call Close & Deliver"
-                      >
-                        🏁 Call Close
-                      </button>
-
-                      {/* Hold Option */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTimelineModalJob(job);
-                          setTimelineTargetStage('hold');
-                          setTimelineHoldReason(job.holdReason || 'Customer requested postponement / awaiting spare shipment');
-                          setTimelineNotes(job.holdReason || 'Put on hold');
-                        }}
-                        className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border transition-all cursor-pointer ${
-                          job.status === 'hold'
-                            ? 'bg-rose-600 text-white font-bold border-rose-700 shadow-xs'
-                            : (isDark ? 'bg-rose-950/40 border-rose-900 text-rose-300 hover:bg-rose-900/60' : 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100')
-                        }`}
-                        title="Put Job on Hold"
-                      >
-                        ⏸️ Hold
-                      </button>
-
-                      {/* Other Manual Stage */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTimelineModalJob(job);
-                          setTimelineTargetStage('other');
-                          setTimelineOtherName(job.otherStatusText || 'Outside Lab Rework');
-                          setTimelineNotes('Custom workshop transition step');
-                        }}
-                        className={`px-2 py-0.5 text-[11px] font-semibold rounded-md border transition-all cursor-pointer ${
-                          job.status === 'other'
-                            ? 'bg-purple-600 text-white font-bold border-purple-700 shadow-xs'
-                            : (isDark ? 'bg-purple-950/40 border-purple-900 text-purple-300 hover:bg-purple-900/60' : 'bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100')
-                        }`}
-                        title="Custom / Manual Stage Input"
-                      >
-                        ✍️ Others
-                      </button>
-
-                      {/* View Timeline History */}
-                      <button
-                        type="button"
-                        onClick={() => setViewHistoryJob(job)}
-                        className="text-[11px] text-blue-600 hover:underline flex items-center gap-1 ml-auto font-semibold cursor-pointer"
-                        title="View complete date & time event ledger"
-                      >
-                        <Clock className="w-3 h-3 text-blue-500" />
-                        <span>Timeline Log ({job.timeline?.length || 0})</span>
-                      </button>
-                    </div>
-
-                    {/* Hold Reason Banner if On Hold */}
-                    {job.status === 'hold' && (
-                      <div className={`mt-1.5 p-2 rounded-lg text-xs flex items-center gap-2 border ${
-                        isDark ? 'bg-rose-950/30 border-rose-900/80 text-rose-300' : 'bg-rose-50 border-rose-200 text-rose-800'
-                      }`}>
-                        <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                        <span><strong>Job On Hold:</strong> {job.holdReason || job.technicianNotes || 'Awaiting customer response or rare spare arrival'}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Right Interactive Controls: Status Selector, Call Tracker, and WhatsApp */}
-                <div className={`flex flex-col sm:flex-row lg:flex-col items-end gap-2.5 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 ${
-                  isDark ? 'border-slate-800' : 'border-slate-200'
-                }`}>
-                  
-                  {/* Status Dropdown */}
-                  <div className="w-full sm:w-auto">
-                    <select
-                      value={job.status}
-                      onChange={(e) => {
-                        const newStat = e.target.value as JobStatus;
-                        updateJobCardStatus(job.id, newStat);
-                        addJobTimelineEvent(job.id, {
-                          stage: newStat as any,
-                          stageLabel: statusMap[newStat]?.label || newStat,
-                          timestamp: new Date().toISOString(),
-                          notes: `Status changed to ${statusMap[newStat]?.label || newStat}`,
-                        });
-                      }}
-                      className={`w-full sm:w-48 text-xs font-semibold px-3 py-1.5 rounded-lg border cursor-pointer ${statusConfig.bg} ${statusConfig.text}`}
-                    >
-                      <option value="received">Received (Inspection)</option>
-                      <option value="in_process">In Process</option>
-                      <option value="quotation_pending">Quotation Pending</option>
-                      <option value="waiting_parts">Waiting for Parts</option>
-                      <option value="customer_approval">Customer Approved</option>
-                      <option value="customer_discussion">Customer Discussion</option>
-                      <option value="work_completed">Work Completed</option>
-                      <option value="billed">Billed</option>
-                      <option value="payment_pending">Payment Pending</option>
-                      <option value="completed">Ready for Pickup</option>
-                      <option value="delivered">Delivered</option>
-                      <option value="hold">On Hold</option>
-                      <option value="other">Other Stage</option>
-                    </select>
-                  </div>
-
-                  {/* Call Tracking & Completed Indicator */}
-                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                    
-                    {/* Phone Call Trigger */}
-                    {job.customerPhone && (
-                      <a
-                        href={`tel:${job.customerPhone}`}
-                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                          isDark ? 'text-blue-400 bg-blue-950/60 hover:bg-blue-900 border border-blue-900' : 'text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200'
-                        }`}
-                        title={`Call ${job.customerName}: ${job.customerPhone}`}
-                      >
-                        <Phone className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-
-                    {/* Call Completed Toggle */}
-                    <button
-                      type="button"
-                      onClick={() => toggleCallCompleted(job.id)}
-                      className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold rounded-lg border transition-all cursor-pointer ${
-                        job.callCompleted
-                          ? (isDark ? 'bg-emerald-950/80 border-emerald-700 text-emerald-300' : 'bg-emerald-50 border-emerald-300 text-emerald-800')
-                          : (isDark ? 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200' : 'bg-slate-100 border-slate-300 text-slate-600 hover:text-slate-900')
-                      }`}
-                      title={job.callCompleted ? `Call recorded on ${job.lastCalledAt || 'record'}` : 'Click to mark phone call completed'}
-                    >
-                      <CheckCircle2 className={`w-3.5 h-3.5 ${job.callCompleted ? 'text-emerald-500 fill-emerald-500/20' : 'text-slate-400'}`} />
-                      <span>{job.callCompleted ? 'Call Done' : 'Mark Called'}</span>
-                    </button>
-
-                    {/* Show Job Button */}
-                    <button
-                      type="button"
-                      onClick={() => setDetailedJob(job)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition-all cursor-pointer shadow-xs whitespace-nowrap"
-                      title="Open full job card details, device specs, timeline history and status marking"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>Show Job</span>
-                    </button>
-
-                    {/* Print Slip Button */}
-                    <button
-                      type="button"
-                      onClick={() => setPrintJobSlip(job)}
-                      className={`p-1.5 rounded-lg transition-colors cursor-pointer border ${
-                        isDark ? 'text-slate-300 bg-slate-800 border-slate-700 hover:bg-slate-700' : 'text-slate-700 bg-slate-100 border-slate-300 hover:bg-slate-200'
-                      }`}
-                      title="Print Workshop Service Slip / Job Card"
-                    >
-                      <Printer className="w-3.5 h-3.5" />
-                    </button>
-
-                    {/* WhatsApp Hub Trigger */}
-                    <button
-                      onClick={() => {
-                        setSelectedJobForWhatsApp(job);
-                        setWhatsAppTab(isCompletedOrDelivered ? 'review' : (job.status === 'received' ? 'welcome' : 'status'));
-                      }}
-                      className={`flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                        isDark 
-                          ? 'text-emerald-300 hover:text-white bg-emerald-950/60 hover:bg-emerald-600 border border-emerald-800' 
-                          : 'text-white bg-emerald-600 hover:bg-emerald-700 shadow-xs'
-                      }`}
-                    >
-                      <MessageSquare className="w-3.5 h-3.5" />
-                      <span>WhatsApp Hub</span>
-                    </button>
-
-                    {/* Quick Payment Pending Reminder if balance remains */}
-                    {((job.finalCost > 0 ? job.finalCost : (job.estimatedCost || 0)) > (job.advancePaid || 0)) && (
-                      <button
-                        onClick={() => {
-                          setSelectedJobForWhatsApp(job);
-                          setWhatsAppTab('payment_pending');
-                        }}
-                        className={`flex items-center justify-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                          isDark 
-                            ? 'text-rose-300 hover:text-white bg-rose-950/60 hover:bg-rose-700 border border-rose-800' 
-                            : 'text-rose-700 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-300 shadow-xs'
-                        }`}
-                        title="Send Payment Pending Reminder via WhatsApp"
-                      >
-                        <CreditCard className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Pay Reminder</span>
-                      </button>
-                    )}
-
-                    {/* Delete Job - Admin Only */}
-                    {canDelete && (
-                      <button
-                        onClick={() => {
-                          if (window.confirm(`Delete job card ${job.jobId} for ${job.customerName}?`)) {
-                            deleteJobCard(job.id);
-                          }
-                        }}
-                        className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                          isDark ? 'text-slate-500 hover:text-rose-400 hover:bg-slate-800' : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
-                        }`}
-                        title="Delete Job Card (Admin Only)"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+                job={job}
+                isDark={isDark}
+                isExpanded={isExpanded}
+                isSelected={selectedJobIds.includes(job.id)}
+                canDelete={canDelete}
+                CategoryIcon={Icon}
+                statusMap={statusMap}
+                quotations={quotations}
+                invoices={invoices}
+                invoicePayments={invoicePayments}
+                onToggleExpand={() => toggleJobExpand(job.id)}
+                onToggleSelect={() =>
+                  setSelectedJobIds(prev =>
+                    prev.includes(job.id) ? prev.filter(x => x !== job.id) : [...prev, job.id]
+                  )
+                }
+                onStatusChange={(newStat) => {
+                  updateJobCardStatus(job.id, newStat);
+                  addJobTimelineEvent(job.id, {
+                    stage: newStat as any,
+                    stageLabel: statusMap[newStat]?.label || newStat,
+                    timestamp: new Date().toISOString(),
+                    notes: `Status changed to ${statusMap[newStat]?.label || newStat}`,
+                  });
+                }}
+                onToggleCallCompleted={() => toggleCallCompleted(job.id)}
+                onShowJob={() => setDetailedJob(job)}
+                onPrintSlip={() => setPrintJobSlip(job)}
+                onOpenWhatsAppHub={() => {
+                  setSelectedJobForWhatsApp(job);
+                  setWhatsAppTab(
+                    isCompletedOrDelivered
+                      ? 'review'
+                      : job.status === 'received'
+                        ? 'welcome'
+                        : 'status'
+                  );
+                }}
+                onOpenPaymentReminder={() => {
+                  setSelectedJobForWhatsApp(job);
+                  setWhatsAppTab('payment_pending');
+                }}
+                onDeleteJob={() => {
+                  if (window.confirm(`Delete job card ${job.jobId} for ${job.customerName}?`)) {
+                    deleteJobCard(job.id);
+                  }
+                }}
+                onOpenPriorityModal={() => {
+                  setPriorityModalJob(job);
+                  setTargetPriority(job.priority || 'P2');
+                  setTargetPriorityOrder(job.priorityOrder || 1);
+                  setPriorityChangeReason(
+                    job.priorityChangeReason || 'Customer priority escalation'
+                  );
+                }}
+                onOpenReassignModal={() => {
+                  setReassignJobModal(job);
+                  setReassignTechId(job.assignedEmployeeId || '');
+                  setReassignNotes(job.workOrderNotes || '');
+                  setReassignReasonInput('Staff workload assignment');
+                }}
+                onOpenTimelineModal={handleOpenTimelineStage}
+                onViewTimelineHistory={() => setViewHistoryJob(job)}
+                onOpenBilling={() => {
+                  if (onNavigateToBilling) {
+                    onNavigateToBilling(job.id);
+                  } else {
+                    handleOpenTimelineStage('billed');
+                  }
+                }}
+                onOpenManualQuote={
+                  onNavigateToQuotation ? () => onNavigateToQuotation(job) : undefined
+                }
+                onOpenLinkStockInvoice={() => setLinkingJob(job)}
+                onCollectPayment={() => setCollectPaymentJob(job)}
+                onOpenPhoto={(photoUrl) => setActivePhotoLightbox(photoUrl)}
+              />
             );
           })
         )}
