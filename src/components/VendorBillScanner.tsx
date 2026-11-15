@@ -34,6 +34,7 @@ import {
   Settings2
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
+import { scanBillViaLocalPaddle, testLocalPaddle } from '../services/localPaddleOcr';
 import {
   VendorBill,
   VendorBillItem,
@@ -266,20 +267,8 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     setPaddleTestStatus(null);
     const targetUrl = customPaddleUrl.trim() || adminSettings.paddleOcrApiUrl || 'http://localhost:8080/ocr';
     try {
-      const res = await fetch('/api/test-paddleocr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          paddleOcrApiUrl: targetUrl,
-          paddleOcrToken: adminSettings.paddleOcrToken,
-        }),
-      });
-      const data = await res.json().catch(() => null);
-      if (res.ok && data?.success) {
-        setPaddleTestStatus({ online: true, message: data.message || `Connected successfully (${data.responseTimeMs}ms)!` });
-      } else {
-        setPaddleTestStatus({ online: false, message: data?.message || data?.error || 'Server offline or unreachable' });
-      }
+      const data = await testLocalPaddle(targetUrl, adminSettings.paddleOcrToken);
+      setPaddleTestStatus({ online: data.success, message: data.message });
     } catch {
       setPaddleTestStatus({ online: false, message: 'Could not connect to OCR endpoint. Please verify server is running.' });
     } finally {
@@ -321,11 +310,18 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
             mimeType: billPages[0]?.mimeType,
           };
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const response = engine === 'paddleocr'
+        ? await scanBillViaLocalPaddle({
+            pages: (payload as any).pages,
+            paddleOcrApiUrl: targetPaddleUrl,
+            paddleOcrToken: adminSettings.paddleOcrToken,
+            knownVendors: vendors.map(v => ({ id: v.id, name: v.name })),
+          })
+        : await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
 
       const result = await response.json().catch(() => null);
 
