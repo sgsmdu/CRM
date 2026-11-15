@@ -45,7 +45,7 @@ export const HeaderTopBar: React.FC<HeaderTopBarProps> = ({
   const currentInfo = tabTitles[activeTab] || tabTitles.dashboard;
 
   return (
-    <header className={`sticky top-0 z-30 px-4 lg:px-8 py-3.5 border-b backdrop-blur-md transition-colors ${
+    <header className={`no-print print:hidden print-chrome sticky top-0 z-30 px-4 lg:px-8 py-3.5 border-b backdrop-blur-md transition-colors ${
       isDark ? 'bg-[#080d1a]/95 border-slate-800/90 text-white' : 'bg-white/95 border-slate-200/90 text-slate-900 shadow-xs'
     }`}>
       <div className="flex items-center justify-between gap-2 sm:gap-4 max-w-full overflow-hidden">

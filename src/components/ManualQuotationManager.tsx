@@ -884,7 +884,8 @@ Please review the proposal options and let us know your preferred configuration!
   }, [quotationProducts, selectedCatFilter, catSearch, showDeletedProducts]);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-150">
+    <>
+    <div className={pdfPreviewQuotation ? 'no-print space-y-6 animate-in fade-in duration-150' : 'space-y-6 animate-in fade-in duration-150'}>
       
       {/* Toast Alert */}
       {toastMessage && (
@@ -2539,282 +2540,6 @@ Please review the proposal options and let us know your preferred configuration!
         </div>
       )}
 
-      {/* MODAL 2: CUSTOMER PDF PREVIEW & PRINT (Requirement 9 & 14 - NO INTERNAL CHARGES/PRICES) */}
-      {pdfPreviewQuotation && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-          <div className="bg-white text-slate-900 border rounded-2xl w-full max-w-4xl max-h-[96vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            
-            {/* Action Bar */}
-            <div className="px-6 py-3 border-b flex items-center justify-between shrink-0 bg-slate-100 text-slate-800">
-              <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-blue-600" />
-                <span className="font-bold text-xs uppercase tracking-wider">
-                  Customer PDF Preview: {pdfPreviewQuotation.quotationNumber}
-                </span>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
-                  Individual Prices &amp; Internal Margins Hidden
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => handleShareWhatsApp(pdfPreviewQuotation)}
-                  className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
-                >
-                  <Share2 className="w-3.5 h-3.5" />
-                  <span>Share on WhatsApp</span>
-                </button>
-
-                <button
-                  onClick={() => window.print()}
-                  className="px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>Print A4 / Save PDF</span>
-                </button>
-
-                <button
-                  onClick={() => setPdfPreviewQuotation(null)}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* A4 Paper Viewport with Fixed Letterhead Background */}
-            <div className="p-2 sm:p-6 lg:p-8 overflow-y-auto overflow-x-auto flex-1 bg-slate-200/60 flex justify-start sm:justify-center print:p-0 print:bg-white" id="customerPdfContainer">
-              
-              {/* Single A4 Sheet Container */}
-              {(() => {
-                const previewHeaderImg = pdfPreviewQuotation.headerImageUrl || adminSettings.quotationHeaderImageUrl;
-                const previewFooterImg = pdfPreviewQuotation.footerImageUrl || adminSettings.quotationFooterImageUrl;
-
-                return (
-                  <div 
-                    className="relative bg-white shadow-2xl rounded-sm w-full max-w-[794px] min-h-[1123px] text-slate-900 font-sans print:shadow-none print:w-full print:max-w-none overflow-hidden flex flex-col justify-between"
-                    style={{
-                      backgroundImage: (!previewHeaderImg && !previewFooterImg) ? `url('${adminSettings.quotationBackgroundUrl || DEFAULT_SGS_QUOTATION_LETTERHEAD_BG}')` : undefined,
-                      backgroundSize: '100% 100%',
-                      backgroundRepeat: 'no-repeat',
-                    }}
-                  >
-                    {/* Custom Header Banner Image */}
-                    {previewHeaderImg && (
-                      <div className="w-full shrink-0 bg-white border-b border-slate-200">
-                        <img 
-                          src={previewHeaderImg} 
-                          alt="Quotation Letterhead Header" 
-                          className="w-full max-h-36 object-contain object-top" 
-                        />
-                      </div>
-                    )}
-
-                    {/* Content Area with dynamic top/bottom padding depending on custom header/footer */}
-                    <div className={`${previewHeaderImg ? 'pt-5' : 'pt-40'} ${previewFooterImg ? 'pb-5' : 'pb-24'} px-10 space-y-6 flex-1 flex flex-col`}>
-                  
-                  {/* Proposal Document Header Banner (Requirement 5: QUOTATION only) */}
-                  <div className="flex items-center justify-between border-b pb-3 border-slate-300">
-                    <div>
-                      <div className="inline-block px-3 py-1 text-xs font-black uppercase tracking-wider rounded bg-blue-900 text-white shadow-xs">
-                        QUOTATION
-                      </div>
-                      {pdfPreviewQuotation.title ? (
-                        <p className="text-xs text-slate-800 font-bold mt-1">
-                          {pdfPreviewQuotation.title}
-                        </p>
-                      ) : (
-                        <p className="text-[11px] text-slate-500 font-medium mt-1">
-                          Spider Grid Solutions · Commercial Proposal
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="text-right text-xs">
-                      <p className="font-bold text-slate-800">
-                        Quotation No: <span className="font-mono text-blue-700 font-black">{pdfPreviewQuotation.quotationNumber}</span>
-                      </p>
-                      <p className="text-slate-600 font-mono text-[11px]">
-                        Date: {pdfPreviewQuotation.date}
-                      </p>
-                      <p className="text-[11px] font-bold text-emerald-700">
-                        Validity: {pdfPreviewQuotation.validityDays || 7} Days (Until {pdfPreviewQuotation.validUntil})
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Customer Information Box */}
-                  <div className="p-3.5 rounded-lg bg-slate-50/90 border border-slate-200 grid grid-cols-2 gap-3 text-xs leading-snug">
-                    <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Proposal Submitted To:</span>
-                      <p className="font-black text-sm text-slate-900 mt-0.5">{pdfPreviewQuotation.customerName}</p>
-                      {pdfPreviewQuotation.customerAddress && (
-                        <p className="text-slate-600 mt-0.5">{pdfPreviewQuotation.customerAddress}</p>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Contact Phone:</span>
-                      <p className="font-mono font-bold text-slate-800 mt-0.5">{pdfPreviewQuotation.customerPhone || 'N/A'}</p>
-                      {pdfPreviewQuotation.jobCardId && (
-                        <p className="text-[10px] font-mono text-blue-600">Reference Job Card #{pdfPreviewQuotation.jobCardId}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Dynamic Models Display (Models 1 to 5) */}
-                  <div className="space-y-4 flex-1">
-                    {(() => {
-                      const allModels: (QuotationProposalModel | undefined)[] = [
-                        pdfPreviewQuotation.model1,
-                        pdfPreviewQuotation.model2,
-                        pdfPreviewQuotation.model3,
-                        pdfPreviewQuotation.model4,
-                        pdfPreviewQuotation.model5,
-                      ];
-                      const activeCount = pdfPreviewQuotation.activeModelsCount || (pdfPreviewQuotation.model2 ? 2 : 1);
-                      const displayList = allModels.slice(0, activeCount).filter(Boolean) as QuotationProposalModel[];
-
-                      const headerColors = [
-                        'bg-slate-900',
-                        'bg-indigo-950',
-                        'bg-purple-950',
-                        'bg-teal-950',
-                        'bg-blue-950'
-                      ];
-
-                      return displayList.map((model, idx) => (
-                        <div key={idx} className="border border-slate-300 rounded-lg overflow-hidden bg-white/95 shadow-2xs">
-                          <div className={`${headerColors[idx % headerColors.length]} text-white px-4 py-2 flex items-center justify-between`}>
-                            <span className="text-xs font-black uppercase tracking-wider">
-                              {model.name}
-                            </span>
-                            {displayList.length > 1 && (
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-600 text-white">
-                                Option {idx + 1}
-                              </span>
-                            )}
-                          </div>
-
-                          <table className="w-full text-left text-xs">
-                            <thead className="bg-slate-100 border-b border-slate-200 text-[10px] font-bold uppercase text-slate-700">
-                              <tr>
-                                <th className="py-2 px-3 w-10 text-center">#</th>
-                                <th className="py-2 px-3">Equipment / Service Description</th>
-                                <th className="py-2 px-3 text-center w-24">Qty / Unit</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 text-xs">
-                              {model.items && model.items.length > 0 ? (
-                                model.items.map((it, itIdx) => (
-                                  <tr key={itIdx}>
-                                    <td className="py-2 px-3 text-center text-slate-400 font-mono">{itIdx + 1}</td>
-                                    <td className="py-2 px-3 font-semibold text-slate-800">
-                                      {it.description}
-                                      {it.warranty && (
-                                        <span className="text-[10px] font-normal text-slate-500 block">
-                                          Warranty: {it.warranty}
-                                        </span>
-                                      )}
-                                    </td>
-                                    <td className="py-2 px-3 text-center font-mono font-bold text-slate-700">
-                                      {String(it.quantity).padStart(2, '0')} {it.unit || 'Nos'}
-                                    </td>
-                                  </tr>
-                                ))
-                              ) : (
-                                <tr>
-                                  <td colSpan={3} className="py-4 text-center text-slate-400 text-xs">
-                                    No items listed for {model.name}
-                                  </td>
-                                </tr>
-                              )}
-                            </tbody>
-                          </table>
-
-                          {/* Model Total Amount (Individual item prices & internal margins hidden) */}
-                          <div className="bg-blue-50/90 border-t border-blue-200 px-4 py-2.5 flex items-center justify-between">
-                            <span className="text-xs font-black uppercase tracking-wider text-blue-900">
-                              {model.name} — Total Proposal Amount:
-                            </span>
-                            <span className="text-base font-black font-mono text-blue-900">
-                              ₹{(model.finalModelTotal || 0).toLocaleString('en-IN')}
-                            </span>
-                          </div>
-                        </div>
-                      ));
-                    })()}
-                  </div>
-
-                  {/* Payment Terms & Advance Note (Only if filled) */}
-                  {(pdfPreviewQuotation.paymentDetails || pdfPreviewQuotation.advanceAmount) && (
-                    <div className="p-3 rounded-lg bg-slate-50/95 border border-slate-200 text-xs space-y-1">
-                      <span className="font-bold text-slate-800 uppercase tracking-wider text-[10px] block">Payment Terms:</span>
-                      {pdfPreviewQuotation.paymentDetails && (
-                        <p className="text-slate-700">{pdfPreviewQuotation.paymentDetails}</p>
-                      )}
-                      {pdfPreviewQuotation.advanceAmount && (
-                        <p className="font-mono text-blue-800 font-bold">
-                          Required Advance Commitment: ₹{pdfPreviewQuotation.advanceAmount.toLocaleString('en-IN')}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Customer / Site Notes (Only if filled) */}
-                  {pdfPreviewQuotation.customerNotes && (
-                    <div className="p-3 rounded-lg bg-blue-50/50 border border-blue-100 text-xs space-y-0.5">
-                      <span className="font-bold text-blue-900 text-[10px] uppercase tracking-wider block">Scope &amp; Site Notes:</span>
-                      <p className="text-slate-700 whitespace-pre-line leading-relaxed">{pdfPreviewQuotation.customerNotes}</p>
-                    </div>
-                  )}
-
-                  {/* Terms & Conditions */}
-                  <div className="text-[10px] text-slate-600 space-y-1 border-t pt-3">
-                    <span className="font-bold text-slate-800 uppercase tracking-wider block">Terms &amp; Conditions:</span>
-                    <p className="whitespace-pre-line leading-relaxed font-sans text-slate-600">
-                      {pdfPreviewQuotation.termsAndConditions || adminSettings.quotationTerms || adminSettings.termsAndConditions}
-                    </p>
-                  </div>
-
-                  {/* Authorized Signatory Signature Area */}
-                  <div className="pt-4 flex items-end justify-between border-t border-slate-200">
-                    <div className="text-[10px] text-slate-500">
-                      <p>Accepted By Customer (Signature &amp; Date):</p>
-                      <div className="h-10 w-48 border-b border-dashed border-slate-400 mt-2" />
-                    </div>
-
-                    <div className="text-right text-[10px] text-slate-700">
-                      <p className="font-bold text-slate-800">For SPIDER GRID SOLUTIONS</p>
-                      <div className="h-10 flex items-center justify-end">
-                        <span className="italic text-slate-400 font-serif">Authorized Signatory</span>
-                      </div>
-                      <p className="text-[9px] text-slate-500">Madurai Center · Official Quotation</p>
-                    </div>
-                  </div>
-
-                </div>
-
-                {/* Bottom Custom Footer Banner or Default Blue Accent Bar */}
-                {previewFooterImg ? (
-                  <div className="w-full shrink-0 bg-white border-t border-slate-200">
-                    <img 
-                      src={previewFooterImg} 
-                      alt="Quotation Letterhead Footer" 
-                      className="w-full max-h-24 object-contain object-bottom" 
-                    />
-                  </div>
-                ) : (
-                  <div className="h-3 w-full bg-blue-950 shrink-0" />
-                )}
-              </div>
-            );
-          })()}
-            </div>
-
-          </div>
-        </div>
-      )}
-
       {/* MODAL 3: VERSION HISTORY MODAL (Requirement 16) */}
       {versionHistoryQuotation && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
@@ -3254,5 +2979,285 @@ Please review the proposal options and let us know your preferred configuration!
       </datalist>
 
     </div>
+
+    {/* MODAL 2: CUSTOMER PDF PREVIEW & PRINT (A4 Single-Page Compact Layout, NO INTERNAL CHARGES/PRICES) */}
+    {pdfPreviewQuotation && (
+      <div className="print-modal-overlay fixed inset-0 z-50 bg-black/85 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+        <div className="print-modal-dialog bg-white text-slate-900 border rounded-2xl w-full max-w-4xl max-h-[96vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          
+          {/* Action Bar (Hidden on Print) */}
+          <div className="no-print px-6 py-3 border-b flex items-center justify-between shrink-0 bg-slate-100 text-slate-800">
+            <div className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-blue-600" />
+              <span className="font-bold text-xs uppercase tracking-wider">
+                Customer PDF Preview: {pdfPreviewQuotation.quotationNumber}
+              </span>
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                Individual Prices &amp; Internal Margins Hidden
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleShareWhatsApp(pdfPreviewQuotation)}
+                className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+              >
+                <Share2 className="w-3.5 h-3.5" />
+                <span>Share on WhatsApp</span>
+              </button>
+
+              <button
+                onClick={() => window.print()}
+                className="px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>Print A4 / Save PDF</span>
+              </button>
+
+              <button
+                onClick={() => setPdfPreviewQuotation(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* A4 Paper Viewport */}
+          <div className="print-modal-scroll p-2 sm:p-5 overflow-y-auto overflow-x-auto flex-1 bg-slate-200/60 flex justify-start sm:justify-center print:p-0 print:bg-white" id="customerPdfContainer">
+            {(() => {
+              const previewHeaderImg = pdfPreviewQuotation.headerImageUrl || adminSettings.quotationHeaderImageUrl;
+              const previewFooterImg = pdfPreviewQuotation.footerImageUrl || adminSettings.quotationFooterImageUrl;
+              const useLegacyFullBg = !previewHeaderImg && !previewFooterImg;
+
+              return (
+                <div
+                  className={`quotation-print relative bg-white shadow-2xl rounded-sm w-full max-w-[794px] text-slate-900 font-sans print:shadow-none print:w-[194mm] print:max-w-none flex flex-col ${
+                    useLegacyFullBg ? 'min-h-[1060px] print:min-h-[275mm] justify-between' : ''
+                  }`}
+                  style={{
+                    backgroundImage: useLegacyFullBg ? `url('${adminSettings.quotationBackgroundUrl || DEFAULT_SGS_QUOTATION_LETTERHEAD_BG}')` : undefined,
+                    backgroundSize: '100% 100%',
+                    backgroundRepeat: 'no-repeat',
+                  }}
+                >
+                  {/* Full-Width Uploaded Quotation Header Image (Edge-to-Edge, Preserved Aspect Ratio) */}
+                  {previewHeaderImg && (
+                    <div className="quotation-header w-full shrink-0 bg-white m-0 p-0">
+                      <img
+                        src={previewHeaderImg}
+                        alt="Quotation Letterhead Header"
+                        className="w-full h-auto block object-contain mx-auto"
+                      />
+                    </div>
+                  )}
+
+                  {/* Compact Quotation Body */}
+                  <div
+                    className={`${
+                      previewHeaderImg
+                        ? 'pt-2 print:pt-1.5 px-5 sm:px-6 print:px-0'
+                        : useLegacyFullBg
+                          ? 'pt-32 print:pt-28 px-8 print:px-6'
+                          : 'pt-2 px-5 sm:px-6 print:px-0'
+                    } ${
+                      previewFooterImg ? 'pb-1.5 print:pb-0' : useLegacyFullBg ? 'pb-14 print:pb-10' : 'pb-1.5 print:pb-0'
+                    } space-y-2 print:space-y-1.5 flex-1 flex flex-col`}
+                  >
+                    {/* Document Title & Metadata */}
+                    <div className="flex items-center justify-between gap-3 border-b border-slate-300 pb-1.5">
+                      <div className="min-w-0 flex items-center gap-2 flex-wrap">
+                        <span className="inline-block px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wider rounded bg-blue-900 text-white shrink-0">
+                          QUOTATION
+                        </span>
+                        <p className="text-[11px] text-slate-800 font-bold truncate">
+                          {pdfPreviewQuotation.title || 'Spider Grid Solutions · Commercial Proposal'}
+                        </p>
+                      </div>
+
+                      <div className="text-right text-[10.5px] leading-tight shrink-0 whitespace-nowrap">
+                        <p className="font-bold text-slate-800">
+                          Quotation No: <span className="font-mono text-blue-700 font-black">{pdfPreviewQuotation.quotationNumber}</span>
+                        </p>
+                        <p className="text-slate-600 font-mono text-[10px]">
+                          Date: {pdfPreviewQuotation.date} · Valid Until: <span className="font-bold text-emerald-700">{pdfPreviewQuotation.validUntil}</span> ({pdfPreviewQuotation.validityDays || 7}d)
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Compact Customer Details */}
+                    <div className="px-2.5 py-1.5 rounded bg-slate-50/95 border border-slate-200 grid grid-cols-12 gap-2 text-[10.5px] leading-tight">
+                      <div className="col-span-8 min-w-0">
+                        <span className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Proposal Submitted To: </span>
+                        <span className="font-black text-xs text-slate-900 break-words">{pdfPreviewQuotation.customerName}</span>
+                        {pdfPreviewQuotation.customerAddress && (
+                          <p className="text-slate-600 text-[10px] leading-snug mt-0.5 break-words">{pdfPreviewQuotation.customerAddress}</p>
+                        )}
+                      </div>
+                      <div className="col-span-4 text-right min-w-0">
+                        <span className="text-[9px] uppercase font-bold text-slate-500 block tracking-wider">Contact Phone</span>
+                        <p className="font-mono font-bold text-slate-800">{pdfPreviewQuotation.customerPhone || 'N/A'}</p>
+                        {pdfPreviewQuotation.jobCardId && (
+                          <p className="text-[9.5px] font-mono text-blue-600">Job #{pdfPreviewQuotation.jobCardId}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Models (Model 1, Model 2, Model 3... Single-Page Compact) */}
+                    <div className="space-y-1.5">
+                      {(() => {
+                        const allModels: (QuotationProposalModel | undefined)[] = [
+                          pdfPreviewQuotation.model1,
+                          pdfPreviewQuotation.model2,
+                          pdfPreviewQuotation.model3,
+                          pdfPreviewQuotation.model4,
+                          pdfPreviewQuotation.model5,
+                        ];
+                        const activeCount = pdfPreviewQuotation.activeModelsCount || (pdfPreviewQuotation.model2 ? 2 : 1);
+                        const displayList = allModels.slice(0, activeCount).filter(Boolean) as QuotationProposalModel[];
+
+                        const headerColors = [
+                          'bg-slate-900',
+                          'bg-indigo-950',
+                          'bg-purple-950',
+                          'bg-teal-950',
+                          'bg-blue-950',
+                        ];
+
+                        return displayList.map((model, idx) => (
+                          <div key={idx} className="model-section border border-slate-300 rounded overflow-hidden bg-white">
+                            <div className={`${headerColors[idx % headerColors.length]} text-white px-3 py-1 flex items-center justify-between gap-2`}>
+                              <span className="text-[11px] font-black uppercase tracking-wide truncate">
+                                {model.name}
+                              </span>
+                              {displayList.length > 1 && (
+                                <span className="text-[9.5px] font-bold px-1.5 py-0.5 rounded bg-blue-600 text-white shrink-0">
+                                  Option {idx + 1}
+                                </span>
+                              )}
+                            </div>
+
+                            <table className="w-full text-left text-[10.5px] leading-snug border-collapse">
+                              <thead className="bg-slate-100 border-b border-slate-200 text-[9.5px] font-bold uppercase text-slate-700">
+                                <tr>
+                                  <th className="py-1 px-2 w-8 text-center">#</th>
+                                  <th className="py-1 px-2">Equipment / Service Description</th>
+                                  <th className="py-1 px-2 text-center w-20">Qty / Unit</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {model.items && model.items.length > 0 ? (
+                                  model.items.map((it, itIdx) => (
+                                    <tr key={itIdx}>
+                                      <td className="py-1 px-2 text-center text-slate-500 font-mono align-top">{itIdx + 1}</td>
+                                      <td className="py-1 px-2 font-semibold text-slate-800 break-words">
+                                        <span>{it.description}</span>
+                                        {it.warranty && (
+                                          <span className="text-[9.5px] font-normal text-slate-500 ml-1.5">
+                                            (Warranty: {it.warranty})
+                                          </span>
+                                        )}
+                                      </td>
+                                      <td className="py-1 px-2 text-center font-mono font-bold text-slate-700 align-top whitespace-nowrap">
+                                        {String(it.quantity).padStart(2, '0')} {it.unit || 'Nos'}
+                                      </td>
+                                    </tr>
+                                  ))
+                                ) : (
+                                  <tr>
+                                    <td colSpan={3} className="py-2 text-center text-slate-400 text-[10.5px]">
+                                      No items listed for {model.name}
+                                    </td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+
+                            {/* Model Total Amount */}
+                            <div className="bg-blue-50/90 border-t border-blue-200 px-3 py-1 flex items-center justify-between">
+                              <span className="text-[10.5px] font-black uppercase tracking-wider text-blue-900">
+                                {model.name} — Total Proposal Amount:
+                              </span>
+                              <span className="text-sm font-black font-mono text-blue-900">
+                                ₹{(model.finalModelTotal || 0).toLocaleString('en-IN')}
+                              </span>
+                            </div>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+
+                    {/* Payment Terms & Advance Note (Only if filled) */}
+                    {(pdfPreviewQuotation.paymentDetails || pdfPreviewQuotation.advanceAmount) && (
+                      <div className="model-section px-2.5 py-1.5 rounded bg-slate-50/95 border border-slate-200 text-[10px] leading-snug space-y-0.5">
+                        <span className="font-bold text-slate-800 uppercase tracking-wider text-[9px] block">Payment Terms:</span>
+                        {pdfPreviewQuotation.paymentDetails && (
+                          <p className="text-slate-700">{pdfPreviewQuotation.paymentDetails}</p>
+                        )}
+                        {pdfPreviewQuotation.advanceAmount && (
+                          <p className="font-mono text-blue-800 font-bold">
+                            Required Advance Commitment: ₹{pdfPreviewQuotation.advanceAmount.toLocaleString('en-IN')}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Customer / Site Notes (Only if filled) */}
+                    {pdfPreviewQuotation.customerNotes && (
+                      <div className="model-section px-2.5 py-1.5 rounded bg-blue-50/50 border border-blue-100 text-[10px] leading-snug space-y-0.5">
+                        <span className="font-bold text-blue-900 text-[9px] uppercase tracking-wider block">Scope &amp; Site Notes:</span>
+                        <p className="text-slate-700 whitespace-pre-line">{pdfPreviewQuotation.customerNotes}</p>
+                      </div>
+                    )}
+
+                    {/* Terms & Authorized Signatory Block */}
+                    <div className="model-section border-t border-slate-200 pt-1.5 space-y-1.5">
+                      <div className="text-[9.5px] text-slate-600 leading-snug">
+                        <span className="font-bold text-slate-800 uppercase tracking-wider mr-1">Terms &amp; Conditions:</span>
+                        <span className="whitespace-pre-line font-sans text-slate-600">
+                          {pdfPreviewQuotation.termsAndConditions || adminSettings.quotationTerms || adminSettings.termsAndConditions}
+                        </span>
+                      </div>
+
+                      <div className="pt-1 flex items-end justify-between border-t border-slate-200">
+                        <div className="text-[9.5px] text-slate-500">
+                          <p>Accepted By Customer (Signature &amp; Date):</p>
+                          <div className="h-6 w-44 border-b border-dashed border-slate-400 mt-1" />
+                        </div>
+
+                        <div className="text-right text-[9.5px] text-slate-700">
+                          <p className="font-bold text-slate-800">For SPIDER GRID SOLUTIONS</p>
+                          <p className="italic text-slate-400 font-serif mt-2">Authorized Signatory · Madurai</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Full-Width Footer Aligned to Header Width */}
+                  {previewFooterImg ? (
+                    <div className="quotation-footer w-full shrink-0 bg-white m-0 p-0 mt-1">
+                      <img
+                        src={previewFooterImg}
+                        alt="Quotation Letterhead Footer"
+                        className="w-full h-auto block object-contain mx-auto"
+                      />
+                    </div>
+                  ) : !useLegacyFullBg ? (
+                    <div className="quotation-footer w-full bg-blue-950 text-white px-3 py-1.5 text-[9.5px] flex items-center justify-between shrink-0 mt-1">
+                      <span className="font-bold tracking-wide">SPIDER GRID SOLUTIONS · MADURAI</span>
+                      <span className="text-blue-200">Ph: +91 9176795665 · spidergridsolutions@gmail.com</span>
+                    </div>
+                  ) : (
+                    <div className="quotation-footer h-2 w-full bg-blue-950 shrink-0" />
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
+        </div>
+      </div>
+    )}
+    </>
   );
 };

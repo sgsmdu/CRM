@@ -1255,7 +1255,8 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
   });
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-150">
+    <>
+    <div className={printableInvoice ? 'no-print space-y-6 animate-in fade-in duration-150' : 'space-y-6 animate-in fade-in duration-150'}>
       
       {/* Top Banner */}
       <div className={`p-4 rounded-xl border flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 transition-colors ${
@@ -3652,359 +3653,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
         </div>
       )}
 
-      {/* Printable Invoice Voucher Slip Modal */}
-      {printableInvoice && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white text-slate-900 border rounded-2xl w-full max-w-xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-            <div className="px-6 py-3 border-b flex items-center justify-between shrink-0 bg-slate-50">
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Voucher Print Preview ({printableInvoice.invoiceNumber})
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => window.print()}
-                  className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg cursor-pointer shadow-xs"
-                >
-                  <Printer className="w-3.5 h-3.5" /> Print Thermal / A4
-                </button>
-                <button onClick={() => setPrintableInvoice(null)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Slip Paper View */}
-            <div className="p-8 overflow-y-auto space-y-5 text-xs leading-relaxed font-sans flex-1" id="invoiceSlip">
-              
-              {/* Slip Header - Firm Specific (SGS with GST vs Pandiyan Computers without GST) */}
-              {printableInvoice.billingFirm === 'pandiyan' ? (
-                // Pandiyan Computers (Non-GST Slip with Pandiyan Logo, Theme & Header)
-                (() => {
-                  const pThemeKey = printableInvoice.pandiyanTheme || adminSettings.pandiyanBillingTheme || 'warm_amber';
-                  const pTheme = PANDIYAN_THEMES[pThemeKey] || PANDIYAN_THEMES.warm_amber;
-                  return (
-                    <div className={`border-b-2 pb-4 ${pTheme.headerBorder}`}>
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                          <PandiyanLogo url={adminSettings.pandiyanLogoUrl} size="md" />
-                          <div>
-                            <h2 className={`text-lg font-black tracking-tight ${pTheme.primary}`}>
-                              {adminSettings.pandiyanFirmName || 'PANDIYAN COMPUTERS'}
-                            </h2>
-                            <p className="text-[11px] text-slate-700 font-medium">
-                              {adminSettings.pandiyanAddress || 'Shop No. 14, Simmakkal Main Road, Madurai - 625001'} · Phone: {adminSettings.pandiyanPhone || '+91 9176795665'}
-                            </p>
-                            {adminSettings.pandiyanEmail && (
-                              <p className="text-[10px] text-slate-500 font-mono">
-                                Email: {adminSettings.pandiyanEmail}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="text-right">
-                          <div className={`text-xs font-black uppercase tracking-wider px-2.5 py-1 rounded text-white ${pTheme.badgeBg}`}>
-                            {printableInvoice.type === 'invoice' ? 'SALES & ESTIMATE SLIP' : 'ESTIMATE / QUOTE'}
-                          </div>
-                          <div className="inline-block px-2 py-0.5 mt-1 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                            NON-GST COUNTER
-                          </div>
-                          <p className="text-[9px] text-slate-500 mt-0.5">Theme: {pTheme.name}</p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()
-              ) : (
-                // Spider Grid Solutions (SGS - GST Invoice with SGS Logo & Theme)
-                (() => {
-                  const sThemeKey = printableInvoice.theme || adminSettings.billingTheme || 'modern_navy';
-                  const sTheme = SGS_THEMES[sThemeKey] || SGS_THEMES.modern_navy;
-                  return (
-                    <div className={`border-b-2 pb-4 ${sTheme.headerBorder}`}>
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                          <SgsLogo url={adminSettings.workshopLogoUrl} size="md" />
-                          <div>
-                            <h2 className={`text-lg font-black tracking-tight ${sTheme.primary}`}>
-                              {adminSettings.workshopName || 'SPIDER GRID SOLUTIONS'}
-                            </h2>
-                            <p className="text-[11px] text-slate-600 font-medium">
-                              {adminSettings.workshopAddress || 'Madurai, Tamil Nadu'} · Phone: {adminSettings.workshopPhone || '+91 9176795665'}
-                            </p>
-                            {adminSettings.workshopGstin && (
-                              <p className="text-[10px] font-mono text-slate-500">
-                                GSTIN: <span className="font-bold text-slate-800">{adminSettings.workshopGstin}</span>
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="text-right">
-                          <div className={`text-xs font-black uppercase tracking-wider px-2.5 py-1 rounded text-white ${sTheme.badgeBg}`}>
-                            {printableInvoice.type === 'invoice' ? 'TAX INVOICE' : 'QUOTATION'}
-                          </div>
-                          <p className="text-[10px] text-slate-500 mt-1">Theme: {sTheme.name}</p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()
-              )}
-
-              {/* Meta details */}
-              <div className="flex justify-between text-xs pt-1 border-b pb-3">
-                <div>
-                  <p><strong>Billed To:</strong> {printableInvoice.customerName}</p>
-                  <p className="text-slate-600">Phone: {printableInvoice.customerPhone || 'N/A'}</p>
-                  <p className="text-slate-600">Location: {printableInvoice.customerArea || 'Madurai'}</p>
-                  {printableInvoice.customerGstin && (
-                    <p className="text-slate-700 font-mono">GSTIN: <strong>{printableInvoice.customerGstin}</strong></p>
-                  )}
-                  {printableInvoice.billingFirm !== 'pandiyan' && printableInvoice.placeOfSupply && (
-                    <p className="text-slate-600">Place of Supply: {stateNameForCode(printableInvoice.placeOfSupply) || printableInvoice.placeOfSupply} ({printableInvoice.placeOfSupply})</p>
-                  )}
-                </div>
-                <div className="text-right">
-                  <p><strong>Doc #:</strong> <span className="font-mono font-bold text-blue-700">{printableInvoice.invoiceNumber}</span></p>
-                  <p className="text-slate-600">Date: {printableInvoice.date}</p>
-                  {printableInvoice.type === 'invoice' && printableInvoice.dueDate && printableInvoice.grandTotal - printableInvoice.paidAmount > 0 && (
-                    <p className="text-rose-700 font-semibold">Due by: {printableInvoice.dueDate}</p>
-                  )}
-                  <p className="text-slate-600 font-mono">Job ID: {printableInvoice.jobCardId || 'Direct Billing'}</p>
-                </div>
-              </div>
-
-              {/* Items Table - With HSN column for SGS, without GST column for Pandiyan */}
-              <div className="overflow-x-auto scrollbar-thin">
-                <table className="w-full text-left text-xs border min-w-[500px]">
-                  <thead className="bg-slate-100 border-b text-[11px] font-bold">
-                    <tr>
-                      <th className="py-2 px-3">Description</th>
-                      {printableInvoice.billingFirm !== 'pandiyan' && (
-                        <th className="py-2 px-2 text-center">HSN/SAC</th>
-                      )}
-                      <th className="py-2 px-2 text-center">Qty</th>
-                      <th className="py-2 px-2 text-right">Rate (₹)</th>
-                      {printableInvoice.billingFirm !== 'pandiyan' && (
-                        <>
-                          <th className="py-2 px-2 text-center">GST %</th>
-                          <th className="py-2 px-2 text-right">GST (₹)</th>
-                        </>
-                      )}
-                      <th className="py-2 px-3 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {printableInvoice.items.map((it, idx) => {
-                      const itGst = it.gstPercent !== undefined ? it.gstPercent : (printableInvoice.billingFirm === 'pandiyan' ? 0 : printableInvoice.gstPercent);
-                      const itTax = it.gstAmount ?? (((it.amount || (it.rate * it.quantity)) * itGst) / 100);
-                      const itTotal = it.totalWithGst ?? (it.amount + itTax);
-                      return (
-                        <tr key={idx}>
-                          <td className="py-2 px-3 font-semibold whitespace-pre-line">{it.description}</td>
-                          {printableInvoice.billingFirm !== 'pandiyan' && (
-                            <td className="py-2 px-2 text-center font-mono text-[11px] text-blue-700">
-                              {it.hsnCode || '998713'}
-                            </td>
-                          )}
-                          <td className="py-2 px-2 text-center font-mono">{it.quantity}</td>
-                          <td className="py-2 px-2 text-right font-mono">₹{it.rate.toLocaleString('en-IN')}</td>
-                          {printableInvoice.billingFirm !== 'pandiyan' && (
-                            <>
-                              <td className="py-2 px-2 text-center font-mono text-blue-700 font-bold">{itGst}%</td>
-                              <td className="py-2 px-2 text-right font-mono text-slate-700">₹{itTax.toFixed(2)}</td>
-                            </>
-                          )}
-                          <td className="py-2 px-3 text-right font-mono font-bold">₹{itTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Summary Totals */}
-              <div className="flex justify-end pt-1">
-                <div className="w-72 space-y-1.5 text-xs">
-                  <div className="flex justify-between text-slate-600">
-                    <span>Taxable Value (Subtotal):</span>
-                    <span className="font-mono">₹{printableInvoice.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
-                  {printableInvoice.billingFirm !== 'pandiyan' && printableInvoice.taxAmount > 0 && (() => {
-                    const rows = Acc.taxByRate(printableInvoice).filter(r => r.tax > 0);
-                    const money = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                    const pct = (r: number, half: boolean) => (half ? r / 2 : r).toString();
-                    return (
-                      <>
-                        {rows.map(r => printableInvoice.isInterState ? (
-                          <div key={`i${r.rate}`} className="flex justify-between text-slate-600">
-                            <span>IGST ({pct(r.rate, false)}%):</span>
-                            <span className="font-mono">{money(r.igst)}</span>
-                          </div>
-                        ) : (
-                          <React.Fragment key={`c${r.rate}`}>
-                            <div className="flex justify-between text-slate-600">
-                              <span>CGST ({pct(r.rate, true)}%):</span>
-                              <span className="font-mono">{money(r.cgst)}</span>
-                            </div>
-                            <div className="flex justify-between text-slate-600">
-                              <span>SGST ({pct(r.rate, true)}%):</span>
-                              <span className="font-mono">{money(r.sgst)}</span>
-                            </div>
-                          </React.Fragment>
-                        ))}
-                        <div className="flex justify-between text-blue-700 font-semibold">
-                          <span>Total GST Amount:</span>
-                          <span className="font-mono">{money(printableInvoice.taxAmount)}</span>
-                        </div>
-                      </>
-                    );
-                  })()}
-                  {printableInvoice.discount !== undefined && printableInvoice.discount > 0 && (
-                    <div className="flex justify-between text-rose-600 font-semibold">
-                      <span>Discount:</span>
-                      <span className="font-mono">-₹{printableInvoice.discount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                    </div>
-                  )}
-                  {printableInvoice.roundOff !== undefined && printableInvoice.roundOff !== 0 && (
-                    <div className="flex justify-between text-slate-600 font-mono">
-                      <span>Round Off:</span>
-                      <span>{printableInvoice.roundOff > 0 ? '+' : ''}₹{printableInvoice.roundOff.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between font-bold text-sm border-t pt-1.5">
-                    <span>Grand Total:</span>
-                    <span className="font-mono">₹{printableInvoice.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
-                  <div className="flex justify-between text-emerald-700 font-bold">
-                    <span>Paid Amount:</span>
-                    <span className="font-mono">₹{printableInvoice.paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                  </div>
-                  {printableInvoice.grandTotal - printableInvoice.paidAmount > 0 && (
-                    <div className="flex justify-between text-rose-700 font-bold border-t border-dashed pt-1">
-                      <span>Balance Due:</span>
-                      <span className="font-mono">₹{(printableInvoice.grandTotal - printableInvoice.paidAmount).toLocaleString('en-IN')}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Amount in words */}
-              <p className="text-[11px] text-slate-700 border-y border-dashed py-1.5">
-                <strong>Amount in words:</strong> {amountInWords(printableInvoice.grandTotal)}
-              </p>
-
-              {/* HSN-wise tax summary (GST tax invoices) */}
-              {printableInvoice.billingFirm !== 'pandiyan' && printableInvoice.type === 'invoice' && printableInvoice.taxAmount > 0 && (() => {
-                const rows = Acc.hsnSummary(printableInvoice);
-                return (
-                  <table className="w-full text-[10px] border border-slate-200">
-                    <thead className="bg-slate-50 text-slate-600">
-                      <tr>
-                        <th className="text-left px-2 py-1">HSN / SAC</th>
-                        <th className="text-right px-2 py-1">Qty</th>
-                        <th className="text-right px-2 py-1">Taxable</th>
-                        <th className="text-right px-2 py-1">GST %</th>
-                        <th className="text-right px-2 py-1">Tax</th>
-                      </tr>
-                    </thead>
-                    <tbody className="font-mono">
-                      {rows.map(r => (
-                        <tr key={`${r.hsn}-${r.rate}`} className="border-t border-slate-100">
-                          <td className="px-2 py-1">{r.hsn}</td>
-                          <td className="px-2 py-1 text-right">{r.qty}</td>
-                          <td className="px-2 py-1 text-right">₹{r.taxable.toFixed(2)}</td>
-                          <td className="px-2 py-1 text-right">{r.rate}%</td>
-                          <td className="px-2 py-1 text-right">₹{r.tax.toFixed(2)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                );
-              })()}
-
-              {/* SGS Bank Account Details & UPI Section (Shown on Tax Invoices & Quotes) */}
-              {printableInvoice.billingFirm !== 'pandiyan' && adminSettings.bankAccountNumber && (
-                <div className="p-3 rounded-lg bg-blue-50/50 border border-blue-100 text-[11px] space-y-1">
-                  <p className="font-bold text-blue-900">🏦 Bank Account Transfer Details:</p>
-                  <div className="grid grid-cols-2 gap-x-3 text-slate-700 font-mono text-[10px]">
-                    <div>Bank: <strong className="font-sans">{adminSettings.bankName || 'HDFC Bank'}</strong></div>
-                    <div>A/C No: <strong>{adminSettings.bankAccountNumber}</strong></div>
-                    <div>IFSC: <strong>{adminSettings.bankIfsc || 'HDFC0001234'}</strong></div>
-                    <div>Branch: <strong className="font-sans">{adminSettings.bankBranch || 'Madurai'}</strong></div>
-                  </div>
-                </div>
-              )}
-
-              {/* Payment Details & UPI Reference */}
-              <div className="p-3 rounded-lg bg-slate-50 border text-[11px] space-y-1">
-                <p><strong>Payment Mode:</strong> <span className="uppercase font-semibold">{printableInvoice.paymentMode}</span></p>
-                {printableInvoice.paymentReference && (
-                  <p><strong>UPI Transaction / UTR Ref:</strong> <span className="font-mono font-bold text-blue-700">{printableInvoice.paymentReference}</span></p>
-                )}
-                {adminSettings.workshopUpiId && (
-                  <p className="text-slate-500 font-mono text-[10px]">
-                    Workshop UPI VPA: {adminSettings.workshopUpiId}
-                  </p>
-                )}
-              </div>
-
-              {/* Scan & pay the balance (UPI QR) */}
-              {printableInvoice.status !== 'cancelled' && adminSettings.workshopUpiId && isValidUpiId(adminSettings.workshopUpiId) && printableInvoice.grandTotal - printableInvoice.paidAmount > 0 && (
-                <div className="flex items-center gap-3 p-3 rounded-lg border border-emerald-200 bg-emerald-50/50">
-                  <UpiQr link={upiPayLink(
-                    adminSettings.workshopUpiId,
-                    printableInvoice.billingFirm === 'pandiyan' ? (adminSettings.pandiyanFirmName || 'Pandiyan Computers') : (adminSettings.workshopName || 'Spider Grid Solutions'),
-                    Acc.round2(printableInvoice.grandTotal - printableInvoice.paidAmount),
-                    printableInvoice.invoiceNumber
-                  )} />
-                  <div className="text-[11px] text-slate-700">
-                    <p className="font-bold text-emerald-800">Scan to pay ₹{Acc.round2(printableInvoice.grandTotal - printableInvoice.paidAmount).toLocaleString('en-IN')}</p>
-                    <p>GPay · PhonePe · Paytm · any UPI app</p>
-                    <p className="font-mono text-slate-500">{adminSettings.workshopUpiId}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Terms and Conditions + Rubber Stamp PNG & Authorized Signatory */}
-              <div className="border-t pt-3 flex flex-col sm:flex-row items-end justify-between gap-4">
-                <div className="flex-1 text-[10px] text-slate-600 space-y-0.5">
-                  <p className="font-bold text-slate-800 uppercase tracking-wider">Terms & Conditions:</p>
-                  <p className="whitespace-pre-line leading-relaxed">
-                    {printableInvoice.billingFirm === 'pandiyan'
-                      ? (adminSettings.pandiyanTerms || 'Goods once sold cannot be returned. Warranty valid per manufacturer.')
-                      : (adminSettings.termsAndConditions || '1. Warranty valid only against physical invoice. 2. Spares carry manufacturer guarantee. 3. Subject to Madurai jurisdiction.')}
-                  </p>
-                  {printableInvoice.notes && (
-                    <p className="italic text-slate-500 pt-1">Note: {printableInvoice.notes}</p>
-                  )}
-                </div>
-
-                {/* Rubber Stamp and Authorized Signature Box */}
-                <div className="w-52 text-center shrink-0 space-y-1">
-                  <div className="relative h-24 border border-dashed border-slate-300 rounded-lg flex items-center justify-center bg-slate-50/50 p-2 overflow-hidden">
-                    {printableInvoice.billingFirm === 'pandiyan' ? (
-                      <PandiyanStamp url={adminSettings.pandiyanRubberStampUrl} />
-                    ) : (
-                      <SgsStamp url={adminSettings.rubberStampUrl} />
-                    )}
-                  </div>
-                  <p className="text-[10px] font-bold text-slate-800">
-                    For {printableInvoice.billingFirm === 'pandiyan' ? (adminSettings.pandiyanFirmName || 'Pandiyan Computers') : (adminSettings.workshopName || 'Spider Grid Solutions')}
-                  </p>
-                  <p className="text-[9px] text-slate-500 uppercase tracking-wider">Authorized Signatory</p>
-                </div>
-              </div>
-
-              {/* Footer Note */}
-              <div className="text-center text-[10px] text-slate-400 border-t pt-2 space-y-0.5">
-                <p className="font-medium">Spider Grid Solutions · Computer, Laptop, CCTV & Network Sales & Service Center · Madurai</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Toast Notification (replaced modal here - rendered cleanly outside no-print below) */}
 
       {/* Toast Notification */}
       {convertToast && (
@@ -4113,5 +3762,400 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
       />
 
     </div>
+
+    {/* Printable Invoice / Quote Modal (A4 Single-Page Compact Print Layout) */}
+    {printableInvoice && (
+      <div className="print-modal-overlay fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+        <div className="print-modal-dialog bg-white text-slate-900 border rounded-2xl w-full max-w-3xl max-h-[94vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+          {/* Action Toolbar (Hidden on Print) */}
+          <div className="no-print px-5 py-3 border-b flex items-center justify-between shrink-0 bg-slate-100">
+            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+              {printableInvoice.type === 'quotation' ? 'Quotation' : 'Bill / Invoice'} Print Preview ({printableInvoice.invoiceNumber})
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => window.print()}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg cursor-pointer shadow-xs"
+              >
+                <Printer className="w-3.5 h-3.5" /> Print A4 / Save PDF
+              </button>
+              <button onClick={() => setPrintableInvoice(null)} className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Paper Sheet */}
+          <div className="print-modal-scroll p-3 sm:p-5 overflow-y-auto flex-1 bg-slate-200/60 flex justify-center print:p-0 print:bg-white">
+            <div
+              id="invoiceSlip"
+              className="quotation-print bg-white shadow-xl rounded-sm w-full max-w-[794px] p-5 sm:p-6 print:p-0 text-[11px] leading-snug font-sans text-slate-900 print:shadow-none print:w-[194mm] print:max-w-none space-y-2.5 print:space-y-1.5"
+            >
+              {/* Slip Header */}
+              {printableInvoice.billingFirm === 'pandiyan' ? (
+                (() => {
+                  const pThemeKey = printableInvoice.pandiyanTheme || adminSettings.pandiyanBillingTheme || 'warm_amber';
+                  const pTheme = PANDIYAN_THEMES[pThemeKey] || PANDIYAN_THEMES.warm_amber;
+                  return (
+                    <div className={`quotation-header border-b-2 pb-2 ${pTheme.headerBorder}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <PandiyanLogo url={adminSettings.pandiyanLogoUrl} size="md" />
+                          <div className="min-w-0">
+                            <h2 className={`text-base font-black tracking-tight ${pTheme.primary}`}>
+                              {adminSettings.pandiyanFirmName || 'PANDIYAN COMPUTERS'}
+                            </h2>
+                            <p className="text-[10.5px] text-slate-700 font-medium leading-tight">
+                              {adminSettings.pandiyanAddress || 'Shop No. 14, Simmakkal Main Road, Madurai - 625001'} · Ph: {adminSettings.pandiyanPhone || '+91 9176795665'}
+                            </p>
+                            {adminSettings.pandiyanEmail && (
+                              <p className="text-[9.5px] text-slate-500 font-mono">{adminSettings.pandiyanEmail}</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <div className={`text-[11px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded text-white ${pTheme.badgeBg}`}>
+                            {printableInvoice.type === 'invoice' ? 'SALES & ESTIMATE SLIP' : 'ESTIMATE / QUOTE'}
+                          </div>
+                          <div className="inline-block px-2 py-0.5 mt-1 rounded text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                            NON-GST COUNTER
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : printableInvoice.type === 'quotation' && adminSettings.quotationHeaderImageUrl ? (
+                /* SGS Quote with Full-Width Uploaded Quotation Header */
+                <div className="space-y-1.5">
+                  <div className="quotation-header w-full bg-white m-0 p-0">
+                    <img
+                      src={adminSettings.quotationHeaderImageUrl}
+                      alt="Quotation Letterhead Header"
+                      className="w-full h-auto block object-contain mx-auto"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between border-b border-slate-300 pb-1">
+                    <span className="inline-block px-2.5 py-0.5 text-[10.5px] font-black uppercase tracking-wider rounded bg-blue-900 text-white">
+                      QUOTATION {printableInvoice.gstPercent > 0 ? '(GST)' : ''}
+                    </span>
+                    {adminSettings.workshopGstin && (
+                      <span className="text-[10px] font-mono text-slate-600">
+                        GSTIN: <strong className="text-slate-900">{adminSettings.workshopGstin}</strong>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* Standard SGS GST Tax Invoice / Quote Header */
+                (() => {
+                  const sThemeKey = printableInvoice.theme || adminSettings.billingTheme || 'modern_navy';
+                  const sTheme = SGS_THEMES[sThemeKey] || SGS_THEMES.modern_navy;
+                  return (
+                    <div className={`quotation-header border-b-2 pb-2 ${sTheme.headerBorder}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <SgsLogo url={adminSettings.workshopLogoUrl} size="md" />
+                          <div className="min-w-0">
+                            <h2 className={`text-base font-black tracking-tight ${sTheme.primary}`}>
+                              {adminSettings.workshopName || 'SPIDER GRID SOLUTIONS'}
+                            </h2>
+                            <p className="text-[10.5px] text-slate-600 font-medium leading-tight">
+                              {adminSettings.workshopAddress || 'Madurai, Tamil Nadu'} · Ph: {adminSettings.workshopPhone || '+91 9176795665'}
+                            </p>
+                            {adminSettings.workshopGstin && (
+                              <p className="text-[10px] font-mono text-slate-500">
+                                GSTIN: <span className="font-bold text-slate-800">{adminSettings.workshopGstin}</span>
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <div className={`text-[11px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded text-white ${sTheme.badgeBg}`}>
+                            {printableInvoice.type === 'invoice' ? 'TAX INVOICE' : 'QUOTATION'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
+
+              {/* Compact Customer & Document Details */}
+              <div className="px-2.5 py-1.5 rounded bg-slate-50 border border-slate-200 grid grid-cols-12 gap-2 text-[10.5px] leading-tight">
+                <div className="col-span-7 min-w-0 space-y-0.5">
+                  <p className="break-words">
+                    <span className="text-[9.5px] uppercase font-bold text-slate-500 mr-1">Billed To:</span>
+                    <strong className="text-xs text-slate-900">{printableInvoice.customerName}</strong>
+                  </p>
+                  <p className="text-slate-600">
+                    Ph: <span className="font-mono font-semibold">{printableInvoice.customerPhone || 'N/A'}</span> · {printableInvoice.customerArea || 'Madurai'}
+                  </p>
+                  {printableInvoice.customerGstin && (
+                    <p className="text-slate-700 font-mono text-[10px]">GSTIN: <strong>{printableInvoice.customerGstin}</strong></p>
+                  )}
+                  {printableInvoice.billingFirm !== 'pandiyan' && printableInvoice.placeOfSupply && (
+                    <p className="text-slate-600 text-[10px]">
+                      Place of Supply: {stateNameForCode(printableInvoice.placeOfSupply) || printableInvoice.placeOfSupply} ({printableInvoice.placeOfSupply})
+                    </p>
+                  )}
+                </div>
+                <div className="col-span-5 text-right space-y-0.5">
+                  <p>
+                    <span className="text-[9.5px] uppercase font-bold text-slate-500 mr-1">Doc #:</span>
+                    <span className="font-mono font-black text-blue-700">{printableInvoice.invoiceNumber}</span>
+                  </p>
+                  <p className="text-slate-600 font-mono text-[10px]">Date: {printableInvoice.date}</p>
+                  {printableInvoice.type === 'invoice' && printableInvoice.dueDate && printableInvoice.grandTotal - printableInvoice.paidAmount > 0 && (
+                    <p className="text-rose-700 font-semibold text-[10px]">Due by: {printableInvoice.dueDate}</p>
+                  )}
+                  <p className="text-slate-600 font-mono text-[10px]">Job ID: {printableInvoice.jobCardId || 'Direct Billing'}</p>
+                </div>
+              </div>
+
+              {/* Items Table */}
+              <div className="overflow-x-auto print:overflow-visible scrollbar-thin">
+                <table className="w-full text-left text-[10.5px] leading-snug border border-slate-300 border-collapse">
+                  <thead className="bg-slate-100 border-b border-slate-300 text-[9.5px] font-bold uppercase text-slate-700">
+                    <tr>
+                      <th className="py-1 px-2">Description</th>
+                      {printableInvoice.billingFirm !== 'pandiyan' && (
+                        <th className="py-1 px-1.5 text-center w-16">HSN/SAC</th>
+                      )}
+                      <th className="py-1 px-1.5 text-center w-12">Qty</th>
+                      <th className="py-1 px-1.5 text-right w-20">Rate (₹)</th>
+                      {printableInvoice.billingFirm !== 'pandiyan' && (
+                        <>
+                          <th className="py-1 px-1.5 text-center w-12">GST %</th>
+                          <th className="py-1 px-1.5 text-right w-18">GST (₹)</th>
+                        </>
+                      )}
+                      <th className="py-1 px-2 text-right w-24">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {printableInvoice.items.map((it, idx) => {
+                      const itGst = it.gstPercent !== undefined ? it.gstPercent : (printableInvoice.billingFirm === 'pandiyan' ? 0 : printableInvoice.gstPercent);
+                      const itTax = it.gstAmount ?? (((it.amount || (it.rate * it.quantity)) * itGst) / 100);
+                      const itTotal = it.totalWithGst ?? (it.amount + itTax);
+                      return (
+                        <tr key={idx}>
+                          <td className="py-1 px-2 font-semibold whitespace-pre-line break-words">{it.description}</td>
+                          {printableInvoice.billingFirm !== 'pandiyan' && (
+                            <td className="py-1 px-1.5 text-center font-mono text-[10px] text-blue-700 align-top">
+                              {it.hsnCode || '998713'}
+                            </td>
+                          )}
+                          <td className="py-1 px-1.5 text-center font-mono align-top">{it.quantity}</td>
+                          <td className="py-1 px-1.5 text-right font-mono align-top">₹{it.rate.toLocaleString('en-IN')}</td>
+                          {printableInvoice.billingFirm !== 'pandiyan' && (
+                            <>
+                              <td className="py-1 px-1.5 text-center font-mono text-blue-700 font-bold align-top">{itGst}%</td>
+                              <td className="py-1 px-1.5 text-right font-mono text-slate-700 align-top">₹{itTax.toFixed(2)}</td>
+                            </>
+                          )}
+                          <td className="py-1 px-2 text-right font-mono font-bold align-top">
+                            ₹{itTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Totals & HSN/Payment Summary Grid */}
+              <div className="model-section grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-start">
+                {/* Left Column: Amount in words, HSN Summary, Payment Ref */}
+                <div className="sm:col-span-7 space-y-1.5">
+                  <p className="text-[10px] text-slate-700 border border-slate-200 rounded px-2 py-1 bg-slate-50">
+                    <strong>Amount in words:</strong> {amountInWords(printableInvoice.grandTotal)}
+                  </p>
+
+                  {printableInvoice.billingFirm !== 'pandiyan' && printableInvoice.type === 'invoice' && printableInvoice.taxAmount > 0 && (() => {
+                    const rows = Acc.hsnSummary(printableInvoice);
+                    return (
+                      <table className="w-full text-[9.5px] border border-slate-200 border-collapse">
+                        <thead className="bg-slate-50 text-slate-600">
+                          <tr>
+                            <th className="text-left px-1.5 py-0.5">HSN/SAC</th>
+                            <th className="text-right px-1.5 py-0.5">Qty</th>
+                            <th className="text-right px-1.5 py-0.5">Taxable</th>
+                            <th className="text-right px-1.5 py-0.5">GST %</th>
+                            <th className="text-right px-1.5 py-0.5">Tax</th>
+                          </tr>
+                        </thead>
+                        <tbody className="font-mono">
+                          {rows.map(r => (
+                            <tr key={`${r.hsn}-${r.rate}`} className="border-t border-slate-100">
+                              <td className="px-1.5 py-0.5">{r.hsn}</td>
+                              <td className="px-1.5 py-0.5 text-right">{r.qty}</td>
+                              <td className="px-1.5 py-0.5 text-right">₹{r.taxable.toFixed(2)}</td>
+                              <td className="px-1.5 py-0.5 text-right">{r.rate}%</td>
+                              <td className="px-1.5 py-0.5 text-right">₹{r.tax.toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    );
+                  })()}
+
+                  {printableInvoice.billingFirm !== 'pandiyan' && adminSettings.bankAccountNumber && (
+                    <div className="px-2 py-1 rounded bg-blue-50/50 border border-blue-100 text-[9.5px]">
+                      <span className="font-bold text-blue-900">Bank Transfer: </span>
+                      <span className="text-slate-700">
+                        {adminSettings.bankName || 'HDFC Bank'} · A/C: <strong className="font-mono">{adminSettings.bankAccountNumber}</strong> · IFSC: <strong className="font-mono">{adminSettings.bankIfsc || 'HDFC0001234'}</strong> ({adminSettings.bankBranch || 'Madurai'})
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="px-2 py-1 rounded bg-slate-50 border border-slate-200 text-[9.5px] flex flex-wrap gap-x-3 gap-y-0.5">
+                    <span><strong>Mode:</strong> <span className="uppercase font-semibold">{printableInvoice.paymentMode}</span></span>
+                    {printableInvoice.paymentReference && (
+                      <span><strong>Ref:</strong> <span className="font-mono font-bold text-blue-700">{printableInvoice.paymentReference}</span></span>
+                    )}
+                    {adminSettings.workshopUpiId && (
+                      <span className="text-slate-500 font-mono">UPI: {adminSettings.workshopUpiId}</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Right Column: Summary Totals */}
+                <div className="sm:col-span-5 p-2 rounded border border-slate-200 bg-slate-50/60 space-y-1 text-[10.5px]">
+                  <div className="flex justify-between text-slate-600">
+                    <span>Taxable Value:</span>
+                    <span className="font-mono">₹{printableInvoice.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                  {printableInvoice.billingFirm !== 'pandiyan' && printableInvoice.taxAmount > 0 && (() => {
+                    const rows = Acc.taxByRate(printableInvoice).filter(r => r.tax > 0);
+                    const money = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                    const pct = (r: number, half: boolean) => (half ? r / 2 : r).toString();
+                    return (
+                      <>
+                        {rows.map(r => printableInvoice.isInterState ? (
+                          <div key={`i${r.rate}`} className="flex justify-between text-slate-600">
+                            <span>IGST ({pct(r.rate, false)}%):</span>
+                            <span className="font-mono">{money(r.igst)}</span>
+                          </div>
+                        ) : (
+                          <React.Fragment key={`c${r.rate}`}>
+                            <div className="flex justify-between text-slate-600">
+                              <span>CGST ({pct(r.rate, true)}%):</span>
+                              <span className="font-mono">{money(r.cgst)}</span>
+                            </div>
+                            <div className="flex justify-between text-slate-600">
+                              <span>SGST ({pct(r.rate, true)}%):</span>
+                              <span className="font-mono">{money(r.sgst)}</span>
+                            </div>
+                          </React.Fragment>
+                        ))}
+                        <div className="flex justify-between text-blue-700 font-semibold">
+                          <span>Total GST:</span>
+                          <span className="font-mono">{money(printableInvoice.taxAmount)}</span>
+                        </div>
+                      </>
+                    );
+                  })()}
+                  {printableInvoice.discount !== undefined && printableInvoice.discount > 0 && (
+                    <div className="flex justify-between text-rose-600 font-semibold">
+                      <span>Discount:</span>
+                      <span className="font-mono">-₹{printableInvoice.discount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+                  {printableInvoice.roundOff !== undefined && printableInvoice.roundOff !== 0 && (
+                    <div className="flex justify-between text-slate-600 font-mono">
+                      <span>Round Off:</span>
+                      <span>{printableInvoice.roundOff > 0 ? '+' : ''}₹{printableInvoice.roundOff.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between font-black text-xs border-t border-slate-300 pt-1 text-slate-900">
+                    <span>Grand Total:</span>
+                    <span className="font-mono">₹{printableInvoice.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between text-emerald-700 font-bold">
+                    <span>Paid Amount:</span>
+                    <span className="font-mono">₹{printableInvoice.paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                  {printableInvoice.grandTotal - printableInvoice.paidAmount > 0 && (
+                    <div className="flex justify-between text-rose-700 font-bold border-t border-dashed border-slate-300 pt-0.5">
+                      <span>Balance Due:</span>
+                      <span className="font-mono">₹{(printableInvoice.grandTotal - printableInvoice.paidAmount).toLocaleString('en-IN')}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Scan & Pay QR (when balance due) */}
+              {printableInvoice.status !== 'cancelled' && adminSettings.workshopUpiId && isValidUpiId(adminSettings.workshopUpiId) && printableInvoice.grandTotal - printableInvoice.paidAmount > 0 && (
+                <div className="model-section flex items-center gap-2.5 p-2 rounded border border-emerald-200 bg-emerald-50/50">
+                  <UpiQr link={upiPayLink(
+                    adminSettings.workshopUpiId,
+                    printableInvoice.billingFirm === 'pandiyan' ? (adminSettings.pandiyanFirmName || 'Pandiyan Computers') : (adminSettings.workshopName || 'Spider Grid Solutions'),
+                    Acc.round2(printableInvoice.grandTotal - printableInvoice.paidAmount),
+                    printableInvoice.invoiceNumber
+                  )} />
+                  <div className="text-[10px] text-slate-700 leading-tight">
+                    <p className="font-bold text-emerald-800">Scan to pay ₹{Acc.round2(printableInvoice.grandTotal - printableInvoice.paidAmount).toLocaleString('en-IN')}</p>
+                    <p>GPay · PhonePe · Paytm · any UPI app</p>
+                    <p className="font-mono text-slate-500">{adminSettings.workshopUpiId}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Terms & Authorized Signatory Block */}
+              <div className="model-section border-t border-slate-200 pt-1.5 flex flex-row items-end justify-between gap-4">
+                <div className="flex-1 text-[9.5px] text-slate-600 leading-snug space-y-0.5">
+                  <p className="font-bold text-slate-800 uppercase tracking-wider">Terms & Conditions:</p>
+                  <p className="whitespace-pre-line">
+                    {printableInvoice.billingFirm === 'pandiyan'
+                      ? (adminSettings.pandiyanTerms || 'Goods once sold cannot be returned. Warranty valid per manufacturer.')
+                      : (adminSettings.termsAndConditions || '1. Warranty valid only against physical invoice. 2. Spares carry manufacturer guarantee. 3. Subject to Madurai jurisdiction.')}
+                  </p>
+                  {printableInvoice.notes && (
+                    <p className="italic text-slate-500">Note: {printableInvoice.notes}</p>
+                  )}
+                </div>
+
+                <div className="w-40 text-center shrink-0 space-y-0.5">
+                  <div className="relative h-14 border border-dashed border-slate-300 rounded flex items-center justify-center bg-slate-50/50 p-1 overflow-hidden">
+                    {printableInvoice.billingFirm === 'pandiyan' ? (
+                      <PandiyanStamp url={adminSettings.pandiyanRubberStampUrl} />
+                    ) : (
+                      <SgsStamp url={adminSettings.rubberStampUrl} />
+                    )}
+                  </div>
+                  <p className="text-[9.5px] font-bold text-slate-800 leading-tight">
+                    For {printableInvoice.billingFirm === 'pandiyan' ? (adminSettings.pandiyanFirmName || 'Pandiyan Computers') : (adminSettings.workshopName || 'Spider Grid Solutions')}
+                  </p>
+                  <p className="text-[8.5px] text-slate-500 uppercase tracking-wider">Authorized Signatory</p>
+                </div>
+              </div>
+
+              {/* Footer (Aligned to Header Width) */}
+              {printableInvoice.billingFirm !== 'pandiyan' && printableInvoice.type === 'quotation' && adminSettings.quotationFooterImageUrl ? (
+                <div className="quotation-footer w-full bg-white m-0 p-0">
+                  <img
+                    src={adminSettings.quotationFooterImageUrl}
+                    alt="Quotation Letterhead Footer"
+                    className="w-full h-auto block object-contain mx-auto"
+                  />
+                </div>
+              ) : (
+                <div className="quotation-footer text-center text-[9.5px] text-slate-500 border-t border-slate-200 pt-1">
+                  <p className="font-medium">
+                    {printableInvoice.billingFirm === 'pandiyan'
+                      ? `${adminSettings.pandiyanFirmName || 'Pandiyan Computers'} · Madurai · Ph: ${adminSettings.pandiyanPhone || '+91 9176795665'}`
+                      : `${adminSettings.workshopName || 'Spider Grid Solutions'} · Computer, Laptop, CCTV & Network Sales & Service Center · Madurai`}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 };

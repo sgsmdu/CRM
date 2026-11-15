@@ -212,7 +212,7 @@ function SgsAppContent() {
       />
 
       {/* Main Content Area (offset by left sidebar width) */}
-      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 w-full max-w-full overflow-x-hidden ${
+      <div className={`flex-1 flex flex-col min-w-0 transition-all duration-300 w-full max-w-full overflow-x-hidden print:pl-0 print:overflow-visible ${
         isSidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'
       }`}>
         {/* Top Header Bar */}
@@ -228,7 +228,7 @@ function SgsAppContent() {
         />
 
         {/* Main View Container */}
-        <main className="flex-1 w-full mx-auto px-2.5 sm:px-4 lg:px-8 py-4 sm:py-6 max-w-7xl overflow-x-hidden">
+        <main className="flex-1 w-full mx-auto px-2.5 sm:px-4 lg:px-8 py-4 sm:py-6 max-w-7xl overflow-x-hidden print:p-0 print:m-0 print:max-w-none print:overflow-visible">
         {activeTab === 'dashboard' && (
           <DashboardOverview
             onNavigate={handleTabChange}
@@ -390,7 +390,7 @@ function SgsAppContent() {
       />
 
       {/* Footer */}
-      <footer className={`mt-auto border-t py-6 px-4 lg:px-8 text-xs transition-colors ${
+      <footer className={`no-print print:hidden print-chrome mt-auto border-t py-6 px-4 lg:px-8 text-xs transition-colors ${
         isDark ? 'border-slate-900 bg-[#060a14] text-slate-500' : 'border-slate-200 bg-white text-slate-600'
       }`}>
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -412,7 +412,7 @@ function SgsAppContent() {
 
       {/* Exit Warning Toast */}
       {exitToast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-slate-900/95 text-white border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs font-semibold flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
+        <div className="no-print print:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-slate-900/95 text-white border border-slate-700/80 shadow-2xl backdrop-blur-md text-xs font-semibold flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
           <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
           <span>{exitToast}</span>
         </div>
