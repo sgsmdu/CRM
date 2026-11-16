@@ -118,7 +118,25 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
   // Geolocation fetching state
   const [isGettingGps, setIsGettingGps] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
+  
+// Phone contact picker (Android Chrome only)
+  const canPickPhoneContacts =
+    typeof navigator !== 'undefined' && 'contacts' in navigator && 'ContactsManager' in window;
 
+  const pickFromPhoneContacts = async () => {
+    try {
+      const picked = await (navigator as any).contacts.select(['name', 'tel'], { multiple: false });
+      if (!picked || picked.length === 0) return;
+      const c = picked[0];
+      const name: string = (c.name && c.name[0]) || '';
+      const digits: string = ((c.tel && c.tel[0]) || '').replace(/\D/g, '');
+      const phone = digits.length > 10 ? digits.slice(-10) : digits;
+      setFormData(prev => ({ ...prev, name: name || prev.name, phone: phone || prev.phone }));
+    } catch (e) {
+      console.warn('Contact picker cancelled or failed:', e);
+    }
+  };
+  
   // Extract unique areas, references, about categories
   const areas = useMemo(() => {
     const list = Array.from(new Set(customers.map(c => c.area).filter(Boolean)));
@@ -801,8 +819,18 @@ export const CustomerDirectory: React.FC<CustomerDirectoryProps> = ({
             </div>
 
             <form onSubmit={handleFormSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+              {canPickPhoneContacts && (
+                <button
+                  type="button"
+                  onClick={pickFromPhoneContacts}
+                  className="w-full rounded-lg px-3 py-2 text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700"
+                >
+                  Pick from phone contacts
+                </button>
+              )}
+
               <div>
-                <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                <label className={`block text-xs font-semibold mb-1 ...`}>
                   Customer / Business Name *
                 </label>
                 <input
