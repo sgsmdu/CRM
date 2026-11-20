@@ -555,15 +555,353 @@ export function findDuplicateVendorBill(
   );
 }
 
+export const EMPTY_LEDGER: LedgerState = {
+  inventory: [],
+  stockTx: [],
+  cashFlow: [],
+  invoices: [],
+  vendorBills: [],
+};
+
+/**
+ * Determines whether a vendor purchase bill is a GST bill eligible for Stock & Parts Inventory sync.
+ * IMPORTANT: Never infer GST bill type from default item `gstPercent` alone.
+ * Explicit `isGstBill` boolean always wins; legacy bills without `isGstBill` check actual taxAmount/gstAmount > 0.
+ */
+export function isVendorBillGst(bill: Pick<VendorBill, 'isGstBill' | 'taxAmount' | 'items'>): boolean {
+  if (bill.isGstBill !== undefined) return Boolean(bill.isGstBill);
+  if ((Number(bill.taxAmount) || 0) > 0) return true;
+  return (bill.items || []).some(it => (Number(it.gstAmount) || 0) > 0);
+}
+
+/** Net stock quantity currently attributed to a specific vendor bill across all in/out audit transactions. */
+function netBillStockByItem(stockTx: StockTransaction[], billId: string): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const t of stockTx) {
+    if (t.referenceBillId !== billId) continue;
+    const delta = t.type === 'in' ? Number(t.quantity) || 0 : -(Number(t.quantity) || 0);
+    m.set(t.itemId, round2((m.get(t.itemId) || 0) + delta));
+  }
+  return m;
+}
+
+function stockInputsSignature(bill: Pick<VendorBill, 'items' | 'discount'>): string {
+  const itemsSig = (bill.items || [])
+    .filter(it => it.itemName?.trim() && (Number(it.quantity) || 0) > 0)
+    .map(it => ({
+      n: normName(it.itemName),
+      q: round2(Number(it.quantity) || 0),
+      c: round2(Number(it.unitCost) || 0),
+      g: round2(Number(it.gstPercent) || 0),
+      m: it.matchedInventoryId || '',
+      s: it.syncMode || 'merge_existing',
+    }));
+  return JSON.stringify({ d: round2(Number(bill.discount) || 0), items: itemsSig });
+}
+
+function resolveBillLandedBase(bill: VendorBill, item: VendorBillItem): number {
+  const gross = (bill.items || []).reduce(
+    (sum, it) => sum + (it.totalWithGst ?? (it.total || 0) + (it.gstAmount || 0)),
+    0
+  );
+  const discountRatio = bill.discount && gross > 0 ? Math.max(0, 1 - bill.discount / gross) : 1;
+  return round2((Number(item.unitCost) || 0) * discountRatio);
+}
+
+function applyVendorBillStockItems(s: LedgerState, bill: VendorBill, itemsToApply: VendorBillItem[]): LedgerState {
+  let st = s;
+  for (const item of itemsToApply) {
+    const qty = Number(item.quantity) || 0;
+    if (qty <= 0 || !item.itemName?.trim()) continue;
+    const landedBase = resolveBillLandedBase(bill, item);
+    const gstPct = item.gstPercent ?? 18;
+
+    const target = item.matchedInventoryId
+      ? st.inventory.find(i => i.id === item.matchedInventoryId)
+      : item.syncMode !== 'create_separate'
+        ? st.inventory.find(i => normName(i.name) === normName(item.itemName))
+        : undefined;
+
+    if (target && item.syncMode !== 'create_separate') {
+      const newStock = target.currentStock + qty;
+      // weighted-average cost so profit on later sales is right
+      const newCost =
+        target.currentStock > 0
+          ? round2((target.currentStock * target.unitCost + qty * landedBase) / newStock)
+          : landedBase;
+      st = {
+        ...st,
+        inventory: st.inventory.map(i =>
+          i.id === target.id
+            ? {
+                ...i,
+                unitCost: newCost,
+                unitPrice: i.unitPrice > 0 ? i.unitPrice : suggestedSellingPrice(landedBase, gstPct),
+                hsnCode: i.hsnCode || item.hsnCode,
+                vendorBillId: bill.id,
+                vendorName: bill.vendorName,
+                vendorInvoiceNumber: bill.invoiceNumber,
+                vendorBillDate: bill.invoiceDate,
+              }
+            : i
+        ),
+      };
+      st = moveStock(st, target.id, 'in', qty, {
+        reason: `Vendor Purchase (${bill.vendorName} - Inv #${bill.invoiceNumber})`,
+        date: bill.invoiceDate,
+        referenceBillId: bill.id,
+      });
+    } else {
+      const created: InventoryItem = {
+        id: uid('item'),
+        name: item.itemName.trim(),
+        category: 'general',
+        currentStock: 0,
+        minStockAlert: 2,
+        unitCost: landedBase,
+        unitPrice: suggestedSellingPrice(landedBase, gstPct),
+        sku: `SP-${Date.now().toString().slice(-5)}${Math.floor(Math.random() * 90 + 10)}`,
+        location: 'Main Shelf',
+        hsnCode: item.hsnCode || '8471',
+        vendorBillId: bill.id,
+        vendorName: bill.vendorName,
+        vendorInvoiceNumber: bill.invoiceNumber,
+        vendorBillDate: bill.invoiceDate,
+        updatedAt: todayLocal(),
+      };
+      st = { ...st, inventory: [created, ...st.inventory] };
+      st = moveStock(st, created.id, 'in', qty, {
+        reason: `Vendor Bill ${bill.invoiceNumber}`,
+        date: bill.invoiceDate,
+        referenceBillId: bill.id,
+      });
+    }
+  }
+  return st;
+}
+
+function applyVendorBillStockIn(s: LedgerState, bill: VendorBill): LedgerState {
+  return applyVendorBillStockItems(s, bill, bill.items || []);
+}
+
+/**
+ * Safely reverses a bill's net stock movement during edit (e.g. GST -> Without GST),
+ * clamping to available currentStock so subsequently sold/adjusted items are never damaged,
+ * and appending an audit StockTransaction rather than deleting history.
+ */
+function reverseVendorBillStockForEdit(s: LedgerState, bill: VendorBill, reason: string): LedgerState {
+  const netByItem = netBillStockByItem(s.stockTx, bill.id);
+  let st = s;
+
+  netByItem.forEach((netQty, itemId) => {
+    if (netQty <= 0) return;
+    const item = st.inventory.find(i => i.id === itemId);
+    if (!item) return;
+
+    const available = Math.max(0, Number(item.currentStock) || 0);
+    const safeReverseQty = round2(Math.min(available, netQty));
+    const shortfall = round2(netQty - safeReverseQty);
+    const auditNote =
+      shortfall > 0
+        ? `${reason} (reversed ${safeReverseQty} of ${netQty}; ${shortfall} already sold/adjusted)`
+        : reason;
+
+    if (safeReverseQty > 0) {
+      const nextStock = round2(Math.max(0, available - safeReverseQty));
+      const tx: StockTransaction = {
+        id: uid('st'),
+        itemId,
+        itemName: item.name,
+        type: 'out',
+        quantity: safeReverseQty,
+        date: todayLocal(),
+        reason: auditNote,
+        referenceBillId: bill.id,
+      };
+      st = {
+        ...st,
+        inventory: st.inventory.map(i => (i.id === itemId ? { ...i, currentStock: nextStock, updatedAt: todayLocal() } : i)),
+        stockTx: [tx, ...st.stockTx],
+      };
+    } else {
+      // All units were already sold/adjusted; record audit trail with 0 quantity so stock is never corrupted
+      const tx: StockTransaction = {
+        id: uid('st'),
+        itemId,
+        itemName: item.name,
+        type: 'out',
+        quantity: 0,
+        date: todayLocal(),
+        reason: `${reason} (0 in stock — ${netQty} already sold/adjusted; stock unchanged)`,
+        referenceBillId: bill.id,
+      };
+      st = { ...st, stockTx: [tx, ...st.stockTx] };
+    }
+  });
+
+  return st;
+}
+
+/**
+ * Reconciles stock by delta when editing a GST bill that remains GST + stock-synced.
+ * Preserves audit history and never damages stock if units were already sold/adjusted.
+ */
+function reconcileEditedGstBillStock(s: LedgerState, bill: VendorBill): LedgerState {
+  const oldNet = netBillStockByItem(s.stockTx, bill.id);
+  const hasPriorStock = Array.from(oldNet.values()).some(q => q > 0);
+  if (!hasPriorStock) {
+    return applyVendorBillStockIn(s, bill);
+  }
+
+  let st = s;
+  const desiredByItemId = new Map<string, { qty: number; item: VendorBillItem }>();
+  const newItemsToCreate: VendorBillItem[] = [];
+
+  for (const item of bill.items || []) {
+    const qty = Number(item.quantity) || 0;
+    if (qty <= 0 || !item.itemName?.trim()) continue;
+    const matched = item.matchedInventoryId
+      ? st.inventory.find(i => i.id === item.matchedInventoryId)
+      : item.syncMode !== 'create_separate'
+        ? st.inventory.find(i => normName(i.name) === normName(item.itemName))
+        : undefined;
+
+    if (matched && item.syncMode !== 'create_separate') {
+      const prev = desiredByItemId.get(matched.id);
+      desiredByItemId.set(matched.id, {
+        qty: round2((prev?.qty || 0) + qty),
+        item,
+      });
+    } else {
+      newItemsToCreate.push(item);
+    }
+  }
+
+  const allItemIds = new Set<string>([...oldNet.keys(), ...desiredByItemId.keys()]);
+  allItemIds.forEach(itemId => {
+    const prevQty = Math.max(0, oldNet.get(itemId) || 0);
+    const desired = desiredByItemId.get(itemId);
+    const nextQty = Math.max(0, desired?.qty || 0);
+    const delta = round2(nextQty - prevQty);
+    const invItem = st.inventory.find(i => i.id === itemId);
+    if (!invItem) return;
+
+    if (delta > 0 && desired) {
+      const landedBase = resolveBillLandedBase(bill, desired.item);
+      const gstPct = desired.item.gstPercent ?? 18;
+      const newStock = invItem.currentStock + delta;
+      const newCost =
+        invItem.currentStock > 0
+          ? round2((invItem.currentStock * invItem.unitCost + delta * landedBase) / newStock)
+          : landedBase;
+      st = {
+        ...st,
+        inventory: st.inventory.map(i =>
+          i.id === itemId
+            ? {
+                ...i,
+                unitCost: newCost,
+                unitPrice: i.unitPrice > 0 ? i.unitPrice : suggestedSellingPrice(landedBase, gstPct),
+                hsnCode: i.hsnCode || desired.item.hsnCode,
+                vendorBillId: bill.id,
+                vendorName: bill.vendorName,
+                vendorInvoiceNumber: bill.invoiceNumber,
+                vendorBillDate: bill.invoiceDate,
+              }
+            : i
+        ),
+      };
+      st = moveStock(st, itemId, 'in', delta, {
+        reason: `Vendor Bill Edited (+${delta}): ${bill.vendorName} - Inv #${bill.invoiceNumber}`,
+        date: bill.invoiceDate,
+        referenceBillId: bill.id,
+      });
+    } else if (delta < 0) {
+      const wantReverse = Math.abs(delta);
+      const available = Math.max(0, Number(invItem.currentStock) || 0);
+      const safeReverse = round2(Math.min(available, wantReverse));
+      const shortfall = round2(wantReverse - safeReverse);
+      const reason =
+        shortfall > 0
+          ? `Vendor Bill Edited (-${wantReverse} requested, reversed ${safeReverse}; ${shortfall} already sold/adjusted): Inv #${bill.invoiceNumber}`
+          : `Vendor Bill Edited (-${safeReverse}): ${bill.vendorName} - Inv #${bill.invoiceNumber}`;
+      const tx: StockTransaction = {
+        id: uid('st'),
+        itemId,
+        itemName: invItem.name,
+        type: 'out',
+        quantity: safeReverse,
+        date: todayLocal(),
+        reason,
+        referenceBillId: bill.id,
+      };
+      st = {
+        ...st,
+        inventory: st.inventory.map(i =>
+          i.id === itemId ? { ...i, currentStock: round2(Math.max(0, available - safeReverse)), updatedAt: todayLocal() } : i
+        ),
+        stockTx: [tx, ...st.stockTx],
+      };
+    } else if (delta === 0 && desired) {
+      const landedBase = resolveBillLandedBase(bill, desired.item);
+      st = {
+        ...st,
+        inventory: st.inventory.map(i =>
+          i.id === itemId
+            ? {
+                ...i,
+                unitCost: i.vendorBillId === bill.id && i.currentStock === prevQty ? landedBase : i.unitCost,
+                vendorName: bill.vendorName,
+                vendorInvoiceNumber: bill.invoiceNumber,
+                vendorBillDate: bill.invoiceDate,
+                updatedAt: todayLocal(),
+              }
+            : i
+        ),
+      };
+    }
+  });
+
+  if (newItemsToCreate.length > 0) {
+    st = applyVendorBillStockItems(st, bill, newItemsToCreate);
+  }
+
+  return st;
+}
+
+function reverseVendorBillStockForDelete(s: LedgerState, id: string): LedgerState {
+  const netByItem = netBillStockByItem(s.stockTx, id);
+  if (netByItem.size === 0) return s;
+
+  const otherTxItems = new Set(s.stockTx.filter(t => t.referenceBillId !== id).map(t => t.itemId));
+
+  let inventory = s.inventory.map(i => {
+    const q = netByItem.get(i.id);
+    return q && q > 0 ? { ...i, currentStock: Math.max(0, i.currentStock - q), updatedAt: todayLocal() } : i;
+  });
+  // items that only ever existed because of this bill are removed with it
+  inventory = inventory.filter(i => !(netByItem.has(i.id) && i.vendorBillId === id && i.currentStock === 0 && !otherTxItems.has(i.id)));
+
+  return {
+    ...s,
+    inventory,
+    stockTx: s.stockTx.filter(t => t.referenceBillId !== id),
+  };
+}
+
 export function addVendorBillTx(
   s: LedgerState,
   billData: Omit<VendorBill, 'id' | 'createdAt'>,
   updateStock = true,
   accountMeta?: { accountType?: PaymentAccountType; bankAccountId?: string; paymentModeChoice?: PaymentModeChoice }
 ): { state: LedgerState; bill: VendorBill } {
+  const gstBill = isVendorBillGst(billData);
+  const effectiveUpdateStock = Boolean(updateStock && gstBill);
   const pay = normalizePayment(billData.paidAmount, billData.totalAmount);
   const bill: VendorBill = {
     ...billData,
+    isGstBill: gstBill,
+    stockSynced: effectiveUpdateStock,
     id: uid('bill'),
     createdAt: new Date().toISOString(),
     paymentDate: billData.paymentDate || todayLocal(),
@@ -573,81 +911,8 @@ export function addVendorBillTx(
 
   let st: LedgerState = { ...s, vendorBills: [bill, ...s.vendorBills] };
 
-  if (updateStock) {
-    // Vendor discount lowers the real (landed) cost of every item
-    const gross = (bill.items || []).reduce(
-      (sum, it) => sum + (it.totalWithGst ?? (it.total || 0) + (it.gstAmount || 0)),
-      0
-    );
-    const discountRatio = bill.discount && gross > 0 ? Math.max(0, 1 - bill.discount / gross) : 1;
-
-    for (const item of bill.items || []) {
-      const qty = Number(item.quantity) || 0;
-      if (qty <= 0 || !item.itemName?.trim()) continue;
-      const landedBase = round2((Number(item.unitCost) || 0) * discountRatio);
-      const gstPct = item.gstPercent ?? 18;
-
-      const target = item.matchedInventoryId
-        ? st.inventory.find(i => i.id === item.matchedInventoryId)
-        : item.syncMode !== 'create_separate'
-          ? st.inventory.find(i => normName(i.name) === normName(item.itemName))
-          : undefined;
-
-      if (target && item.syncMode !== 'create_separate') {
-        const newStock = target.currentStock + qty;
-        // weighted-average cost so profit on later sales is right
-        const newCost =
-          target.currentStock > 0
-            ? round2((target.currentStock * target.unitCost + qty * landedBase) / newStock)
-            : landedBase;
-        st = {
-          ...st,
-          inventory: st.inventory.map(i =>
-            i.id === target.id
-              ? {
-                  ...i,
-                  unitCost: newCost,
-                  unitPrice: i.unitPrice > 0 ? i.unitPrice : suggestedSellingPrice(landedBase, gstPct),
-                  hsnCode: i.hsnCode || item.hsnCode,
-                  vendorBillId: bill.id,
-                  vendorName: bill.vendorName,
-                  vendorInvoiceNumber: bill.invoiceNumber,
-                  vendorBillDate: bill.invoiceDate,
-                }
-              : i
-          ),
-        };
-        st = moveStock(st, target.id, 'in', qty, {
-          reason: `Vendor Purchase (${bill.vendorName} - Inv #${bill.invoiceNumber})`,
-          date: bill.invoiceDate,
-          referenceBillId: bill.id,
-        });
-      } else {
-        const created: InventoryItem = {
-          id: uid('item'),
-          name: item.itemName.trim(),
-          category: 'general',
-          currentStock: 0,
-          minStockAlert: 2,
-          unitCost: landedBase,
-          unitPrice: suggestedSellingPrice(landedBase, gstPct),
-          sku: `SP-${Date.now().toString().slice(-5)}${Math.floor(Math.random() * 90 + 10)}`,
-          location: 'Main Shelf',
-          hsnCode: item.hsnCode || '8471',
-          vendorBillId: bill.id,
-          vendorName: bill.vendorName,
-          vendorInvoiceNumber: bill.invoiceNumber,
-          vendorBillDate: bill.invoiceDate,
-          updatedAt: todayLocal(),
-        };
-        st = { ...st, inventory: [created, ...st.inventory] };
-        st = moveStock(st, created.id, 'in', qty, {
-          reason: `Vendor Bill ${bill.invoiceNumber}`,
-          date: bill.invoiceDate,
-          referenceBillId: bill.id,
-        });
-      }
-    }
+  if (effectiveUpdateStock) {
+    st = applyVendorBillStockIn(st, bill);
   }
 
   if (bill.paidAmount > 0) {
@@ -659,9 +924,9 @@ export function addVendorBillTx(
       category: 'Vendor Payment',
       categoryId: 'mfc-vendor',
       categoryName: 'Vendor Payment',
-      subcategory: 'Stock Purchase Bill',
+      subcategory: gstBill ? 'Stock Purchase Bill' : 'Without-GST Purchase Bill',
       subcategoryId: 'mfc-vendor-stock',
-      description: `Vendor: ${bill.vendorName} (Inv: ${bill.invoiceNumber})`,
+      description: `Vendor: ${bill.vendorName} (Inv: ${bill.invoiceNumber})${gstBill ? '' : ' [Non-GST]'}`,
       amount: bill.paidAmount,
       paymentMode: mode,
       paymentModeChoice: accountMeta?.paymentModeChoice,
@@ -678,6 +943,158 @@ export function addVendorBillTx(
     });
   }
   return { state: st, bill };
+}
+
+export function updateVendorBillTx(
+  s: LedgerState,
+  id: string,
+  updates: Partial<VendorBill>,
+  updateStock = true,
+  accountMeta?: { accountType?: PaymentAccountType; bankAccountId?: string; paymentModeChoice?: PaymentModeChoice }
+): { state: LedgerState; bill?: VendorBill } {
+  const old = s.vendorBills.find(b => b.id === id);
+  if (!old) return { state: s };
+
+  const draft: VendorBill = {
+    ...old,
+    ...updates,
+    id: old.id,
+    createdAt: old.createdAt,
+  };
+  const gstBill = isVendorBillGst(draft);
+  const effectiveUpdateStock = Boolean(updateStock && gstBill);
+  const pay = normalizePayment(draft.paidAmount, draft.totalAmount);
+
+  const merged: VendorBill = {
+    ...draft,
+    isGstBill: gstBill,
+    stockSynced: effectiveUpdateStock,
+    paidAmount: pay.paid,
+    paymentStatus: pay.status === 'unpaid' ? 'pending' : pay.status,
+  };
+
+  let st: LedgerState = {
+    ...s,
+    vendorBills: s.vendorBills.map(b => (b.id === id ? merged : b)),
+  };
+
+  const priorNet = netBillStockByItem(st.stockTx, id);
+  const hadSyncedStock = Array.from(priorNet.values()).some(q => q > 0);
+
+  if (hadSyncedStock && !effectiveUpdateStock) {
+    // GST -> Without-GST (or stock sync turned off): safely reverse stock and preserve audit history
+    const reason = !gstBill
+      ? `Vendor Bill Converted to Without-GST: ${merged.vendorName} (Inv #${merged.invoiceNumber})`
+      : `Vendor Bill Stock Sync Disabled: ${merged.vendorName} (Inv #${merged.invoiceNumber})`;
+    st = reverseVendorBillStockForEdit(st, old, reason);
+  } else if (!hadSyncedStock && effectiveUpdateStock) {
+    // Without-GST -> GST (confirmed) or newly synced GST bill: add stock
+    st = applyVendorBillStockIn(st, merged);
+  } else if (hadSyncedStock && effectiveUpdateStock) {
+    // Both old and new are GST + stock synced: only reconcile if stock-relevant inputs actually changed
+    if (stockInputsSignature(old) !== stockInputsSignature(merged)) {
+      st = reconcileEditedGstBillStock(st, merged);
+    }
+  }
+
+  // Reconcile cashFlow entries cleanly without duplicating on repeated saves
+  const billCashEntries = st.cashFlow.filter(c => !c.isReversed && (c.referenceId === id || c.vendorBillId === id));
+  const deltaPaid = round2((merged.paidAmount || 0) - (old.paidAmount || 0));
+  const mode = merged.paymentMode || old.paymentMode || 'upi';
+  const accType: PaymentAccountType | undefined =
+    accountMeta?.accountType || (accountMeta ? (mode === 'cash' ? 'cash' : 'bank') : undefined);
+
+  if (billCashEntries.length === 1 && !billCashEntries[0].paymentRecordId && Math.abs(billCashEntries[0].amount - (old.paidAmount || 0)) <= 0.01) {
+    const entry = billCashEntries[0];
+    if (merged.paidAmount <= 0) {
+      st = { ...st, cashFlow: st.cashFlow.filter(c => c.id !== entry.id) };
+    } else {
+      st = {
+        ...st,
+        cashFlow: st.cashFlow.map(c =>
+          c.id === entry.id
+            ? {
+                ...c,
+                date: merged.invoiceDate || c.date,
+                subcategory: gstBill ? 'Stock Purchase Bill' : 'Without-GST Purchase Bill',
+                description: `Vendor: ${merged.vendorName} (Inv: ${merged.invoiceNumber})${gstBill ? '' : ' [Non-GST]'}`,
+                amount: merged.paidAmount,
+                paymentMode: mode,
+                paymentModeChoice: accountMeta?.paymentModeChoice ?? c.paymentModeChoice,
+                accountType: accType ?? c.accountType,
+                bankAccountId: accType ? (accType === 'bank' ? accountMeta?.bankAccountId : undefined) : c.bankAccountId,
+                referenceNumber: merged.paymentReference !== undefined ? merged.paymentReference : c.referenceNumber,
+                payeeOrCustomer: merged.vendorName,
+                vendorId: merged.vendorId,
+                invoiceNumber: merged.invoiceNumber,
+              }
+            : c
+        ),
+      };
+    }
+  } else if (deltaPaid > 0) {
+    const fallbackAccType: PaymentAccountType = accType || (mode === 'cash' ? 'cash' : 'bank');
+    st = addCash(st, {
+      date: merged.invoiceDate || todayLocal(),
+      type: 'expense',
+      category: 'Vendor Payment',
+      categoryId: 'mfc-vendor',
+      categoryName: 'Vendor Payment',
+      subcategory: gstBill ? 'Stock Purchase Bill' : 'Without-GST Purchase Bill',
+      subcategoryId: 'mfc-vendor-stock',
+      description: `Vendor Bill Edited: ${merged.vendorName} (Inv: ${merged.invoiceNumber})${gstBill ? '' : ' [Non-GST]'}`,
+      amount: deltaPaid,
+      paymentMode: mode,
+      paymentModeChoice: accountMeta?.paymentModeChoice,
+      accountType: fallbackAccType,
+      bankAccountId: fallbackAccType === 'bank' ? accountMeta?.bankAccountId : undefined,
+      referenceId: merged.id,
+      referenceNumber: merged.paymentReference,
+      payeeOrCustomer: merged.vendorName,
+      vendorId: merged.vendorId,
+      vendorBillId: merged.id,
+      invoiceNumber: merged.invoiceNumber,
+      sourceModule: 'vendor',
+      sourceDocId: merged.id,
+    });
+  } else if (deltaPaid < 0) {
+    const fallbackAccType: PaymentAccountType = accType || (mode === 'cash' ? 'cash' : 'bank');
+    st = addCash(st, {
+      date: todayLocal(),
+      type: 'income',
+      category: 'Vendor Refund',
+      description: `Vendor Bill Adjusted: ${merged.vendorName} (Inv: ${merged.invoiceNumber})`,
+      amount: -deltaPaid,
+      paymentMode: mode,
+      accountType: fallbackAccType,
+      bankAccountId: fallbackAccType === 'bank' ? accountMeta?.bankAccountId : undefined,
+      referenceId: merged.id,
+      payeeOrCustomer: merged.vendorName,
+      vendorId: merged.vendorId,
+      vendorBillId: merged.id,
+      invoiceNumber: merged.invoiceNumber,
+      sourceModule: 'vendor',
+      sourceDocId: merged.id,
+    });
+  } else if (billCashEntries.length > 0) {
+    // Paid amount unchanged: keep cashFlow metadata in sync without creating duplicates
+    st = {
+      ...st,
+      cashFlow: st.cashFlow.map(c =>
+        !c.isReversed && (c.referenceId === id || c.vendorBillId === id)
+          ? {
+              ...c,
+              subcategory: gstBill ? 'Stock Purchase Bill' : 'Without-GST Purchase Bill',
+              payeeOrCustomer: merged.vendorName,
+              vendorId: merged.vendorId,
+              invoiceNumber: merged.invoiceNumber,
+            }
+          : c
+      ),
+    };
+  }
+
+  return { state: st, bill: merged };
 }
 
 export function payVendorBillTx(
@@ -735,25 +1152,13 @@ export function deleteVendorBillTx(s: LedgerState, id: string): LedgerState {
   const bill = s.vendorBills.find(b => b.id === id);
   if (!bill) return s;
 
-  const billTx = s.stockTx.filter(t => t.referenceBillId === id && t.type === 'in');
-  const qtyByItem = new Map<string, number>();
-  billTx.forEach(t => qtyByItem.set(t.itemId, (qtyByItem.get(t.itemId) || 0) + t.quantity));
-
-  const otherTxItems = new Set(s.stockTx.filter(t => t.referenceBillId !== id).map(t => t.itemId));
-
-  let inventory = s.inventory.map(i => {
-    const q = qtyByItem.get(i.id);
-    return q ? { ...i, currentStock: Math.max(0, i.currentStock - q), updatedAt: todayLocal() } : i;
-  });
-  // items that only ever existed because of this bill are removed with it
-  inventory = inventory.filter(i => !(qtyByItem.has(i.id) && i.vendorBillId === id && i.currentStock === 0 && !otherTxItems.has(i.id)));
+  const st = reverseVendorBillStockForDelete(s, id);
 
   return {
-    ...s,
-    inventory,
-    vendorBills: s.vendorBills.filter(b => b.id !== id),
-    cashFlow: s.cashFlow.filter(c => c.referenceId !== id),
-    stockTx: s.stockTx.filter(t => t.referenceBillId !== id),
+    ...st,
+    vendorBills: st.vendorBills.filter(b => b.id !== id),
+    cashFlow: st.cashFlow.filter(c => c.referenceId !== id && c.vendorBillId !== id),
+    stockTx: st.stockTx.filter(t => t.referenceBillId !== id),
   };
 }
 

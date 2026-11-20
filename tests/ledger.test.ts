@@ -228,4 +228,67 @@ eq('discount 10%', A.resolveDiscount(10, 'percent', 1180), 118);
 eq('split tax odd paise', A.splitTax(0.03), { cgst: 0.02, sgst: 0.01 });
 eq('uid unique', new Set(Array.from({ length: 1000 }, () => A.uid('x'))).size, 1000);
 eq('local date format', /^\d{4}-\d{2}-\d{2}$/.test(A.todayLocal()), true);
+
+// ---------- 15. Vendor Bills: Without-GST vs GST Stock Rule & Edit Reconciliation
+{
+  const nonGstRes = A.addVendorBillTx(A.EMPTY_LEDGER, {
+    vendorName: 'Cash Hardware Local',
+    invoiceNumber: 'NG-001',
+    invoiceDate: '2026-11-19',
+    isGstBill: false,
+    items: [{ itemName: 'Keyboard Non-GST', quantity: 3, unitCost: 300, gstPercent: 0, gstAmount: 0, total: 900, totalWithGst: 900 }],
+    subtotal: 900,
+    taxAmount: 0,
+    totalAmount: 900,
+    paidAmount: 900,
+    paymentStatus: 'paid',
+    paymentMode: 'cash',
+  }, true);
+  eq('non-GST vendor bill does not create inventory items', nonGstRes.state.inventory.length, 0);
+  eq('non-GST vendor bill does not create stock transactions', nonGstRes.state.stockTx.length, 0);
+  eq('non-GST vendor bill logs cashFlow expense', [nonGstRes.state.vendorBills.length, nonGstRes.state.cashFlow[0].amount], [1, 900]);
+
+  const gstRes = A.addVendorBillTx(A.EMPTY_LEDGER, {
+    vendorName: 'Authorized Distributor',
+    invoiceNumber: 'GST-101',
+    invoiceDate: '2026-11-19',
+    isGstBill: true,
+    items: [{ itemName: 'Crucial 8GB DDR4', quantity: 2, unitCost: 1000, gstPercent: 18, gstAmount: 360, total: 2000, totalWithGst: 2360 }],
+    subtotal: 2000,
+    taxAmount: 360,
+    totalAmount: 2360,
+    paidAmount: 2000,
+    paymentStatus: 'partial',
+    paymentMode: 'upi',
+  }, true);
+  eq('GST vendor bill syncs to inventory & stockTx', [gstRes.state.inventory[0].currentStock, gstRes.state.stockTx.length], [2, 1]);
+
+  // Edit GST bill quantity 2 -> 5 and paidAmount 2000 -> 2360
+  const editedGst = A.updateVendorBillTx(gstRes.state, gstRes.bill.id, {
+    items: [{ itemName: 'Crucial 8GB DDR4', quantity: 5, unitCost: 1000, gstPercent: 18, gstAmount: 900, total: 5000, totalWithGst: 5900 }],
+    subtotal: 5000,
+    taxAmount: 900,
+    totalAmount: 5900,
+    paidAmount: 5900,
+  }, true);
+  eq('edited GST bill updates stock quantity cleanly to 5', editedGst.state.inventory[0].currentStock, 5);
+  eq('edited bill updates single cashFlow row without duplicating', [editedGst.state.cashFlow.length, editedGst.state.cashFlow[0].amount], [1, 5900]);
+
+  // Converting GST bill to Without-GST safely reverses its stock while preserving audit history
+  const convertedToNonGst = A.updateVendorBillTx(editedGst.state, gstRes.bill.id, {
+    isGstBill: false,
+    taxAmount: 0,
+    items: [{ itemName: 'Crucial 8GB DDR4', quantity: 5, unitCost: 1000, gstPercent: 0, gstAmount: 0, total: 5000, totalWithGst: 5000 }],
+    totalAmount: 5000,
+    paidAmount: 5000,
+  }, false);
+  eq('converting bill to Without-GST safely reverses stock to 0 while preserving audit history', [
+    convertedToNonGst.state.inventory[0].currentStock,
+    convertedToNonGst.state.stockTx.some(t => t.referenceBillId === gstRes.bill.id && t.type === 'out' && t.quantity === 5),
+    convertedToNonGst.state.stockTx.length >= 2,
+  ], [0, true, true]);
+  eq('converting bill to Without-GST keeps updated bill & cashFlow', [convertedToNonGst.state.vendorBills[0].isGstBill, convertedToNonGst.state.cashFlow[0].amount], [false, 5000]);
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
+if (fails > 0) process.exit(1);

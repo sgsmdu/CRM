@@ -111,7 +111,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     resetToDefaultData();
     setShowResetConfirmModal(false);
     setShowSettingsMenu(false);
-    setResetToast('Sample Demo Data Loaded! All 31 Verified Customers and clean records reloaded.');
+    setResetToast('Clean Workshop Defaults Restored! Sample/dummy records cleared.');
     setTimeout(() => setResetToast(null), 4000);
   };
 
@@ -605,13 +605,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   Load Sample / Demo Data?
                 </h3>
                 <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Restore 31 verified customers and demo workshop records
+                  Reset workshop settings & clear sample records
                 </p>
               </div>
             </div>
 
             <p className={`text-xs leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-              This will restore the <strong>31 verified customer accounts</strong>, default inventory stock items, sample job cards, staff roster, and vendor bills.
+              This will reset all local CRM records and restore clean Spider Grid Solutions workshop settings defaults.
             </p>
 
             <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">

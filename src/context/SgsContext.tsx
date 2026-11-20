@@ -54,7 +54,12 @@ import {
   createMoneyFlowCategoryNode,
   renameMoneyFlowCategoryNode,
   toggleMoneyFlowCategoryNodeActive,
+  getCustomerPendingSummaryForJob,
 } from '../utils/moneyFlow';
+import {
+  syncCustomerDetailsAcrossRecords,
+  applyJobCardEdit,
+} from '../utils/customerSync';
 import * as AdvFin from '../utils/advancedFinance';
 import { 
   fetchUserRoleFromFirestore, 
@@ -172,7 +177,12 @@ interface SgsContextType {
     paymentMode?: PaymentMode,
     paymentReference?: string
   ) => void;
-  updateVendorBill: (id: string, updates: Partial<VendorBill>) => void;
+  updateVendorBill: (
+    id: string,
+    updates: Partial<VendorBill>,
+    updateStock?: boolean,
+    accountMeta?: { accountType?: PaymentAccountType; bankAccountId?: string; paymentModeChoice?: PaymentModeChoice }
+  ) => VendorBill | undefined;
   deleteVendorBill: (id: string) => void;
   
   // Inventory methods
@@ -467,34 +477,7 @@ function deduplicateById<T extends { id: string }>(items: T[], prefix: string): 
   });
 }
 
-const DEFAULT_BANK_ACCOUNTS: BankAccount[] = [
-  {
-    id: 'bank-acc-1',
-    bankName: 'Axis Bank',
-    accountHolder: 'Spider Grid Solutions',
-    accountNumber: '921020034567890',
-    accountType: 'current',
-    branch: 'Simmakkal, Madurai',
-    ifscCode: 'UTIB0000123',
-    openingBalance: 45000,
-    isActive: true,
-    notes: 'Primary Current Account for GST billing and vendor RTGS/NEFT transfers',
-    createdAt: '2026-01-01',
-  },
-  {
-    id: 'bank-acc-2',
-    bankName: 'State Bank of India',
-    accountHolder: 'Spider Grid Solutions',
-    accountNumber: '38291045678',
-    accountType: 'savings',
-    branch: 'Goripalayam, Madurai',
-    ifscCode: 'SBIN0001248',
-    openingBalance: 18500,
-    isActive: true,
-    notes: 'Secondary Savings Account for UPI QR codes and small cash deposits',
-    createdAt: '2026-01-01',
-  }
-];
+const DEFAULT_BANK_ACCOUNTS: BankAccount[] = [];
 
 const SgsContext = createContext<SgsContextType | undefined>(undefined);
 
@@ -1494,7 +1477,37 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateCustomer = (id: string, updates: Partial<Customer>) => {
-    setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+    const synced = syncCustomerDetailsAcrossRecords(id, updates, {
+      customers,
+      jobCards,
+      invoices,
+      quotations,
+    });
+    if (!synced.updatedCustomer) return;
+
+    setCustomers(synced.customers);
+
+    if (synced.changedJobCards.length > 0) {
+      setJobCards(synced.jobCards);
+      synced.changedJobCards.forEach(updatedJob => {
+        saveJobCardToFirestore(updatedJob).catch(err =>
+          console.warn('Could not sync updated customer details to job card in Firestore:', err)
+        );
+      });
+    }
+
+    if (synced.changedInvoices.length > 0) {
+      setInvoices(synced.invoices);
+      synced.changedInvoices.forEach(updatedInv => {
+        saveInvoiceToFirestore(updatedInv).catch(err =>
+          console.warn('Could not sync updated customer details to invoice in Firestore:', err)
+        );
+      });
+    }
+
+    if (synced.changedQuotations.length > 0) {
+      setQuotations(synced.quotations);
+    }
   };
 
   const deleteCustomer = (id: string) => {
@@ -1658,19 +1671,13 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateJobCardStatus = (id: string, status: JobStatus, notes?: string) => {
-    let updatedJob: JobCard | undefined;
-    setJobCards(prev => prev.map(job => {
-      if (job.id === id) {
-        updatedJob = {
-          ...job,
-          status,
-          technicianNotes: notes !== undefined ? notes : job.technicianNotes,
-          updatedAt: Acc.todayLocal(),
-        };
-        return updatedJob;
-      }
-      return job;
-    }));
+    const existing = jobCards.find(j => j.id === id);
+    if (!existing) return;
+    const { jobCards: nextJobs, updatedJob } = applyJobCardEdit(jobCards, id, {
+      status,
+      technicianNotes: notes !== undefined ? notes : existing.technicianNotes,
+    });
+    setJobCards(nextJobs);
 
     if (updatedJob) {
       saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job status in Firestore:', err));
@@ -1682,22 +1689,11 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateJobCard = (id: string, updates: Partial<JobCard>) => {
-    let updatedJob: JobCard | undefined;
-    setJobCards(prev => prev.map(job => {
-      if (job.id === id) {
-        updatedJob = {
-          ...job,
-          ...updates,
-          updatedAt: Acc.todayLocal(),
-        };
-        return updatedJob;
-      }
-      return job;
-    }));
+    const { jobCards: nextJobs, updatedJob } = applyJobCardEdit(jobCards, id, updates);
+    if (!updatedJob) return;
 
-    if (updatedJob) {
-      saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job in Firestore:', err));
-    }
+    setJobCards(nextJobs);
+    saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job in Firestore:', err));
 
     if (updates.status === 'work_completed' || updates.status === 'completed' || updates.status === 'delivered') {
       setWorkAllocations(prev => prev.filter(a => a.jobCardId !== id));
@@ -1711,20 +1707,14 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const toggleCallCompleted = (id: string, completed?: boolean) => {
-    let updatedJob: JobCard | undefined;
-    setJobCards(prev => prev.map(job => {
-      if (job.id === id) {
-        const nextState = completed !== undefined ? completed : !job.callCompleted;
-        updatedJob = {
-          ...job,
-          callCompleted: nextState,
-          lastCalledAt: nextState ? new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : undefined,
-          updatedAt: Acc.todayLocal(),
-        };
-        return updatedJob;
-      }
-      return job;
-    }));
+    const existing = jobCards.find(j => j.id === id);
+    if (!existing) return;
+    const nextState = completed !== undefined ? completed : !existing.callCompleted;
+    const { jobCards: nextJobs, updatedJob } = applyJobCardEdit(jobCards, id, {
+      callCompleted: nextState,
+      lastCalledAt: nextState ? new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : undefined,
+    });
+    setJobCards(nextJobs);
 
     if (updatedJob) {
       saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job in Firestore:', err));
@@ -1732,49 +1722,26 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addJobTimelineEvent = (jobId: string, eventData: Omit<import('../types').JobTimelineEvent, 'id'>) => {
-    const newEvent: import('../types').JobTimelineEvent = {
-      ...eventData,
-      id: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      timestamp: eventData.timestamp || new Date().toISOString(),
-    };
+    const { jobCards: nextJobs, updatedJob } = applyJobCardEdit(jobCards, jobId, {}, eventData);
+    if (!updatedJob) return;
 
-    let updatedJob: JobCard | undefined;
-    setJobCards(prev => prev.map(job => {
-      if (job.id === jobId) {
-        const existingTimeline = job.timeline || [];
-        updatedJob = {
-          ...job,
-          timeline: [...existingTimeline, newEvent],
-          updatedAt: Acc.todayLocal(),
-        };
-        return updatedJob;
-      }
-      return job;
-    }));
-
-    if (updatedJob) {
-      saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job timeline in Firestore:', err));
-    }
+    setJobCards(nextJobs);
+    saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job timeline in Firestore:', err));
   };
 
   const toggleLinkJobAndVendorBill = (jobId: string, vendorBillId: string) => {
-    let updatedJob: JobCard | undefined;
-    setJobCards(prev => prev.map(job => {
-      if (job.id === jobId) {
-        const existingLinks = job.linkedVendorBillIds || [];
-        const isLinked = existingLinks.includes(vendorBillId);
-        const nextLinks = isLinked ? existingLinks.filter(id => id !== vendorBillId) : [...existingLinks, vendorBillId];
-        updatedJob = {
-          ...job,
-          linkedVendorBillIds: nextLinks,
-          updatedAt: Acc.todayLocal(),
-        };
-        return updatedJob;
+    const existing = jobCards.find(j => j.id === jobId);
+    if (existing) {
+      const existingLinks = existing.linkedVendorBillIds || [];
+      const isLinked = existingLinks.includes(vendorBillId);
+      const nextLinks = isLinked ? existingLinks.filter(id => id !== vendorBillId) : [...existingLinks, vendorBillId];
+      const { jobCards: nextJobs, updatedJob } = applyJobCardEdit(jobCards, jobId, {
+        linkedVendorBillIds: nextLinks,
+      });
+      setJobCards(nextJobs);
+      if (updatedJob) {
+        saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job links in Firestore:', err));
       }
-      return job;
-    }));
-    if (updatedJob) {
-      saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job links in Firestore:', err));
     }
 
     setVendorBills(prev => prev.map(bill => {
@@ -1853,8 +1820,86 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     commitLedger(Acc.payVendorBillTx(prev, id, paidAmount, paymentMode, paymentReference), prev);
   };
 
-  const updateVendorBill = (id: string, updates: Partial<VendorBill>) => {
-    setVendorBills(prev => prev.map(b => b.id === id ? { ...b, ...updates } : b));
+  const updateVendorBill = (
+    id: string,
+    updates: Partial<VendorBill>,
+    updateStock = true,
+    accountMeta?: { accountType?: PaymentAccountType; bankAccountId?: string; paymentModeChoice?: PaymentModeChoice }
+  ): VendorBill | undefined => {
+    const prev = getLedger();
+    const { state, bill } = Acc.updateVendorBillTx(prev, id, updates, updateStock, accountMeta);
+    if (!bill) return undefined;
+    commitLedger(state, prev);
+
+    const bank = accountMeta?.bankAccountId
+      ? bankAccounts.find(b => b.id === accountMeta.bankAccountId)
+      : undefined;
+
+    setVendorPayments(old => {
+      const billPayments = old.filter(p => p.vendorBillId === id && !p.isReversed);
+      const cfMatch = state.cashFlow.find(c => (c.referenceId === bill.id || c.vendorBillId === bill.id) && !c.isReversed);
+      if (billPayments.length === 1) {
+        const singlePayId = billPayments[0].id;
+        if (bill.paidAmount <= 0) {
+          return old.filter(p => p.id !== singlePayId);
+        }
+        return old.map(p =>
+          p.id === singlePayId
+            ? {
+                ...p,
+                vendorId: bill.vendorId ?? p.vendorId,
+                vendorName: bill.vendorName,
+                vendorBillNumber: bill.invoiceNumber,
+                amount: bill.paidAmount,
+                date: bill.invoiceDate || p.date,
+                paymentMode: bill.paymentMode || p.paymentMode,
+                accountType: accountMeta?.accountType ?? p.accountType,
+                bankAccountId: accountMeta
+                  ? (accountMeta.accountType === 'bank' ? accountMeta.bankAccountId : undefined)
+                  : p.bankAccountId,
+                bankAccountName: accountMeta
+                  ? (accountMeta.accountType === 'bank' ? bank?.bankName : undefined)
+                  : p.bankAccountName,
+                transactionRef: bill.paymentReference !== undefined ? bill.paymentReference : p.transactionRef,
+                cashFlowEntryId: cfMatch?.id ?? p.cashFlowEntryId,
+              }
+            : p
+        );
+      }
+      const updatedExisting = old.map(p =>
+        p.vendorBillId === id
+          ? {
+              ...p,
+              vendorId: bill.vendorId ?? p.vendorId,
+              vendorName: bill.vendorName,
+              vendorBillNumber: bill.invoiceNumber,
+            }
+          : p
+      );
+      if (billPayments.length === 0 && bill.paidAmount > 0) {
+        const vp: VendorPaymentRecord = {
+          id: Acc.uid('vpay'),
+          vendorBillId: bill.id,
+          vendorBillNumber: bill.invoiceNumber,
+          vendorId: bill.vendorId,
+          vendorName: bill.vendorName,
+          amount: bill.paidAmount,
+          date: bill.invoiceDate || Acc.todayLocal(),
+          paymentMode: bill.paymentMode || 'upi',
+          accountType: accountMeta?.accountType || (bill.paymentMode === 'cash' ? 'cash' : 'bank'),
+          bankAccountId: accountMeta?.bankAccountId,
+          bankAccountName: bank?.bankName,
+          transactionRef: bill.paymentReference,
+          cashFlowEntryId: cfMatch?.id,
+          createdBy: currentUserEmail || 'CRM User',
+          createdAt: new Date().toISOString(),
+        };
+        return [vp, ...updatedExisting];
+      }
+      return updatedExisting;
+    });
+
+    return bill;
   };
 
   const deleteVendorBill = (id: string) => {
@@ -3620,7 +3665,10 @@ Please update your diagnostic notes and call status upon inspection.
 
   // Dynamic WhatsApp Message Generator with Admin Custom Templates
   const getWhatsAppLinks = (job: JobCard) => {
-    const cleanPhone = job.customerPhone ? job.customerPhone.replace(/[^0-9]/g, '') : '';
+    const custPending = getCustomerPendingSummaryForJob(job, quotations, invoices, invoicePayments, customers, cashFlow);
+    const liveCustomerName = custPending.liveCustomer?.name || job.customerName || 'Customer';
+    const effectivePhone = custPending.liveCustomer?.phone || job.customerPhone || '';
+    const cleanPhone = effectivePhone.replace(/[^0-9]/g, '');
     const phoneWithCountry = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
 
     const statusTitleMap: Record<JobStatus, string> = {
@@ -3641,15 +3689,32 @@ Please update your diagnostic notes and call status upon inspection.
     };
 
     const replaceTags = (template: string) => {
-      const amountNum = job.finalCost > 0 ? job.finalCost : (job.estimatedCost || 0);
-      const paidNum = job.advancePaid || 0;
-      const pendingNum = Math.max(0, amountNum - paidNum);
+      let amountNum: number;
+      let paidNum: number;
+      let pendingNum: number;
+
+      if (custPending.allCustomerInvoices.length > 0) {
+        if (custPending.allPendingInvoices.length > 0) {
+          amountNum = custPending.totalBilledAcrossPendingBills;
+          paidNum = custPending.totalPaidAcrossPendingBills;
+          pendingNum = custPending.totalPendingAcrossBills;
+        } else {
+          amountNum = custPending.totalValidInvoiceAmount;
+          paidNum = custPending.totalValidPaymentsReceived;
+          pendingNum = 0;
+        }
+      } else {
+        amountNum = job.finalCost > 0 ? job.finalCost : (job.estimatedCost || 0);
+        paidNum = (job.advancePaid || 0) + custPending.jobSummary.totalUnlinkedAdvance;
+        pendingNum = Math.max(0, amountNum - paidNum);
+      }
+
       const amountVal = amountNum.toLocaleString('en-IN');
       const paidVal = paidNum.toLocaleString('en-IN');
       const pendingVal = pendingNum.toLocaleString('en-IN');
 
       return template
-        .replace(/{customerName}/g, job.customerName || 'Customer')
+        .replace(/{customerName}/g, liveCustomerName)
         .replace(/{jobId}/g, job.jobId || '')
         .replace(/{category}/g, (job.category || 'Device').toUpperCase())
         .replace(/{deviceBrand}/g, job.deviceBrand || '')
@@ -3670,7 +3735,14 @@ Please update your diagnostic notes and call status upon inspection.
     const welcomeMessage = replaceTags(adminSettings.welcomeMessageTemplate || DEFAULT_ADMIN_SETTINGS.welcomeMessageTemplate);
     const statusMessage = replaceTags(adminSettings.statusMessageTemplate || DEFAULT_ADMIN_SETTINGS.statusMessageTemplate);
     const reviewMessage = replaceTags(adminSettings.reviewMessageTemplate || DEFAULT_ADMIN_SETTINGS.reviewMessageTemplate);
-    const paymentPendingMessage = replaceTags(adminSettings.paymentPendingMessageTemplate || DEFAULT_ADMIN_SETTINGS.paymentPendingMessageTemplate || '');
+    const basePaymentPendingMessage = replaceTags(adminSettings.paymentPendingMessageTemplate || DEFAULT_ADMIN_SETTINGS.paymentPendingMessageTemplate || '');
+    const billBreakdownLines = custPending.allPendingInvoices.map((inv, idx) => {
+      const due = Math.max(0, (Number(inv.grandTotal) || 0) - (Number(inv.paidAmount) || 0));
+      return `${idx + 1}. *${inv.invoiceNumber}* (${inv.date}) — Bill: ₹${(Number(inv.grandTotal) || 0).toLocaleString('en-IN')} | Paid: ₹${(Number(inv.paidAmount) || 0).toLocaleString('en-IN')} | Pending: *₹${due.toLocaleString('en-IN')}*`;
+    });
+    const paymentPendingMessage = custPending.allPendingInvoices.length > 0
+      ? `${basePaymentPendingMessage}\n\n*Pending Bills Breakdown (${custPending.allPendingInvoices.length}):*\n${billBreakdownLines.join('\n')}`
+      : basePaymentPendingMessage;
 
     const welcomeUrl = `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(welcomeMessage)}`;
     const statusUrl = `https://wa.me/${phoneWithCountry}?text=${encodeURIComponent(statusMessage)}`;

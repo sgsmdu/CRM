@@ -681,6 +681,264 @@ export const getJobCardFinancialSummary = (
   };
 };
 
+export interface InvoiceActualBalance {
+  grandTotal: number;
+  validPaid: number;
+  outstanding: number;
+}
+
+/**
+ * Calculates actual valid paid amount and outstanding balance for a single invoice.
+ * - Excludes cancelled invoices and non-invoice documents (returns 0).
+ * - Incorporates `invoicePayments` (excluding reversed records) AND linked `cashFlow` entries
+ *   (excluding reversed entries and transfers, subtracting customer refunds / expense entries)
+ *   without double-counting entries linked via `cashFlowEntryId` or `paymentRecordId`.
+ * - Falls back to `inv.paidAmount` only when no payment ledger / cashFlow entries exist for the invoice.
+ */
+export const calculateInvoiceActualBalance = (
+  inv: Invoice,
+  invoicePayments: InvoicePaymentRecord[] = [],
+  cashFlow: CashFlowEntry[] = []
+): InvoiceActualBalance => {
+  if (inv.type !== 'invoice' || inv.status === 'cancelled') {
+    return { grandTotal: 0, validPaid: 0, outstanding: 0 };
+  }
+
+  const grandTotal = round2(Math.max(0, Number(inv.grandTotal) || 0));
+
+  const invPayRecords = invoicePayments.filter(p => p.invoiceId === inv.id);
+  const invCashEntries = cashFlow.filter(
+    c => !c.isTransfer && (c.referenceId === inv.id || c.invoiceId === inv.id)
+  );
+
+  let validPaid: number;
+  if (invPayRecords.length > 0 || invCashEntries.length > 0) {
+    // Track all linked cashFlow IDs and payment record IDs (including reversed ones so reversed payments are never resurrected)
+    const linkedCfIds = new Set(invPayRecords.map(p => p.cashFlowEntryId).filter(Boolean));
+    const knownPayIds = new Set(invPayRecords.map(p => p.id));
+
+    const activePaySum = invPayRecords
+      .filter(p => !p.isReversed)
+      .reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+    const unlinkedCashSum = invCashEntries
+      .filter(c => {
+        if (c.isReversed) return false;
+        if (linkedCfIds.has(c.id)) return false;
+        if (c.paymentRecordId && knownPayIds.has(c.paymentRecordId)) return false;
+        return true;
+      })
+      .reduce((sum, c) => {
+        const amt = Number(c.amount) || 0;
+        return sum + (c.type === 'expense' ? -amt : amt);
+      }, 0);
+
+    validPaid = round2(Math.min(grandTotal, Math.max(0, activePaySum + unlinkedCashSum)));
+  } else {
+    validPaid = round2(Math.min(grandTotal, Math.max(0, Number(inv.paidAmount) || 0)));
+  }
+
+  const outstanding = round2(Math.max(0, grandTotal - validPaid));
+  return { grandTotal, validPaid, outstanding };
+};
+
+export interface CustomerPendingInvoiceItem {
+  invoice: Invoice;
+  invoiceNumber: string;
+  date: string;
+  grandTotal: number;
+  paidAmount: number;
+  pendingAmount: number;
+}
+
+export interface SharedCustomerPendingSummary {
+  liveCustomer?: Customer;
+  customerName: string;
+  customerPhone: string;
+  allValidInvoices: Invoice[];
+  pendingItems: CustomerPendingInvoiceItem[];
+  pendingInvoices: Invoice[]; // invoices with reconciled paidAmount for WhatsAppPendingModal
+  totalValidInvoiceAmount: number;
+  totalValidPaymentsReceived: number;
+  totalPending: number;
+  totalBilledAcrossPendingBills: number;
+  totalPaidAcrossPendingBills: number;
+}
+
+/**
+ * ONE shared customer pending calculation used by BOTH Billing & Invoices AND Job Cards.
+ *
+ * Formula: Actual Pending = Total Valid Invoice Amount - Total Valid Payments Received
+ * - Matches by `customerId` first, then normalized 10-digit phone for legacy records.
+ * - Excludes cancelled invoices and quotations.
+ * - Respects `invoicePayments`, linked `cashFlow` payments, refunds, and reversed payments without double counting.
+ */
+export const calculateCustomerPendingSummary = (params: {
+  customerId?: string;
+  customerName?: string;
+  customerPhone?: string;
+  linkedJob?: JobCard;
+  seedInvoice?: Invoice;
+  invoices: Invoice[];
+  invoicePayments?: InvoicePaymentRecord[];
+  cashFlow?: CashFlowEntry[];
+  customers?: Customer[];
+}): SharedCustomerPendingSummary => {
+  const {
+    customerId,
+    customerName,
+    customerPhone,
+    linkedJob,
+    seedInvoice,
+    invoices,
+    invoicePayments = [],
+    cashFlow = [],
+    customers = [],
+  } = params;
+
+  const targetCustomerId = customerId || linkedJob?.customerId || seedInvoice?.customerId;
+  const rawPhone = customerPhone || linkedJob?.customerPhone || seedInvoice?.customerPhone || '';
+  const normRawPhone = normalizePhoneDigits(rawPhone);
+
+  const liveCustomer =
+    (targetCustomerId ? customers.find(c => c.id === targetCustomerId) : undefined) ||
+    (normRawPhone ? customers.find(c => normalizePhoneDigits(c.phone) === normRawPhone) : undefined);
+
+  const effectiveCustomerId = liveCustomer?.id || targetCustomerId;
+  const effectivePhone = liveCustomer?.phone || rawPhone;
+  const effectivePhoneDigits = normalizePhoneDigits(effectivePhone);
+  const effectiveName = (liveCustomer?.name || customerName || linkedJob?.customerName || seedInvoice?.customerName || '').trim();
+  const effectiveNameLower = effectiveName.toLowerCase();
+
+  const seenInvIds = new Set<string>();
+  const allValidInvoices: Invoice[] = [];
+
+  for (const inv of invoices) {
+    if (inv.type !== 'invoice' || inv.status === 'cancelled') continue;
+
+    const matched =
+      Boolean(seedInvoice && inv.id === seedInvoice.id) ||
+      Boolean(linkedJob && invoiceMatchesJob(inv, linkedJob)) ||
+      Boolean(effectiveCustomerId && inv.customerId && inv.customerId === effectiveCustomerId) ||
+      Boolean(targetCustomerId && inv.customerId && inv.customerId === targetCustomerId) ||
+      Boolean(effectivePhoneDigits && normalizePhoneDigits(inv.customerPhone) === effectivePhoneDigits) ||
+      Boolean(normRawPhone && normalizePhoneDigits(inv.customerPhone) === normRawPhone) ||
+      Boolean(
+        effectiveNameLower &&
+          !effectivePhoneDigits &&
+          !normalizePhoneDigits(inv.customerPhone) &&
+          (inv.customerName || '').trim().toLowerCase() === effectiveNameLower
+      );
+
+    if (matched && !seenInvIds.has(inv.id)) {
+      seenInvIds.add(inv.id);
+      allValidInvoices.push(inv);
+    }
+  }
+
+  // Chronological order (oldest pending bill first, then newer bills)
+  allValidInvoices.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+  let totalValidInvoiceAmount = 0;
+  let totalValidPaymentsReceived = 0;
+  let totalPending = 0;
+  let totalBilledAcrossPendingBills = 0;
+  let totalPaidAcrossPendingBills = 0;
+
+  const pendingItems: CustomerPendingInvoiceItem[] = [];
+  const pendingInvoices: Invoice[] = [];
+
+  for (const inv of allValidInvoices) {
+    const bal = calculateInvoiceActualBalance(inv, invoicePayments, cashFlow);
+    totalValidInvoiceAmount = round2(totalValidInvoiceAmount + bal.grandTotal);
+    totalValidPaymentsReceived = round2(totalValidPaymentsReceived + bal.validPaid);
+    totalPending = round2(totalPending + bal.outstanding);
+
+    if (bal.outstanding > 0) {
+      totalBilledAcrossPendingBills = round2(totalBilledAcrossPendingBills + bal.grandTotal);
+      totalPaidAcrossPendingBills = round2(totalPaidAcrossPendingBills + bal.validPaid);
+      const reconciledInv: Invoice = {
+        ...inv,
+        grandTotal: bal.grandTotal,
+        paidAmount: bal.validPaid,
+      };
+      pendingInvoices.push(reconciledInv);
+      pendingItems.push({
+        invoice: reconciledInv,
+        invoiceNumber: inv.invoiceNumber,
+        date: inv.date,
+        grandTotal: bal.grandTotal,
+        paidAmount: bal.validPaid,
+        pendingAmount: bal.outstanding,
+      });
+    }
+  }
+
+  return {
+    liveCustomer,
+    customerName: effectiveName,
+    customerPhone: effectivePhone,
+    allValidInvoices,
+    pendingItems,
+    pendingInvoices,
+    totalValidInvoiceAmount,
+    totalValidPaymentsReceived,
+    totalPending,
+    totalBilledAcrossPendingBills,
+    totalPaidAcrossPendingBills,
+  };
+};
+
+export interface CustomerPendingSummaryForJob {
+  jobSummary: JobCardFinancialSummary;
+  liveCustomer?: Customer;
+  allCustomerInvoices: Invoice[];
+  allPendingInvoices: Invoice[];
+  totalPendingAcrossBills: number;
+  totalBilledAcrossPendingBills: number;
+  totalPaidAcrossPendingBills: number;
+  totalValidInvoiceAmount: number;
+  totalValidPaymentsReceived: number;
+}
+
+/**
+ * Resolves live customer identity + ALL customer pending invoices (old + new bills)
+ * for a Job Card using the shared `calculateCustomerPendingSummary` utility so
+ * WhatsApp payment pending reminders on Job Cards match Billing & Invoices identically.
+ */
+export const getCustomerPendingSummaryForJob = (
+  job: JobCard,
+  quotations: ManualQuotation[],
+  invoices: Invoice[],
+  invoicePayments: InvoicePaymentRecord[],
+  customers: Customer[] = [],
+  cashFlow: CashFlowEntry[] = []
+): CustomerPendingSummaryForJob => {
+  const jobSummary = getJobCardFinancialSummary(job, quotations, invoices, invoicePayments);
+  const shared = calculateCustomerPendingSummary({
+    customerId: job.customerId,
+    customerName: job.customerName,
+    customerPhone: job.customerPhone,
+    linkedJob: job,
+    invoices,
+    invoicePayments,
+    cashFlow,
+    customers,
+  });
+
+  return {
+    jobSummary,
+    liveCustomer: shared.liveCustomer,
+    allCustomerInvoices: shared.allValidInvoices,
+    allPendingInvoices: shared.pendingInvoices,
+    totalPendingAcrossBills: shared.totalPending,
+    totalBilledAcrossPendingBills: shared.totalBilledAcrossPendingBills,
+    totalPaidAcrossPendingBills: shared.totalPaidAcrossPendingBills,
+    totalValidInvoiceAmount: shared.totalValidInvoiceAmount,
+    totalValidPaymentsReceived: shared.totalValidPaymentsReceived,
+  };
+};
+
 // ============================================================================
 // 4. WHATSAPP MESSAGE BUILDERS (PENDING & THANK YOU)
 // ============================================================================

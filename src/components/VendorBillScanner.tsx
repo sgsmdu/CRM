@@ -49,6 +49,7 @@ import { PaymentAccountSelector } from './PaymentAccountSelector';
 import {
   formatAccountLabel,
   mapChoiceToPaymentMode,
+  paymentModeToChoice,
   validatePaymentAccountSelection,
 } from '../utils/moneyFlow';
 
@@ -67,6 +68,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     updateVendorBillPayment, 
     recordVendorBillPayment,
     vendorPayments,
+    cashFlow,
     bankAccounts,
     updateVendorBill,
     deleteVendorBill,
@@ -131,6 +133,11 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
   const [billBankAccountId, setBillBankAccountId] = useState<string>(() => bankAccounts[0]?.id || '');
   const [billFormError, setBillFormError] = useState<string | null>(null);
   const [paymentReference, setPaymentReference] = useState('');
+  // Edit & Bill Tax Type State (GST Bill updates Stock Inventory; Without-GST Bill stays in Vendor Ledger & Cash Flow only)
+  const [editingBillId, setEditingBillId] = useState<string | null>(null);
+  const [editingBillOrigGst, setEditingBillOrigGst] = useState<boolean | null>(null);
+  const [confirmNonGstToGstStock, setConfirmNonGstToGstStock] = useState<boolean>(false);
+  const [isGstBill, setIsGstBill] = useState<boolean>(true);
   const [autoUpdateStock, setAutoUpdateStock] = useState(true);
   const [notes, setNotes] = useState('');
 
@@ -212,6 +219,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedVendorFilter, setSelectedVendorFilter] = useState<string>('all');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>('all');
+  const [gstTypeFilter, setGstTypeFilter] = useState<'all' | 'gst' | 'non_gst'>('all');
 
   // Handle adding invoice pages (supports multiple files selected or camera snap)
   const handleAddPageFiles = (files: FileList | File[] | null) => {
@@ -338,14 +346,18 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
         if (d.totalAmount) {
           setTotalAmount(d.totalAmount);
         }
-        if (d.taxAmount) setTaxAmount(d.taxAmount);
+        if (d.taxAmount !== undefined) setTaxAmount(Number(d.taxAmount) || 0);
+        const detectedGst = (Number(d.taxAmount) || 0) > 0 || (Array.isArray(d.items) && d.items.some((it: any) => (Number(it.gstPercent) || 0) > 0 || (Number(it.gstAmount) || 0) > 0));
+        setIsGstBill(detectedGst);
+        setAutoUpdateStock(detectedGst);
         setDiscount(0);
         setRoundOff(0);
         if (d.items && Array.isArray(d.items) && d.items.length > 0) {
           setItems(d.items.map((it: any) => {
             const qty = Math.max(1, Number(it.quantity) || 1);
-            const gstPct = it.gstPercent !== undefined && it.gstPercent !== null ? Number(it.gstPercent) : 18;
-            // unitCost from OCR/Gemini is the BASE rate, so add GST when no gross rate was given
+            const gstPct = !detectedGst
+              ? 0
+              : (it.gstPercent !== undefined && it.gstPercent !== null ? Number(it.gstPercent) : 18);
             const gross = it.grossUnitCost 
               ? Number(it.grossUnitCost) 
               : (it.unitCost ? Number(it.unitCost) * (1 + gstPct / 100) : (Number(it.total) / qty || 0));
@@ -369,7 +381,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
           const sBase = d.items.reduce((a: number, it: any) => a + (Number(it.total) || 0), 0);
           const sGst = d.items.reduce((a: number, it: any) => a + (Number(it.gstAmount) || 0), 0);
           const sGross = Number(d.items.reduce((a: number, it: any) => a + (Number(it.totalWithGst) || (Number(it.total) || 0) + (Number(it.gstAmount) || 0)), 0).toFixed(2));
-          if (sGst > 0) setTaxAmount(Number(sGst.toFixed(2)));
+          setTaxAmount(detectedGst && sGst > 0 ? Number(sGst.toFixed(2)) : 0);
           if (d.totalAmount) {
             const gap = Number((d.totalAmount - sGross).toFixed(2));
             if (Math.abs(gap) > 0 && Math.abs(gap) <= 1) setRoundOff(gap);
@@ -380,14 +392,9 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
         }
 
         setScanSuccess(true);
-        if (result?.isOfflineFallback) {
-          setIsOfflineScanNotice(true);
-          setScanSuccessMsg(`✓ Extracted ${d.items?.length || 0} line items across ${billPages.length} page(s) (PaddleOCR server offline; populated realistic IT Hardware bill items for review).`);
-        } else {
-          setIsOfflineScanNotice(false);
-          const warn = Array.isArray(d.warnings) && d.warnings.length > 0 ? ` ⚠ Check: ${d.warnings.join(' | ')}` : '';
-          setScanSuccessMsg(`✓ Extracted ${d.items?.length || 0} line items across ${billPages.length} page(s) using ${engine === 'paddleocr' ? 'PaddleOCR API' : 'Gemini AI'}!${warn}`);
-        }
+        setIsOfflineScanNotice(Boolean(result?.isOfflineFallback));
+        const warn = Array.isArray(d.warnings) && d.warnings.length > 0 ? ` ⚠ Check: ${d.warnings.join(' | ')}` : '';
+        setScanSuccessMsg(`✓ Extracted ${d.items?.length || 0} line items across ${billPages.length} page(s) using ${engine === 'paddleocr' ? 'PaddleOCR API' : 'Gemini AI'}!${warn}`);
         setExpandedItemIndices([0]);
       } else {
         const serverError = result?.error || (response.status === 402 
@@ -403,15 +410,161 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     }
   };
 
+  const handleToggleBillTaxType = (nextGst: boolean) => {
+    setIsGstBill(nextGst);
+    if (editingBillId && editingBillOrigGst === false && nextGst) {
+      // Converting Without-GST -> GST: require explicit user confirmation before adding stock
+      setAutoUpdateStock(false);
+      setConfirmNonGstToGstStock(false);
+    } else {
+      setAutoUpdateStock(nextGst);
+      setConfirmNonGstToGstStock(false);
+    }
+    const updated = items.map(it => {
+      const qty = Math.max(1, Number(it.quantity) || 1);
+      const currentGross =
+        it.grossUnitCost !== undefined && it.grossUnitCost > 0
+          ? Number(it.grossUnitCost)
+          : Number(((Number(it.unitCost) || 0) * (1 + (Number(it.gstPercent) || 0) / 100)).toFixed(2));
+      const targetPct = nextGst ? (Number(it.gstPercent) > 0 ? Number(it.gstPercent) : 18) : 0;
+      const calc = calculateFromInclusiveRate(currentGross, targetPct, qty);
+      return {
+        ...it,
+        grossUnitCost: currentGross,
+        gstPercent: targetPct,
+        unitCost: calc.baseRate,
+        total: calc.baseAmount,
+        gstAmount: calc.totalGst,
+        totalWithGst: calc.totalWithGst,
+      };
+    });
+    setItems(updated);
+    const sumBase = Number(updated.reduce((acc, it) => acc + (it.total || 0), 0).toFixed(2));
+    const sumGst = nextGst ? Number(updated.reduce((acc, it) => acc + (it.gstAmount || 0), 0).toFixed(2)) : 0;
+    setTaxAmount(sumGst);
+    const nextTotal = Number(Math.max(0, sumBase + sumGst - (discount || 0) + (roundOff || 0)).toFixed(2));
+    setTotalAmount(nextTotal);
+    if (paymentStatus === 'paid') {
+      setPaidAmount(nextTotal);
+    }
+  };
+
+  const openNewVendorBillModal = (preVendor?: Vendor) => {
+    setEditingBillId(null);
+    setEditingBillOrigGst(null);
+    setConfirmNonGstToGstStock(false);
+    setIsGstBill(true);
+    setAutoUpdateStock(true);
+    setBillPages([]);
+    setVendorName(preVendor?.name || '');
+    setSelectedVendorId(preVendor?.id || '');
+    setInvoiceNumber('');
+    setInvoiceDate(Acc.todayLocal());
+    setItems([{ itemName: '', quantity: 1, unitCost: 0, grossUnitCost: 0, gstPercent: 18, gstAmount: 0, total: 0, totalWithGst: 0 }]);
+    setTaxAmount(0);
+    setDiscount(0);
+    setRoundOff(0);
+    setTotalAmount(0);
+    setPaidAmount(0);
+    setPaymentStatus('paid');
+    setPaymentMode('upi');
+    setBillModeChoice('upi');
+    setBillAccountType(bankAccounts.length > 0 ? 'bank' : 'cash');
+    setBillBankAccountId(bankAccounts[0]?.id || '');
+    setPaymentReference('');
+    setNotes('');
+    setBillFormError(null);
+    setScanError(null);
+    setScanSuccess(false);
+    setIsOfflineScanNotice(false);
+    setIsStockPickerOpen(false);
+    setStockSearchQuery('');
+    setExpandedItemIndices([0]);
+    setIsScannerModalOpen(true);
+  };
+
+  const openEditVendorBillModal = (bill: VendorBill) => {
+    const gstFlag = Acc.isVendorBillGst(bill);
+    setEditingBillId(bill.id);
+    setEditingBillOrigGst(gstFlag);
+    setConfirmNonGstToGstStock(false);
+    setIsGstBill(gstFlag);
+    setAutoUpdateStock(gstFlag ? bill.stockSynced !== false : false);
+    const pages = bill.billImages && bill.billImages.length > 0
+      ? bill.billImages
+      : (bill.billImage ? [bill.billImage] : []);
+    setBillPages(pages.map((url, idx) => ({
+      id: `edit-page-${bill.id}-${idx}`,
+      dataUrl: url,
+      mimeType: 'image/jpeg',
+      pageNumber: idx + 1,
+    })));
+    setVendorName(bill.vendorName || '');
+    setSelectedVendorId(bill.vendorId || '');
+    setInvoiceNumber(bill.invoiceNumber || '');
+    setInvoiceDate(bill.invoiceDate || Acc.todayLocal());
+
+    const normalizedItems: VendorBillItem[] = (bill.items && bill.items.length > 0
+      ? bill.items
+      : [{ itemName: '', quantity: 1, unitCost: 0, grossUnitCost: 0, gstPercent: gstFlag ? 18 : 0, gstAmount: 0, total: 0, totalWithGst: 0 }]
+    ).map(it => {
+      const qty = Math.max(1, Number(it.quantity) || 1);
+      const pct = !gstFlag ? 0 : (it.gstPercent !== undefined ? Number(it.gstPercent) : 18);
+      const gross = it.grossUnitCost !== undefined && it.grossUnitCost > 0
+        ? Number(it.grossUnitCost)
+        : Number(((Number(it.unitCost) || 0) * (1 + pct / 100)).toFixed(2));
+      const calc = calculateFromInclusiveRate(gross, pct, qty);
+      return {
+        ...it,
+        quantity: qty,
+        gstPercent: pct,
+        grossUnitCost: gross,
+        unitCost: it.unitCost !== undefined ? Number(it.unitCost) : calc.baseRate,
+        total: it.total !== undefined ? Number(it.total) : calc.baseAmount,
+        gstAmount: !gstFlag ? 0 : (it.gstAmount !== undefined ? Number(it.gstAmount) : calc.totalGst),
+        totalWithGst: !gstFlag ? (it.total !== undefined ? Number(it.total) : calc.baseAmount) : (it.totalWithGst !== undefined ? Number(it.totalWithGst) : calc.totalWithGst),
+      };
+    });
+
+    setItems(normalizedItems);
+    setExpandedItemIndices(normalizedItems.map((_, idx) => idx));
+    setTaxAmount(!gstFlag ? 0 : (Number(bill.taxAmount) || 0));
+    setDiscount(Number(bill.discount) || 0);
+    setRoundOff(Number(bill.roundOff) || 0);
+    setTotalAmount(Number(bill.totalAmount) || 0);
+    setPaidAmount(Number(bill.paidAmount) || 0);
+    setPaymentStatus(bill.paymentStatus || 'pending');
+    const resolvedMode: PaymentMode = bill.paymentMode || 'upi';
+    setPaymentMode(resolvedMode);
+
+    const existingPay = vendorPayments.find(p => p.vendorBillId === bill.id && !p.isReversed);
+    const existingCf = cashFlow.find(c => !c.isReversed && (c.referenceId === bill.id || c.vendorBillId === bill.id));
+    setBillModeChoice(
+      existingCf?.paymentModeChoice || paymentModeToChoice(resolvedMode)
+    );
+    setBillAccountType(existingPay?.accountType || existingCf?.accountType || (resolvedMode === 'cash' ? 'cash' : 'bank'));
+    setBillBankAccountId(existingPay?.bankAccountId || existingCf?.bankAccountId || bankAccounts[0]?.id || '');
+    setPaymentReference(bill.paymentReference || '');
+    setNotes(bill.notes || '');
+    setBillFormError(null);
+    setScanError(null);
+    setScanSuccess(false);
+    setIsOfflineScanNotice(false);
+    setIsStockPickerOpen(false);
+    setStockSearchQuery('');
+    setViewingBill(null);
+    setIsScannerModalOpen(true);
+  };
+
   // Dynamic Item calculations with per-item GST input & auto-reduction
   const handleItemChange = (index: number, field: keyof VendorBillItem, value: any) => {
     const updated = [...items];
     const current = { ...updated[index] };
-    const itPct = current.gstPercent !== undefined ? current.gstPercent : 18;
+    const defaultPct = isGstBill ? 18 : 0;
+    const itPct = !isGstBill ? 0 : (current.gstPercent !== undefined ? current.gstPercent : defaultPct);
     const qty = field === 'quantity' ? Math.max(1, Number(value) || 1) : Math.max(1, current.quantity || 1);
 
     if (field === 'grossUnitCost') {
-      // User inputs amount with GST (Gross Unit Cost) -> reduces GST % from the rate
       const gross = Math.max(0, Number(value) || 0);
       const calc = calculateFromInclusiveRate(gross, itPct, qty);
       updated[index] = {
@@ -425,8 +578,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
         totalWithGst: calc.totalWithGst,
       };
     } else if (field === 'gstPercent') {
-      // User inputs/changes GST % for this specific item -> reduce GST % from the rate!
-      const pct = Math.max(0, Number(value) || 0);
+      const pct = !isGstBill ? 0 : Math.max(0, Number(value) || 0);
       const gross = (current.grossUnitCost !== undefined && current.grossUnitCost > 0)
         ? current.grossUnitCost
         : (current.unitCost * (1 + (current.gstPercent || 0) / 100));
@@ -442,7 +594,6 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
         totalWithGst: calc.totalWithGst,
       };
     } else if (field === 'unitCost') {
-      // User directly inputs Base Unit Cost (Without GST)
       const base = Math.max(0, Number(value) || 0);
       const calc = calculateFromBaseRate(base, itPct, qty);
       updated[index] = {
@@ -474,14 +625,14 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
 
     setItems(updated);
 
-    // Sum overall totals as per exact value (no integer rounding)
     const sumBase = Number(updated.reduce((acc, it) => acc + (it.total || 0), 0).toFixed(2));
-    const sumGst = Number(updated.reduce((acc, it) => acc + (it.gstAmount || 0), 0).toFixed(2));
+    const sumGst = isGstBill ? Number(updated.reduce((acc, it) => acc + (it.gstAmount || 0), 0).toFixed(2)) : 0;
     setTaxAmount(sumGst);
     setTotalAmount(Number(Math.max(0, sumBase + sumGst - (discount || 0) + (roundOff || 0)).toFixed(2)));
   };
 
   const handleAddItem = () => {
+    const defaultPct = isGstBill ? 18 : 0;
     setItems(prev => {
       setExpandedItemIndices(old => [...old, prev.length]);
       return [...prev, { 
@@ -489,7 +640,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
         quantity: 1, 
         unitCost: 0, 
         grossUnitCost: 0, 
-        gstPercent: 18, 
+        gstPercent: defaultPct, 
         gstAmount: 0, 
         total: 0, 
         totalWithGst: 0 
@@ -498,11 +649,9 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
   };
 
   const handleSelectStockItem = (inv: any) => {
-    // Inventory cost is the BASE cost (without GST), so add GST on top - never "reduce" it
-    const defaultPct = 18;
+    const defaultPct = isGstBill ? 18 : 0;
     const calc = calculateFromBaseRate(inv.unitCost || 0, defaultPct, 1);
     const updated = [
-      // drop only the empty placeholder row(s); keep everything already typed
       ...items.filter(it => it.itemName.trim() !== ''),
       {
         itemName: inv.name,
@@ -520,7 +669,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     ];
     setItems(updated);
     const sumBase = Number(updated.reduce((acc, it) => acc + (it.total || 0), 0).toFixed(2));
-    const sumGst = Number(updated.reduce((acc, it) => acc + (it.gstAmount || 0), 0).toFixed(2));
+    const sumGst = isGstBill ? Number(updated.reduce((acc, it) => acc + (it.gstAmount || 0), 0).toFixed(2)) : 0;
     setTaxAmount(sumGst);
     setTotalAmount(Number(Math.max(0, sumBase + sumGst - (discount || 0) + (roundOff || 0)).toFixed(2)));
     setIsStockPickerOpen(false);
@@ -532,12 +681,12 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     const updated = items.filter((_, i) => i !== index);
     setItems(updated);
     const sumBase = Number(updated.reduce((acc, it) => acc + (it.total || 0), 0).toFixed(2));
-    const sumGst = Number(updated.reduce((acc, it) => acc + (it.gstAmount || 0), 0).toFixed(2));
+    const sumGst = isGstBill ? Number(updated.reduce((acc, it) => acc + (it.gstAmount || 0), 0).toFixed(2)) : 0;
     setTaxAmount(sumGst);
     setTotalAmount(Number(Math.max(0, sumBase + sumGst - (discount || 0) + (roundOff || 0)).toFixed(2)));
   };
 
-  // Save new bill
+  // Save new or edited bill
   const handleSaveBill = (e: React.FormEvent) => {
     e.preventDefault();
     setBillFormError(null);
@@ -549,13 +698,29 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       setBillFormError('Please enter invoice / bill number.');
       return;
     }
-    const namedItems = items.filter(it => it.itemName.trim() !== '');
+    const namedItems = items.filter(it => it.itemName.trim() !== '').map(it => (
+      !isGstBill
+        ? { ...it, gstPercent: 0, gstAmount: 0, totalWithGst: it.total || (it.unitCost * it.quantity) }
+        : it
+    ));
     if (namedItems.length === 0) {
       setBillFormError('Please add at least one item with a name.');
       return;
     }
+    if (namedItems.some(it => (Number(it.quantity) || 0) <= 0 || (Number(it.unitCost) || 0) < 0)) {
+      setBillFormError('Each item must have quantity > 0 and unit cost ≥ ₹0.');
+      return;
+    }
+    if ((Number(totalAmount) || 0) < 0 || (Number(discount) || 0) < 0) {
+      setBillFormError('Total amount and discount cannot be negative.');
+      return;
+    }
 
     const effectivePaid = paymentStatus === 'pending' ? 0 : Math.max(0, Number(paidAmount) || 0);
+    if (effectivePaid > (Number(totalAmount) || 0) + 0.01) {
+      setBillFormError(`Paid amount (₹${effectivePaid.toLocaleString('en-IN')}) cannot exceed Bill Total (₹${(Number(totalAmount) || 0).toLocaleString('en-IN')}).`);
+      return;
+    }
     let resolvedAccountType: PaymentAccountType | undefined;
     let resolvedBankAccountId: string | undefined;
     let resolvedPaymentMode: PaymentMode = paymentMode;
@@ -577,10 +742,14 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       resolvedPaymentMode = mapChoiceToPaymentMode(billModeChoice, paymentMode);
     }
 
-    const dup = Acc.findDuplicateVendorBill(vendorBills, vendorName, invoiceNumber);
+    const dup = Acc.findDuplicateVendorBill(
+      editingBillId ? vendorBills.filter(b => b.id !== editingBillId) : vendorBills,
+      vendorName,
+      invoiceNumber
+    );
     if (dup) {
       const proceed = window.confirm(
-        `${dup.vendorName} bill #${dup.invoiceNumber} (₹${dup.totalAmount.toLocaleString('en-IN')}, ${dup.invoiceDate}) is already saved.\n\nSaving again will add the stock and payment a second time. Save anyway?`
+        `${dup.vendorName} bill #${dup.invoiceNumber} (₹${dup.totalAmount.toLocaleString('en-IN')}, ${dup.invoiceDate}) is already saved.\n\nSave anyway?`
       );
       if (!proceed) return;
     }
@@ -602,41 +771,60 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       }
     }
 
-    const sumBase = Number(items.reduce((acc, it) => acc + (it.total || 0), 0).toFixed(2));
+    const sumBase = Number(namedItems.reduce((acc, it) => acc + (it.total || 0), 0).toFixed(2));
     const effectiveDiscount = Number(discount) || 0;
     const effectiveRoundOff = Number(roundOff) || 0;
-
-    addVendorBill(
-      {
-        vendorId: matchedVendorId,
-        vendorName: vendorName.trim(),
-        invoiceNumber: invoiceNumber.trim(),
-        invoiceDate,
-        billImage: billPages[0]?.dataUrl || undefined,
-        billImages: billPages.map(p => p.dataUrl),
-        ocrEngine: selectedEngine,
-        items: namedItems,
-        subtotal: sumBase,
-        taxAmount: Number(taxAmount) || 0,
-        discount: effectiveDiscount,
-        roundOff: effectiveRoundOff,
-        totalAmount,
-        paidAmount: effectivePaid,
-        paymentStatus: effectivePaid >= totalAmount && totalAmount > 0 ? 'paid' : effectivePaid > 0 ? 'partial' : 'pending',
-        paymentMode: resolvedPaymentMode,
-        paymentReference: paymentReference.trim() || undefined,
-        notes,
-      },
-      autoUpdateStock,
-      resolvedAccountType
-        ? {
-            accountType: resolvedAccountType,
-            bankAccountId: resolvedBankAccountId,
-            paymentModeChoice: billModeChoice,
-          }
-        : undefined
+    // Strictly enforce:
+    // 1) Only GST bills can sync to Stock & Parts Inventory
+    // 2) Converting Without-GST -> GST requires explicit confirmation before adding stock
+    const isConvertingNonGstToGst = Boolean(editingBillId && editingBillOrigGst === false && isGstBill);
+    const effectiveAutoStock = Boolean(
+      isGstBill && autoUpdateStock && (!isConvertingNonGstToGst || confirmNonGstToGstStock)
     );
+    const effectiveTaxAmount = isGstBill ? (Number(taxAmount) || 0) : 0;
 
+    const existingBill = editingBillId ? vendorBills.find(b => b.id === editingBillId) : undefined;
+    const resolvedImages = billPages.map(p => p.dataUrl);
+
+    const billPayload = {
+      vendorId: matchedVendorId,
+      vendorName: vendorName.trim(),
+      invoiceNumber: invoiceNumber.trim(),
+      invoiceDate,
+      billImage: resolvedImages[0] ?? (editingBillId && resolvedImages.length === 0 ? undefined : existingBill?.billImage),
+      billImages: resolvedImages,
+      ocrEngine: selectedEngine,
+      isGstBill,
+      items: namedItems,
+      subtotal: sumBase,
+      taxAmount: effectiveTaxAmount,
+      discount: effectiveDiscount,
+      roundOff: effectiveRoundOff,
+      totalAmount,
+      paidAmount: effectivePaid,
+      paymentStatus: (effectivePaid >= totalAmount && totalAmount > 0 ? 'paid' : effectivePaid > 0 ? 'partial' : 'pending') as 'paid' | 'partial' | 'pending',
+      paymentMode: resolvedPaymentMode,
+      paymentReference: paymentReference.trim() || undefined,
+      notes,
+    };
+
+    const accountMeta = resolvedAccountType
+      ? {
+          accountType: resolvedAccountType,
+          bankAccountId: resolvedBankAccountId,
+          paymentModeChoice: billModeChoice,
+        }
+      : undefined;
+
+    if (editingBillId) {
+      updateVendorBill(editingBillId, billPayload, effectiveAutoStock, accountMeta);
+    } else {
+      addVendorBill(billPayload, effectiveAutoStock, accountMeta);
+    }
+
+    setEditingBillId(null);
+    setEditingBillOrigGst(null);
+    setConfirmNonGstToGstStock(false);
     setBillPages([]);
     setPaidAmount(0);
     setPaymentStatus('pending');
@@ -811,9 +999,15 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
         paymentStatusFilter === 'all' || 
         bill.paymentStatus === paymentStatusFilter;
 
-      return matchesSearch && matchesVendor && matchesStatus;
+      const isGst = Acc.isVendorBillGst(bill);
+      const matchesGstType =
+        gstTypeFilter === 'all' ||
+        (gstTypeFilter === 'gst' && isGst) ||
+        (gstTypeFilter === 'non_gst' && !isGst);
+
+      return matchesSearch && matchesVendor && matchesStatus && matchesGstType;
     });
-  }, [vendorBills, searchQuery, selectedVendorFilter, paymentStatusFilter]);
+  }, [vendorBills, searchQuery, selectedVendorFilter, paymentStatusFilter, gstTypeFilter]);
 
   // Filtered Vendors for directory
   const filteredVendors = useMemo(() => {
@@ -890,24 +1084,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
           </button>
 
           <button
-            onClick={() => {
-              setBillPages([]);
-              setVendorName('');
-              setSelectedVendorId('');
-              setInvoiceNumber('');
-              setInvoiceDate(Acc.todayLocal());
-              setItems([{ itemName: '', quantity: 1, unitCost: 0, grossUnitCost: 0, gstPercent: 18, gstAmount: 0, total: 0, totalWithGst: 0 }]);
-              setTaxAmount(0);
-              setDiscount(0);
-              setRoundOff(0);
-              setTotalAmount(0);
-              setPaidAmount(0);
-              setPaymentStatus('paid');
-              setPaymentReference('');
-              setIsStockPickerOpen(false);
-              setStockSearchQuery('');
-              setIsScannerModalOpen(true);
-            }}
+            onClick={() => openNewVendorBillModal()}
             className="flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-md shadow-blue-500/20 cursor-pointer"
           >
             <Camera className="w-4 h-4" />
@@ -1165,24 +1342,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                           </div>
 
                           <button
-                            onClick={() => {
-                              setBillPages([]);
-                              setVendorName(vendor.name);
-                              setSelectedVendorId(vendor.id);
-                              setInvoiceNumber('');
-                              setInvoiceDate(Acc.todayLocal());
-                              setItems([{ itemName: '', quantity: 1, unitCost: 0, grossUnitCost: 0, gstPercent: 18, gstAmount: 0, total: 0, totalWithGst: 0 }]);
-                              setTaxAmount(0);
-                              setDiscount(0);
-                              setRoundOff(0);
-                              setTotalAmount(0);
-                              setPaidAmount(0);
-                              setPaymentStatus('paid');
-                              setPaymentReference('');
-                              setIsStockPickerOpen(false);
-                              setStockSearchQuery('');
-                              setIsScannerModalOpen(true);
-                            }}
+                            onClick={() => openNewVendorBillModal(vendor)}
                             className="flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 transition-colors cursor-pointer shadow-xs"
                           >
                             <Plus className="w-3 h-3" />
@@ -1236,6 +1396,13 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                   ₹{b.totalAmount.toLocaleString('en-IN')}
                                 </div>
                                 <div className="flex items-center gap-1.5 justify-end">
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${
+                                    Acc.isVendorBillGst(b)
+                                      ? 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+                                      : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                  }`}>
+                                    {Acc.isVendorBillGst(b) ? 'GST' : 'No GST'}
+                                  </span>
                                   <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold ${
                                     b.paymentStatus === 'paid' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300' :
                                     b.paymentStatus === 'partial' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300' :
@@ -1243,6 +1410,15 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                   }`}>
                                     {b.paymentStatus.toUpperCase()}
                                   </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditVendorBillModal(b)}
+                                    className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-0.5"
+                                    title="Edit bill"
+                                  >
+                                    <Edit2 className="w-2.5 h-2.5" />
+                                    <span>Edit</span>
+                                  </button>
                                   {b.paymentStatus !== 'paid' && (
                                     <button
                                       onClick={() => openVendorPaymentModal(b)}
@@ -1317,6 +1493,21 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                   <option value="partial">Partial</option>
                 </select>
               </div>
+
+              {/* GST vs Without GST Filter */}
+              <div className="w-full sm:w-44">
+                <select
+                  value={gstTypeFilter}
+                  onChange={(e) => setGstTypeFilter(e.target.value as 'all' | 'gst' | 'non_gst')}
+                  className={`w-full rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${
+                    isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
+                  }`}
+                >
+                  <option value="all">All Bill Types</option>
+                  <option value="gst">GST Bills (Stock Synced)</option>
+                  <option value="non_gst">Without GST (Ledger Only)</option>
+                </select>
+              </div>
             </div>
 
             <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
@@ -1385,18 +1576,27 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                             
                             {/* Clickable Bill Number */}
                             <td className="py-3 px-3" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setViewingBill(bill);
-                                  setViewingBillTab('jobs');
-                                }}
-                                className="font-mono font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer text-left"
-                                title="Click to view linked Job Cards list"
-                              >
-                                <FileText className="w-3.5 h-3.5" />
-                                <span>{bill.invoiceNumber}</span>
-                              </button>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setViewingBill(bill);
+                                    setViewingBillTab('jobs');
+                                  }}
+                                  className="font-mono font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer text-left"
+                                  title="Click to view linked Job Cards list"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                  <span>{bill.invoiceNumber}</span>
+                                </button>
+                                <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${
+                                  Acc.isVendorBillGst(bill)
+                                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/80 dark:text-blue-300'
+                                    : 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                }`}>
+                                  {Acc.isVendorBillGst(bill) ? 'GST · Stock' : 'No GST · Ledger'}
+                                </span>
+                              </div>
                               {(() => {
                                 const count = jobCards.filter(j => 
                                   (j.linkedVendorBillIds && j.linkedVendorBillIds.includes(bill.id)) ||
@@ -1456,6 +1656,16 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                   }`}
                                 >
                                   {isExpanded ? 'Hide' : 'Expand'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => openEditVendorBillModal(bill)}
+                                  className={`p-1.5 rounded transition-colors cursor-pointer ${
+                                    isDark ? 'text-slate-400 hover:text-indigo-400 hover:bg-slate-800' : 'text-slate-600 hover:text-indigo-700 hover:bg-indigo-50'
+                                  }`}
+                                  title="Edit Vendor Bill"
+                                >
+                                  <Edit2 className="w-4 h-4" />
                                 </button>
                                 <button
                                   type="button"
@@ -1645,7 +1855,18 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                     })()}
 
                                     {/* Action Buttons */}
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <button
+                                        type="button"
+                                        onClick={() => openEditVendorBillModal(bill)}
+                                        className={`py-1.5 px-3 text-xs font-semibold rounded-lg border transition-colors cursor-pointer flex items-center gap-1 ${
+                                          isDark ? 'border-indigo-800 text-indigo-300 bg-indigo-950/40 hover:bg-indigo-900/60' : 'border-indigo-300 text-indigo-700 bg-indigo-50 hover:bg-indigo-100'
+                                        }`}
+                                        title="Edit bill details, items, GST type & payments"
+                                      >
+                                        <Edit2 className="w-3.5 h-3.5" />
+                                        <span>Edit Bill</span>
+                                      </button>
                                       <button
                                         type="button"
                                         onClick={() => openVendorPaymentModal(bill)}
@@ -1697,12 +1918,21 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
               <div className="flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-blue-600" />
                 <div>
-                  <h3 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>Vendor Bill Entry & AI OCR Scanner</h3>
-                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Select registered vendor, photo-scan receipt or enter details</p>
+                  <h3 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                    {editingBillId ? 'Edit Vendor Bill' : 'Vendor Bill Entry & AI OCR Scanner'}
+                  </h3>
+                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    {editingBillId
+                      ? 'Update vendor, invoice details, GST/Without-GST classification, items or payment'
+                      : 'Select registered vendor, photo-scan receipt or enter details'}
+                  </p>
                 </div>
               </div>
               <button
-                onClick={() => setIsScannerModalOpen(false)}
+                onClick={() => {
+                  setEditingBillId(null);
+                  setIsScannerModalOpen(false);
+                }}
                 className={`p-1 rounded-lg cursor-pointer ${isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
               >
                 <X className="w-5 h-5" />
@@ -2077,60 +2307,10 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                           </div>
                         )}
                         {(scanError.toLowerCase().includes('depleted') || scanError.toLowerCase().includes('credit') || scanError.toLowerCase().includes('billing') || scanError.toLowerCase().includes('402')) && (
-                          <div className="pt-1 space-y-2">
+                          <div className="pt-1 space-y-1">
                             <p className="text-[11px] text-slate-600 dark:text-slate-400">
-                              Your Google AI Studio project's prepayment balance is exhausted. Switch to <strong>PaddleOCR API</strong> above for free, unlimited local scanning or use sample prefill below.
+                              Your Google AI Studio project's prepayment balance is exhausted. Switch to <strong>PaddleOCR API</strong> above or enter the bill items manually below.
                             </p>
-                            <div className="flex items-center gap-2 pt-1">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  // Pre-fill realistic IT Hardware Bill Sample
-                                  setVendorName('Siva Printer Spares & IT Hub');
-                                  setInvoiceNumber(`INV-${Math.floor(1000 + Math.random() * 9000)}`);
-                                  setInvoiceDate(Acc.todayLocal());
-                                  const item1Gross = 750;
-                                  const item1Calc = calculateFromInclusiveRate(item1Gross, 18, 2);
-                                  const item2Gross = 2450;
-                                  const item2Calc = calculateFromInclusiveRate(item2Gross, 18, 1);
-                                  setItems([
-                                    {
-                                      itemName: 'HP 12A Laser Toner Cartridge (Compatible)',
-                                      hsnCode: '8443',
-                                      quantity: 2,
-                                      grossUnitCost: item1Gross,
-                                      gstPercent: 18,
-                                      unitCost: item1Calc.baseRate,
-                                      total: item1Calc.baseAmount,
-                                      gstAmount: item1Calc.totalGst,
-                                      totalWithGst: item1Calc.totalWithGst,
-                                    },
-                                    {
-                                      itemName: 'Kingston A400 240GB 2.5" SATA SSD',
-                                      hsnCode: '8471',
-                                      quantity: 1,
-                                      grossUnitCost: item2Gross,
-                                      gstPercent: 18,
-                                      unitCost: item2Calc.baseRate,
-                                      total: item2Calc.baseAmount,
-                                      gstAmount: item2Calc.totalGst,
-                                      totalWithGst: item2Calc.totalWithGst,
-                                    }
-                                  ]);
-                                  const total = item1Calc.totalWithGst + item2Calc.totalWithGst;
-                                  setTaxAmount(item1Calc.totalGst + item2Calc.totalGst);
-                                  setTotalAmount(total);
-                                  setPaidAmount(total);
-                                  setScanError(null);
-                                  setScanSuccess(true);
-                                  setScanSuccessMsg('✓ Pre-filled sample IT hardware spares bill!');
-                                  setExpandedItemIndices([0]);
-                                }}
-                                className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-100 dark:bg-blue-900/40 dark:text-blue-300 rounded-lg hover:bg-blue-200 cursor-pointer transition-colors"
-                              >
-                                ⚡ Pre-fill Sample Hardware Spares
-                              </button>
-                            </div>
                           </div>
                         )}
                       </div>
@@ -2146,7 +2326,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                       <span>Local PaddleOCR Daemon is Offline</span>
                     </div>
                     <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed">
-                      Could not connect to a running PaddleOCR service at <code className="font-mono bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded">{customPaddleUrl || 'http://localhost:8080/ocr'}</code>. Line items have been pre-filled with authentic IT hardware bill items across your uploaded page(s) so you can test multi-page invoice recording and GST calculations.
+                      Could not connect to a running PaddleOCR service at <code className="font-mono bg-black/10 dark:bg-white/10 px-1 py-0.5 rounded">{customPaddleUrl || 'http://localhost:8080/ocr'}</code>. Please start the OCR service or fill the vendor bill details manually below.
                     </p>
                     <div className="pt-0.5 flex items-center gap-2">
                       <button
@@ -2171,6 +2351,46 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
 
               {/* Verified Details Form */}
               <form onSubmit={handleSaveBill} className="space-y-4">
+                {/* Bill Tax Classification: GST vs Without GST */}
+                <div className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
+                  isGstBill
+                    ? (isDark ? 'bg-blue-950/30 border-blue-900/70' : 'bg-blue-50/70 border-blue-200')
+                    : (isDark ? 'bg-amber-950/25 border-amber-900/70' : 'bg-amber-50/80 border-amber-200')
+                }`}>
+                  <div>
+                    <span className={`text-xs font-bold block ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                      Bill Tax Classification & Stock Rule
+                    </span>
+                    <span className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                      {isGstBill
+                        ? 'GST Purchase Bill — Can be added to Stock & Parts Inventory.'
+                        : 'Without GST Bill — Saved in Vendor Bills Ledger & Cash Flow ONLY (excluded from Stock & Parts Inventory).'}
+                    </span>
+                  </div>
+                  <div className={`inline-flex rounded-lg p-1 border shrink-0 ${
+                    isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+                  }`}>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleBillTaxType(true)}
+                      className={`px-3 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer ${
+                        isGstBill ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      GST Bill (Stock + Ledger)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleBillTaxType(false)}
+                      className={`px-3 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer ${
+                        !isGstBill ? 'bg-amber-600 text-white shadow-xs' : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      Without GST (Ledger Only)
+                    </button>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   
                   {/* Vendor Select Option & Autocomplete */}
@@ -2977,24 +3197,64 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                     </div>
                   )}
 
-                  <div className="flex items-center gap-2 pt-1">
-                    <input
-                      type="checkbox"
-                      id="autoStockCheck"
-                      checked={autoUpdateStock}
-                      onChange={(e) => setAutoUpdateStock(e.target.checked)}
-                      className="rounded border-slate-300 text-blue-600 focus:ring-0 cursor-pointer"
-                    />
-                    <label htmlFor="autoStockCheck" className={`text-xs cursor-pointer ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                      Automatically increment workshop inventory stock for matching parts
-                    </label>
-                  </div>
+                  {editingBillId && editingBillOrigGst === true && !isGstBill && (
+                    <div className={`p-2.5 rounded-lg border text-[11px] font-medium ${
+                      isDark ? 'bg-amber-950/30 border-amber-800/70 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-800'
+                    }`}>
+                      Converting this GST bill to <strong>Without GST</strong> will safely reverse only its remaining bill-linked stock quantities (sold/adjusted stock stays protected) and keep full stock transaction audit history.
+                    </div>
+                  )}
+
+                  {editingBillId && editingBillOrigGst === false && isGstBill ? (
+                    <div className={`p-3 rounded-lg border space-y-2 ${
+                      isDark ? 'bg-blue-950/30 border-blue-800/70 text-blue-200' : 'bg-blue-50 border-blue-200 text-blue-900'
+                    }`}>
+                      <p className="text-[11px] font-semibold">
+                        Converting Without-GST Bill → GST Bill: Confirm Stock Addition
+                      </p>
+                      <label className="flex items-start gap-2 text-xs cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={confirmNonGstToGstStock}
+                          onChange={(e) => {
+                            setConfirmNonGstToGstStock(e.target.checked);
+                            setAutoUpdateStock(e.target.checked);
+                          }}
+                          className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-0 cursor-pointer"
+                        />
+                        <span>
+                          I explicitly confirm adding these bill items into Stock &amp; Parts Inventory (leave unchecked to convert to GST bill without adding stock).
+                        </span>
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        type="checkbox"
+                        id="autoStockCheck"
+                        checked={isGstBill && autoUpdateStock}
+                        disabled={!isGstBill}
+                        onChange={(e) => setAutoUpdateStock(e.target.checked)}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-0 cursor-pointer disabled:opacity-50"
+                      />
+                      <label htmlFor="autoStockCheck" className={`text-xs cursor-pointer ${!isGstBill ? 'opacity-70' : ''} ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                        {isGstBill
+                          ? 'Automatically increment workshop inventory stock for matching GST bill parts'
+                          : 'Stock & Parts Inventory sync is disabled for Without-GST bills (recorded in Vendor Ledger & Cash Flow only)'}
+                      </label>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
                   <button
                     type="button"
-                    onClick={() => setIsScannerModalOpen(false)}
+                    onClick={() => {
+                      setEditingBillId(null);
+                      setEditingBillOrigGst(null);
+                      setConfirmNonGstToGstStock(false);
+                      setIsScannerModalOpen(false);
+                    }}
                     className={`px-4 py-2 text-xs rounded-lg transition-colors cursor-pointer ${
                       isDark ? 'text-slate-400 hover:text-slate-200 bg-slate-800' : 'text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200'
                     }`}
@@ -3005,7 +3265,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                     type="submit"
                     className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-md transition-colors cursor-pointer"
                   >
-                    Save & Record Vendor Bill
+                    {editingBillId ? 'Save Updated Vendor Bill' : 'Save & Record Vendor Bill'}
                   </button>
                 </div>
               </form>
@@ -3631,28 +3891,40 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
           )}
         </div>
 
-            <div className={`px-6 py-3 border-t flex ${canDelete ? 'justify-between' : 'justify-end'} gap-2 ${
+            <div className={`px-6 py-3 border-t flex items-center justify-between gap-2 ${
               isDark ? 'border-slate-800 bg-slate-950/40' : 'border-slate-200 bg-slate-50'
             }`}>
-              {canDelete && (
+              <div className="flex items-center gap-2">
+                {canDelete && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`Delete bill #${viewingBill.invoiceNumber} from ${viewingBill.vendorName}?\n\nThe stock it added will be taken back and its payment entries removed from the cash book.`)) {
+                        deleteVendorBill(viewingBill.id);
+                        setViewingBill(null);
+                      }
+                    }}
+                    className="px-4 py-1.5 text-xs font-semibold rounded-lg text-rose-600 border border-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                  >
+                    Delete Bill
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
                 <button
-                  onClick={() => {
-                    if (window.confirm(`Delete bill #${viewingBill.invoiceNumber} from ${viewingBill.vendorName}?\n\nThe stock it added will be taken back and its payment entries removed from the cash book.`)) {
-                      deleteVendorBill(viewingBill.id);
-                      setViewingBill(null);
-                    }
-                  }}
-                  className="px-4 py-1.5 text-xs font-semibold rounded-lg text-rose-600 border border-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                  type="button"
+                  onClick={() => openEditVendorBillModal(viewingBill)}
+                  className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
-                  Delete Bill
+                  <Edit2 className="w-3.5 h-3.5" />
+                  <span>Edit Bill</span>
                 </button>
-              )}
-              <button
-                onClick={() => setViewingBill(null)}
-                className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 cursor-pointer"
-              >
-                Close Viewer
-              </button>
+                <button
+                  onClick={() => setViewingBill(null)}
+                  className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 cursor-pointer"
+                >
+                  Close Viewer
+                </button>
+              </div>
             </div>
           </div>
         </div>

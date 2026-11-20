@@ -69,6 +69,7 @@ import {
 } from '../utils/gstUtils';
 import * as Acc from '../utils/accounting';
 import {
+  calculateCustomerPendingSummary,
   formatAccountLabel,
   getInvoicePaymentRecords,
   mapChoiceToPaymentMode,
@@ -133,6 +134,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     customerName: string;
     customerPhone: string;
     pendingInvoices: Invoice[];
+    totalOutstanding?: number;
   } | null>(null);
   const [reversingPaymentId, setReversingPaymentId] = useState<string | null>(null);
   const [invoiceFormError, setInvoiceFormError] = useState<string | null>(null);
@@ -1159,20 +1161,23 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     }
   };
 
-  // Open WhatsApp Pending Reminder Modal (aggregates all pending invoices for that customer)
+  // Open WhatsApp Pending Reminder Modal using shared customer pending calculator (matches Job Cards identically)
   const handleOpenWhatsAppPending = (inv: Invoice) => {
-    const phoneDigits = normalizePhoneDigits(inv.customerPhone);
-    const custPending = invoices.filter(other => {
-      if (other.type !== 'invoice' || other.status === 'cancelled') return false;
-      if (Acc.amountDue(other) <= 0) return false;
-      if (inv.customerId && other.customerId === inv.customerId) return true;
-      if (phoneDigits && normalizePhoneDigits(other.customerPhone) === phoneDigits) return true;
-      return other.id === inv.id;
+    const summary = calculateCustomerPendingSummary({
+      seedInvoice: inv,
+      customerId: inv.customerId,
+      customerName: inv.customerName,
+      customerPhone: inv.customerPhone,
+      invoices,
+      invoicePayments,
+      cashFlow,
+      customers,
     });
     setWhatsAppModalState({
-      customerName: inv.customerName,
-      customerPhone: inv.customerPhone || '',
-      pendingInvoices: custPending.length > 0 ? custPending : [inv],
+      customerName: summary.customerName || inv.customerName,
+      customerPhone: summary.customerPhone || inv.customerPhone || '',
+      pendingInvoices: summary.pendingInvoices.length > 0 ? summary.pendingInvoices : [inv],
+      totalOutstanding: summary.totalPending,
     });
   };
 
@@ -3759,6 +3764,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
         customerName={whatsAppModalState?.customerName || ''}
         customerPhone={whatsAppModalState?.customerPhone || ''}
         pendingInvoices={whatsAppModalState?.pendingInvoices || []}
+        totalOutstanding={whatsAppModalState?.totalOutstanding}
       />
 
     </div>

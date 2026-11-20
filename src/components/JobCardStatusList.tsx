@@ -45,7 +45,7 @@ export const JobCardStatusList: React.FC<JobCardStatusListProps> = ({
   onSelectJob,
   onOpenNewJobModal 
 }) => {
-  const { jobCards = [], invoices = [], invoicePayments = [], theme } = useSgs();
+  const { jobCards = [], customers = [], invoices = [], invoicePayments = [], theme } = useSgs();
   const isDark = theme === 'dark';
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilterCategory, setSelectedFilterCategory] = useState<string>('all');
@@ -559,7 +559,7 @@ export const JobCardStatusList: React.FC<JobCardStatusListProps> = ({
                                     {idx + 1}.
                                   </span>
                                   <h4 className={`text-xs font-bold truncate ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>
-                                    {job.customerName || 'Walk-in Customer'}
+                                    {(job.customerId ? customers.find(c => c.id === job.customerId)?.name : undefined) || job.customerName || 'Walk-in Customer'}
                                     {job.deviceBrand ? (
                                       <span className={`font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                                         {' '}• {job.deviceBrand}

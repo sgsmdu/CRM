@@ -358,7 +358,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
 
             <p className={`text-xs leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-              This will restore all <strong>31 verified customer accounts</strong>, default inventory stock items, seed job cards, staff records, and cash flow entries to fresh factory defaults.
+              This will reset all local CRM records and restore clean Spider Grid Solutions workshop settings defaults.
             </p>
 
             <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">

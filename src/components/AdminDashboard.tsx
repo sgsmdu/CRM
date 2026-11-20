@@ -2487,7 +2487,7 @@ export const AdminDashboard: React.FC = () => {
                 Export Full Backup JSON
               </h3>
               <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                Download offline copy containing all 31 Verified Customers, Job Cards, and Billing History.
+                Download offline copy containing all CRM Customers, Job Cards, and Billing History.
               </p>
               <button
                 type="button"
@@ -2524,7 +2524,7 @@ export const AdminDashboard: React.FC = () => {
                 Reset to Factory Defaults
               </h3>
               <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                Restore clean 31 Verified Customer roster & seed records.
+                Restore clean workshop settings and clear sample records.
               </p>
               <button
                 type="button"
@@ -2567,7 +2567,7 @@ export const AdminDashboard: React.FC = () => {
             </div>
 
             <p className={`text-xs leading-relaxed ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-              This will restore all <strong>31 verified customer accounts</strong>, default inventory stock items, seed job cards, staff records, and cash flow entries to fresh factory defaults.
+              This will reset all local CRM records and restore clean Spider Grid Solutions workshop settings defaults.
             </p>
 
             <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-200 dark:border-slate-800">
@@ -2585,7 +2585,7 @@ export const AdminDashboard: React.FC = () => {
                 onClick={() => {
                   resetToDefaultData();
                   setShowResetModal(false);
-                  setResetSuccessToast('Factory Defaults Restored! All 31 Verified Customers and clean records reloaded.');
+                  setResetSuccessToast('Clean Workshop Defaults Restored! Sample/dummy records cleared.');
                   setTimeout(() => setResetSuccessToast(null), 4000);
                 }}
                 className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md shadow-rose-600/20 cursor-pointer"

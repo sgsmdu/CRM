@@ -126,6 +126,7 @@ export interface JobCard {
   type: ServiceSalesType;
   category: DeviceCategory;
   deviceBrand: string; // e.g. "Lenovo ThinkPad E14", "Hikvision 4-CH DVR"
+  deviceModel?: string; // Optional separate model number / series
   serialNumber?: string;
   issueDescription: string;
   status: JobStatus;
@@ -220,6 +221,8 @@ export interface VendorBill {
   billImage?: string; // Primary preview / Page 1 photo
   billImages?: string[]; // Multiple invoice pages (Page 1, Page 2, Page 3, etc.)
   ocrEngine?: 'paddleocr' | 'gemini' | 'manual';
+  isGstBill?: boolean; // true = GST Bill (updates Stock & Parts Inventory), false = Without GST Bill (ledger & cash flow only, no stock)
+  stockSynced?: boolean; // Whether this bill actually pushed quantities to workshop inventory
   items: VendorBillItem[];
   subtotal?: number;
   taxAmount?: number;

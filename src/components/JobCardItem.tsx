@@ -31,6 +31,8 @@ import {
   User,
 } from 'lucide-react';
 import {
+  CashFlowEntry,
+  Customer,
   JobCard,
   JobStatus,
   DeviceCategory,
@@ -38,7 +40,7 @@ import {
   InvoicePaymentRecord,
   ManualQuotation,
 } from '../types';
-import { getJobCardFinancialSummary } from '../utils/moneyFlow';
+import { getCustomerPendingSummaryForJob } from '../utils/moneyFlow';
 
 export type QuickStageTarget =
   | 'in_process'
@@ -75,11 +77,14 @@ interface JobCardItemProps {
   quotations: ManualQuotation[];
   invoices: Invoice[];
   invoicePayments: InvoicePaymentRecord[];
+  cashFlow?: CashFlowEntry[];
+  customers?: Customer[];
   onToggleExpand: () => void;
   onToggleSelect: () => void;
   onStatusChange: (newStatus: JobStatus) => void;
   onToggleCallCompleted: () => void;
   onShowJob: () => void;
+  onEditJob?: () => void;
   onPrintSlip: () => void;
   onOpenWhatsAppHub: () => void;
   onOpenPaymentReminder: () => void;
@@ -106,11 +111,14 @@ export const JobCardItem: React.FC<JobCardItemProps> = ({
   quotations,
   invoices,
   invoicePayments,
+  cashFlow = [],
+  customers = [],
   onToggleExpand,
   onToggleSelect,
   onStatusChange,
   onToggleCallCompleted,
   onShowJob,
+  onEditJob,
   onPrintSlip,
   onOpenWhatsAppHub,
   onOpenPaymentReminder,
@@ -138,8 +146,13 @@ export const JobCardItem: React.FC<JobCardItemProps> = ({
     job.issueDescription ||
     'No recent notes';
 
-  // Real Firestore financial calculations
-  const jobFin = getJobCardFinancialSummary(job, quotations, invoices, invoicePayments);
+  // Real Firestore financial calculations (shared customer pending utility across all valid bills)
+  const custPending = getCustomerPendingSummaryForJob(job, quotations, invoices, invoicePayments, customers, cashFlow);
+  const jobFin = custPending.jobSummary;
+  const displayCustomerName = custPending.liveCustomer?.name || job.customerName;
+  const displayCustomerPhone = custPending.liveCustomer?.phone || job.customerPhone;
+  const displayCustomerArea = custPending.liveCustomer?.area || job.customerArea;
+
   const quotedModelsCount = jobFin.quotationModelSummaries.reduce(
     (sum, qs) => sum + qs.models.length,
     0
@@ -161,9 +174,11 @@ export const JobCardItem: React.FC<JobCardItemProps> = ({
   const pendingPayment = jobFin.totalPending;
   const linkedStockCount = (job.linkedVendorBillIds || []).length;
 
+  // Never substitute estimatedCost when actual customer invoices exist
   const showPayReminder =
-    pendingPayment > 0 ||
-    (job.finalCost > 0 ? job.finalCost : job.estimatedCost || 0) > (job.advancePaid || 0);
+    custPending.allCustomerInvoices.length > 0
+      ? custPending.totalPendingAcrossBills > 0
+      : (job.finalCost > 0 ? job.finalCost : job.estimatedCost || 0) > (job.advancePaid || 0);
 
   const priorityBadgeClass =
     job.priority === 'P1'
@@ -302,13 +317,13 @@ export const JobCardItem: React.FC<JobCardItemProps> = ({
               <div className="min-w-0">
                 <div
                   className={`font-bold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}
-                  title={job.customerName}
+                  title={displayCustomerName}
                 >
-                  {job.customerName}
+                  {displayCustomerName}
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate font-mono tabular-nums">
-                  {job.customerPhone || 'No phone'}
-                  {job.customerArea ? ` · ${job.customerArea}` : ''}
+                  {displayCustomerPhone || 'No phone'}
+                  {displayCustomerArea ? ` · ${displayCustomerArea}` : ''}
                 </div>
               </div>
 
@@ -459,17 +474,17 @@ export const JobCardItem: React.FC<JobCardItemProps> = ({
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className={`font-bold flex items-center gap-1.5 ${isDark ? 'text-white' : 'text-slate-900'}`}>
                     <User className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                    {job.customerName}
+                    {displayCustomerName}
                   </span>
-                  {job.customerPhone && (
+                  {displayCustomerPhone && (
                     <span className="font-mono text-slate-600 dark:text-slate-300 tabular-nums">
-                      · {job.customerPhone}
+                      · {displayCustomerPhone}
                     </span>
                   )}
-                  {job.customerArea && (
+                  {displayCustomerArea && (
                     <span className="text-slate-500 dark:text-slate-400 flex items-center gap-0.5">
                       <MapPin className="w-3 h-3 shrink-0" />
-                      {job.customerArea}
+                      {displayCustomerArea}
                     </span>
                   )}
                 </div>
@@ -793,15 +808,15 @@ export const JobCardItem: React.FC<JobCardItemProps> = ({
             <div className="lg:col-span-4 space-y-3 min-w-0">
               {/* Header Action Controls */}
               <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                {job.customerPhone && (
+                {displayCustomerPhone && (
                   <a
-                    href={`tel:${job.customerPhone}`}
+                    href={`tel:${displayCustomerPhone}`}
                     className={`h-8 px-2.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer ${
                       isDark
                         ? 'text-blue-400 bg-blue-950/60 border-blue-900 hover:bg-blue-900'
                         : 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100'
                     }`}
-                    title={`Call ${job.customerName}: ${job.customerPhone}`}
+                    title={`Call ${displayCustomerName}: ${displayCustomerPhone}`}
                   >
                     <Phone className="w-3.5 h-3.5" />
                     <span>Call</span>
@@ -847,6 +862,22 @@ export const JobCardItem: React.FC<JobCardItemProps> = ({
                 >
                   <Printer className="w-3.5 h-3.5" />
                 </button>
+
+                {onEditJob && (
+                  <button
+                    type="button"
+                    onClick={onEditJob}
+                    className={`h-8 px-2.5 text-xs font-semibold rounded-lg border transition-colors cursor-pointer flex items-center gap-1 whitespace-nowrap ${
+                      isDark
+                        ? 'text-indigo-300 bg-indigo-950/60 border-indigo-800 hover:bg-indigo-900'
+                        : 'text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
+                    }`}
+                    title="Edit Job Card details"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Edit</span>
+                  </button>
+                )}
 
                 <button
                   type="button"
@@ -1066,11 +1097,11 @@ export const JobCardItem: React.FC<JobCardItemProps> = ({
           <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="min-w-0">
               <div className={`font-bold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                {job.customerName}
+                {displayCustomerName}
               </div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono truncate tabular-nums">
-                {job.customerPhone || 'No phone'}
-                {job.customerArea ? ` · ${job.customerArea}` : ''}
+                {displayCustomerPhone || 'No phone'}
+                {displayCustomerArea ? ` · ${displayCustomerArea}` : ''}
               </div>
             </div>
 
@@ -1119,11 +1150,11 @@ export const JobCardItem: React.FC<JobCardItemProps> = ({
                   <WhatsAppLogoIcon className="w-5 h-5" />
                 </button>
 
-                {job.customerPhone && (
+                {displayCustomerPhone && (
                   <a
-                    href={`tel:${job.customerPhone}`}
-                    aria-label={`Call ${job.customerName}`}
-                    title={`Call ${job.customerPhone}`}
+                    href={`tel:${displayCustomerPhone}`}
+                    aria-label={`Call ${displayCustomerName}`}
+                    title={`Call ${displayCustomerPhone}`}
                     className={`w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl border flex items-center justify-center transition-colors shrink-0 ${
                       isDark
                         ? 'text-blue-400 bg-blue-950/60 border-blue-900'
@@ -1495,11 +1526,26 @@ export const JobCardItem: React.FC<JobCardItemProps> = ({
                     </button>
                   )}
 
+                  {onEditJob && (
+                    <button
+                      type="button"
+                      onClick={onEditJob}
+                      className={`${mobileStageBtnBase} ${
+                        isDark
+                          ? 'bg-indigo-950/60 border-indigo-800 text-indigo-300'
+                          : 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                      }`}
+                    >
+                      <Edit3 className="w-3.5 h-3.5 shrink-0" />
+                      <span>Edit Job</span>
+                    </button>
+                  )}
+
                   {canDelete && (
                     <button
                       type="button"
                       onClick={onDeleteJob}
-                      className={`${mobileStageBtnBase} col-span-2 ${
+                      className={`${mobileStageBtnBase} ${onEditJob ? '' : 'col-span-2'} ${
                         isDark
                           ? 'bg-slate-900 border-slate-800 text-rose-400'
                           : 'bg-rose-50 border-rose-200 text-rose-700'

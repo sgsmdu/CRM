@@ -53,7 +53,8 @@ import {
   ListOrdered,
   CreditCard,
   Link2,
-  Receipt
+  Receipt,
+  Edit3
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { JobCard, JobStatus, DeviceCategory, ServiceSalesType, Customer, JobTimelineEvent } from '../types';
@@ -62,7 +63,7 @@ import { JobCardStatusList } from './JobCardStatusList';
 import { CollectPaymentModal } from './CollectPaymentModal';
 import { WhatsAppPendingModal } from './WhatsAppPendingModal';
 import { JobCardItem, QuickStageTarget } from './JobCardItem';
-import { getJobCardFinancialSummary, formatAccountLabel } from '../utils/moneyFlow';
+import { getJobCardFinancialSummary, getCustomerPendingSummaryForJob, formatAccountLabel } from '../utils/moneyFlow';
 
 interface JobCardManagerProps {
   isCreateModalOpen: boolean;
@@ -107,6 +108,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
     quotations,
     invoices,
     invoicePayments,
+    cashFlow,
     bankAccounts,
     getWhatsAppLinks, 
     employees,
@@ -259,7 +261,10 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
   const [customNotes, setCustomNotes] = useState('');
   const [copiedNotification, setCopiedNotification] = useState(false);
 
-  // Form State for New Job Card
+  // Form State for New / Edit Job Card
+  const [editingJob, setEditingJob] = useState<JobCard | null>(null);
+  const [editPriority, setEditPriority] = useState<'P1' | 'P2' | 'P3' | 'P4'>('P2');
+  const [editAssignedEmployeeId, setEditAssignedEmployeeId] = useState<string>('');
   const [customerId, setCustomerId] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -270,6 +275,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
   const [jobType, setJobType] = useState<ServiceSalesType>('service');
   const [category, setCategory] = useState<DeviceCategory>('laptop');
   const [deviceBrand, setDeviceBrand] = useState('');
+  const [deviceModel, setDeviceModel] = useState('');
   const [serialNumber, setSerialNumber] = useState('');
   const [issueDescription, setIssueDescription] = useState('');
   const [intakeDate, setIntakeDate] = useState(() => todayLocal());
@@ -277,6 +283,30 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
   const [estimatedCost, setEstimatedCost] = useState<number>(0);
   const [technicianNotes, setTechnicianNotes] = useState('');
   const [devicePhotos, setDevicePhotos] = useState<string[]>([]);
+
+  const handleOpenEditJobModal = (job: JobCard) => {
+    const liveCust = job.customerId ? customers.find(c => c.id === job.customerId) : undefined;
+    setEditingJob(job);
+    setEditPriority(job.priority || 'P2');
+    setEditAssignedEmployeeId(job.assignedEmployeeId || '');
+    setCustomerId(job.customerId || liveCust?.id || '');
+    setCustomerName(liveCust?.name || job.customerName || '');
+    setCustomerPhone(liveCust?.phone || job.customerPhone || '');
+    setCustomerArea(liveCust?.area || job.customerArea || '');
+    setJobType(job.type || 'service');
+    setCategory(job.category || 'laptop');
+    setDeviceBrand(job.deviceBrand || '');
+    setDeviceModel(job.deviceModel || '');
+    setSerialNumber(job.serialNumber || '');
+    setIssueDescription(job.issueDescription || '');
+    setIntakeDate(job.intakeDate || todayLocal());
+    setEstimatedDelivery(job.estimatedDelivery || '');
+    setEstimatedCost(job.estimatedCost || 0);
+    setTechnicianNotes(job.technicianNotes || '');
+    setDevicePhotos(job.devicePhotos || []);
+    setDetailedJob(null);
+    setIsCreateModalOpen(true);
+  };
 
   // Update form if preselected customer changes
   React.useEffect(() => {
@@ -344,6 +374,59 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
       return;
     }
 
+    const assignedEmp = editAssignedEmployeeId
+      ? employees.find(emp => emp.id === editAssignedEmployeeId)
+      : undefined;
+
+    if (editingJob) {
+      const existingTimeline = editingJob.timeline || [];
+      const editAuditEvent = {
+        id: `evt-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        stage: (editingJob.status === 'received' ? 'in_process' : editingJob.status) as any,
+        stageLabel: 'Job Card Edited',
+        timestamp: new Date().toISOString(),
+        notes: `Updated job details for ${customerName.trim()} (${deviceBrand.trim()}${deviceModel.trim() ? ` ${deviceModel.trim()}` : ''})`,
+      };
+      updateJobCard(editingJob.id, {
+        customerId: customerId || editingJob.customerId,
+        customerName: customerName.trim(),
+        customerPhone: customerPhone.trim(),
+        customerArea: customerArea.trim(),
+        type: jobType,
+        category,
+        deviceBrand: deviceBrand.trim(),
+        deviceModel: deviceModel.trim() || undefined,
+        serialNumber: serialNumber.trim(),
+        issueDescription: issueDescription.trim(),
+        intakeDate,
+        estimatedDelivery,
+        devicePhotos,
+        estimatedCost: Number(estimatedCost) || 0,
+        technicianNotes,
+        priority: editPriority,
+        assignedEmployeeId: assignedEmp ? assignedEmp.id : undefined,
+        assignedTechnician: assignedEmp ? assignedEmp.name : undefined,
+        timeline: [...existingTimeline, editAuditEvent],
+      });
+      showToast(`Job Card ${editingJob.jobId} updated successfully.`);
+      setEditingJob(null);
+      setEditAssignedEmployeeId('');
+      setIsCreateModalOpen(false);
+      onClearPreselectedCustomer();
+      setCustomerId('');
+      setCustomerName('');
+      setCustomerPhone('');
+      setCustomerArea('');
+      setDevicePhotos([]);
+      setDeviceBrand('');
+      setDeviceModel('');
+      setSerialNumber('');
+      setIssueDescription('');
+      setEstimatedCost(0);
+      setTechnicianNotes('');
+      return;
+    }
+
     const newJob = addJobCard({
       customerId: customerId || `cust-${Date.now()}`,
       customerName,
@@ -352,6 +435,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
       type: jobType,
       category,
       deviceBrand,
+      deviceModel: deviceModel.trim() || undefined,
       serialNumber,
       issueDescription,
       status: 'received',
@@ -361,9 +445,15 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
       estimatedCost: Number(estimatedCost) || 0,
       finalCost: 0,
       technicianNotes,
+      priority: editPriority,
+      assignedEmployeeId: assignedEmp ? assignedEmp.id : undefined,
+      assignedTechnician: assignedEmp ? assignedEmp.name : undefined,
     });
 
     // Reset and close
+    setEditingJob(null);
+    setEditAssignedEmployeeId('');
+    setDeviceModel('');
     setIsCreateModalOpen(false);
     onClearPreselectedCustomer();
     setCustomerId('');
@@ -387,17 +477,21 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
   // Filtered and Sorted Job Cards
   const filteredJobs = useMemo(() => {
     const list = jobCards.filter(job => {
+      const liveCust = job.customerId ? customers.find(c => c.id === job.customerId) : undefined;
+      const liveName = liveCust?.name || job.customerName;
+      const livePhone = liveCust?.phone || job.customerPhone;
+      const liveArea = liveCust?.area || job.customerArea;
       const q = searchQuery.toLowerCase().trim();
       const matchesSearch = 
         !q ||
         job.jobId.toLowerCase().includes(q) ||
-        job.customerName.toLowerCase().includes(q) ||
-        (job.customerPhone && job.customerPhone.includes(q)) ||
+        liveName.toLowerCase().includes(q) ||
+        (livePhone && livePhone.includes(q)) ||
         job.deviceBrand.toLowerCase().includes(q) ||
         (job.serialNumber && job.serialNumber.toLowerCase().includes(q)) ||
         job.issueDescription.toLowerCase().includes(q) ||
         (job.assignedTechnician && job.assignedTechnician.toLowerCase().includes(q)) ||
-        (job.customerArea && job.customerArea.toLowerCase().includes(q)) ||
+        (liveArea && liveArea.toLowerCase().includes(q)) ||
         (job.technicianNotes && job.technicianNotes.toLowerCase().includes(q)) ||
         (job.cctvDetails?.siteLocation && job.cctvDetails.siteLocation.toLowerCase().includes(q)) ||
         (job.cctvDetails?.dvrDetails && job.cctvDetails.dvrDetails.toLowerCase().includes(q));
@@ -1055,6 +1149,8 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                 quotations={quotations}
                 invoices={invoices}
                 invoicePayments={invoicePayments}
+                cashFlow={cashFlow}
+                customers={customers}
                 onToggleExpand={() => toggleJobExpand(job.id)}
                 onToggleSelect={() =>
                   setSelectedJobIds(prev =>
@@ -1072,6 +1168,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                 }}
                 onToggleCallCompleted={() => toggleCallCompleted(job.id)}
                 onShowJob={() => setDetailedJob(job)}
+                onEditJob={() => handleOpenEditJobModal(job)}
                 onPrintSlip={() => setPrintJobSlip(job)}
                 onOpenWhatsAppHub={() => {
                   setSelectedJobForWhatsApp(job);
@@ -1088,7 +1185,8 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                   setWhatsAppTab('payment_pending');
                 }}
                 onDeleteJob={() => {
-                  if (window.confirm(`Delete job card ${job.jobId} for ${job.customerName}?`)) {
+                  const liveCustName = (job.customerId ? customers.find(c => c.id === job.customerId)?.name : undefined) || job.customerName;
+                  if (window.confirm(`Delete job card ${job.jobId} for ${liveCustName}?`)) {
                     deleteJobCard(job.id);
                   }
                 }}
@@ -1139,11 +1237,16 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
               isDark ? 'border-slate-800' : 'border-slate-200'
             }`}>
               <div>
-                <h3 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>Create Service / Sales Job Card</h3>
-                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Search Customers or enter custom walk-in client</p>
+                <h3 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  {editingJob ? `Edit Job Card — ${editingJob.jobId}` : 'Create Service / Sales Job Card'}
+                </h3>
+                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  {editingJob ? 'Update customer, device details, intake info or technician notes' : 'Search Customers or enter custom walk-in client'}
+                </p>
               </div>
               <button
                 onClick={() => {
+                  setEditingJob(null);
                   setIsCreateModalOpen(false);
                   onClearPreselectedCustomer();
                 }}
@@ -1345,16 +1448,30 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                 </div>
               </div>
 
-              {/* Device Brand & Serial Number */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* Device Brand, Model & Serial Number */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Device Brand & Model *</label>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Device Brand *</label>
                   <input
                     type="text"
                     required
                     value={deviceBrand}
                     onChange={(e) => setDeviceBrand(e.target.value)}
-                    placeholder="e.g. Dell Inspiron 15 3520 / Hikvision 4CH"
+                    placeholder="e.g. Dell / Lenovo / Hikvision"
+                    className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
+                      isDark 
+                        ? 'bg-slate-950 border border-slate-800 text-slate-200 focus:border-blue-500' 
+                        : 'bg-white border border-slate-300 text-slate-900 focus:border-blue-600'
+                    }`}
+                  />
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Device Model</label>
+                  <input
+                    type="text"
+                    value={deviceModel}
+                    onChange={(e) => setDeviceModel(e.target.value)}
+                    placeholder="e.g. Inspiron 15 3520 / 4CH DVR"
                     className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
                       isDark 
                         ? 'bg-slate-950 border border-slate-800 text-slate-200 focus:border-blue-500' 
@@ -1502,6 +1619,52 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                 />
               </div>
 
+              {/* Priority & Assigned Staff */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Job Priority
+                  </label>
+                  <select
+                    value={editPriority}
+                    onChange={(e) => setEditPriority(e.target.value as 'P1' | 'P2' | 'P3' | 'P4')}
+                    className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
+                      isDark
+                        ? 'bg-slate-950 border border-slate-800 text-slate-200 focus:border-blue-500'
+                        : 'bg-white border border-slate-300 text-slate-900 focus:border-blue-600'
+                    }`}
+                  >
+                    <option value="P1">P1 — Emergency / Urgent</option>
+                    <option value="P2">P2 — High Priority</option>
+                    <option value="P3">P3 — Normal Priority</option>
+                    <option value="P4">P4 — Low Priority</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    Assigned Staff / Technician
+                  </label>
+                  <select
+                    value={editAssignedEmployeeId}
+                    onChange={(e) => setEditAssignedEmployeeId(e.target.value)}
+                    className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
+                      isDark
+                        ? 'bg-slate-950 border border-slate-800 text-slate-200 focus:border-blue-500'
+                        : 'bg-white border border-slate-300 text-slate-900 focus:border-blue-600'
+                    }`}
+                  >
+                    <option value="">Unassigned</option>
+                    {employees
+                      .filter(emp => emp.status === 'active' || emp.id === editAssignedEmployeeId)
+                      .map(emp => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.name} {emp.role ? `(${emp.role})` : ''}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+
               {/* Buttons */}
               <div className={`flex items-center justify-end gap-3 pt-4 border-t shrink-0 ${
                 isDark ? 'border-slate-800' : 'border-slate-200'
@@ -1509,6 +1672,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                 <button
                   type="button"
                   onClick={() => {
+                    setEditingJob(null);
                     setIsCreateModalOpen(false);
                     onClearPreselectedCustomer();
                   }}
@@ -1522,7 +1686,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                   type="submit"
                   className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-md shadow-blue-600/20 cursor-pointer"
                 >
-                  Register Job Card & Launch WhatsApp
+                  {editingJob ? 'Save Job Card Changes' : 'Register Job Card & Launch WhatsApp'}
                 </button>
               </div>
             </form>
@@ -2064,15 +2228,27 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                   </div>
                 </div>
 
-                <button
-                  onClick={() => setDetailedJob(null)}
-                  className={`p-1.5 rounded-lg transition-colors ${
-                    isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200'
-                  }`}
-                  title="Close Show Job"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenEditJobModal(job)}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg border flex items-center gap-1.5 cursor-pointer transition-colors ${
+                      isDark ? 'bg-indigo-950/60 border-indigo-800 text-indigo-300 hover:bg-indigo-900' : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
+                    }`}
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Edit Job</span>
+                  </button>
+                  <button
+                    onClick={() => setDetailedJob(null)}
+                    className={`p-1.5 rounded-lg transition-colors ${
+                      isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-200'
+                    }`}
+                    title="Close Show Job"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
               {/* Action Ribbon: Quick Mark & Operation Triggers */}
@@ -2276,43 +2452,51 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                         </span>
                       </div>
 
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold">{job.customerName}</span>
+                    {(() => {
+                      const liveCust = job.customerId ? customers.find(c => c.id === job.customerId) : undefined;
+                      const detailName = liveCust?.name || job.customerName;
+                      const detailPhone = liveCust?.phone || job.customerPhone;
+                      const detailArea = liveCust?.area || job.customerArea;
+                      return (
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-bold">{detailName}</span>
+                          </div>
+
+                          {detailPhone && (
+                            <div className="flex items-center justify-between pt-1">
+                              <div className="flex items-center gap-2 font-mono">
+                                <Phone className={`w-3.5 h-3.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
+                                <span>{detailPhone}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5">
+                                <a
+                                  href={`tel:${detailPhone}`}
+                                  className="px-2 py-0.5 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors"
+                                >
+                                  Call
+                                </a>
+                                <a
+                                  href={`https://wa.me/91${detailPhone.replace(/[^0-9]/g, '')}`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="px-2 py-0.5 rounded bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition-colors"
+                                >
+                                  WhatsApp
+                                </a>
+                              </div>
+                            </div>
+                          )}
+
+                          {detailArea && (
+                            <div className="flex items-center gap-2 pt-1 text-slate-400">
+                              <MapPin className="w-3.5 h-3.5 shrink-0" />
+                              <span>{detailArea}, Madurai</span>
+                            </div>
+                          )}
                         </div>
-
-                        {job.customerPhone && (
-                          <div className="flex items-center justify-between pt-1">
-                            <div className="flex items-center gap-2 font-mono">
-                              <Phone className={`w-3.5 h-3.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`} />
-                              <span>{job.customerPhone}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <a
-                                href={`tel:${job.customerPhone}`}
-                                className="px-2 py-0.5 rounded bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors"
-                              >
-                                Call
-                              </a>
-                              <a
-                                href={`https://wa.me/91${job.customerPhone.replace(/[^0-9]/g, '')}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="px-2 py-0.5 rounded bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition-colors"
-                              >
-                                WhatsApp
-                              </a>
-                            </div>
-                          </div>
-                        )}
-
-                        {job.customerArea && (
-                          <div className="flex items-center gap-2 pt-1 text-slate-400">
-                            <MapPin className="w-3.5 h-3.5 shrink-0" />
-                            <span>{job.customerArea}, Madurai</span>
-                          </div>
-                        )}
-                      </div>
+                      );
+                    })()}
                     </div>
 
                     {/* Device & Service Specifications */}
@@ -2397,7 +2581,9 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
 
                     {/* Quotation, Billing & Payment Summary */}
                     {(() => {
-                      const jobFin = getJobCardFinancialSummary(job, quotations, invoices, invoicePayments);
+                      const custPending = getCustomerPendingSummaryForJob(job, quotations, invoices, invoicePayments, customers, cashFlow);
+                      const jobFin = custPending.jobSummary;
+                      const showSharePending = custPending.totalPendingAcrossBills > 0;
                       return (
                         <div className={`p-4 rounded-xl border space-y-3 ${
                           isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
@@ -2415,7 +2601,7 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                                 <IndianRupee className="w-3 h-3" />
                                 <span>Collect Payment</span>
                               </button>
-                              {jobFin.totalPending > 0 && (
+                              {showSharePending && (
                                 <button
                                   type="button"
                                   onClick={() => setWaPendingJob(job)}
@@ -3818,16 +4004,15 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
 
       {/* Job Card WhatsApp Payment Pending Modal */}
       {waPendingJob && (() => {
-        const jobFin = getJobCardFinancialSummary(waPendingJob, quotations, invoices, invoicePayments);
-        const pendingInvs = jobFin.invoices.filter(i => (i.grandTotal || 0) - (i.paidAmount || 0) > 0);
+        const custPending = getCustomerPendingSummaryForJob(waPendingJob, quotations, invoices, invoicePayments, customers, cashFlow);
         return (
           <WhatsAppPendingModal
             isOpen={!!waPendingJob}
             onClose={() => setWaPendingJob(null)}
-            customerName={waPendingJob.customerName}
-            customerPhone={waPendingJob.customerPhone}
-            pendingInvoices={pendingInvs}
-            totalOutstanding={jobFin.totalPending}
+            customerName={custPending.liveCustomer?.name || waPendingJob.customerName}
+            customerPhone={custPending.liveCustomer?.phone || waPendingJob.customerPhone}
+            pendingInvoices={custPending.allPendingInvoices}
+            totalOutstanding={custPending.totalPendingAcrossBills}
           />
         );
       })()}
