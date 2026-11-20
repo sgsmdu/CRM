@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { 
   Customer, 
   JobCard, 
@@ -501,6 +501,13 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return [];
     }
   });
+
+  const jobCardsRef = useRef<JobCard[]>(jobCards);
+  jobCardsRef.current = jobCards;
+  const commitJobCards = (next: JobCard[]) => {
+    jobCardsRef.current = next;
+    setJobCards(next);
+  };
 
   const [vendorBills, setVendorBills] = useState<VendorBill[]>(() => {
     try {
@@ -1479,7 +1486,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateCustomer = (id: string, updates: Partial<Customer>) => {
     const synced = syncCustomerDetailsAcrossRecords(id, updates, {
       customers,
-      jobCards,
+      jobCards: jobCardsRef.current,
       invoices,
       quotations,
     });
@@ -1488,7 +1495,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCustomers(synced.customers);
 
     if (synced.changedJobCards.length > 0) {
-      setJobCards(synced.jobCards);
+      commitJobCards(synced.jobCards);
       synced.changedJobCards.forEach(updatedJob => {
         saveJobCardToFirestore(updatedJob).catch(err =>
           console.warn('Could not sync updated customer details to job card in Firestore:', err)
@@ -1652,7 +1659,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Job Card handlers
   const addJobCard = (jobData: Omit<JobCard, 'id' | 'jobId' | 'updatedAt'>): JobCard => {
-    const count = jobCards.length + 1;
+    const count = jobCardsRef.current.length + 1;
     const padded = String(count).padStart(3, '0');
     const year = new Date().getFullYear();
     const jobId = `SGS-${year}-${padded}`;
@@ -1665,19 +1672,19 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       callCompleted: false,
     };
 
-    setJobCards(prev => [newJob, ...prev]);
+    commitJobCards([newJob, ...jobCardsRef.current]);
     saveJobCardToFirestore(newJob).catch(err => console.warn('Could not save job to Firestore:', err));
     return newJob;
   };
 
   const updateJobCardStatus = (id: string, status: JobStatus, notes?: string) => {
-    const existing = jobCards.find(j => j.id === id);
+    const existing = jobCardsRef.current.find(j => j.id === id);
     if (!existing) return;
-    const { jobCards: nextJobs, updatedJob } = applyJobCardEdit(jobCards, id, {
+    const { jobCards: nextJobs, updatedJob } = applyJobCardEdit(jobCardsRef.current, id, {
       status,
       technicianNotes: notes !== undefined ? notes : existing.technicianNotes,
     });
-    setJobCards(nextJobs);
+    commitJobCards(nextJobs);
 
     if (updatedJob) {
       saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job status in Firestore:', err));
@@ -1689,10 +1696,10 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateJobCard = (id: string, updates: Partial<JobCard>) => {
-    const { jobCards: nextJobs, updatedJob } = applyJobCardEdit(jobCards, id, updates);
+    const { jobCards: nextJobs, updatedJob } = applyJobCardEdit(jobCardsRef.current, id, updates);
     if (!updatedJob) return;
 
-    setJobCards(nextJobs);
+    commitJobCards(nextJobs);
     saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job in Firestore:', err));
 
     if (updates.status === 'work_completed' || updates.status === 'completed' || updates.status === 'delivered') {
@@ -1701,20 +1708,20 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const deleteJobCard = (id: string) => {
-    setJobCards(prev => prev.filter(j => j.id !== id));
+    commitJobCards(jobCardsRef.current.filter(j => j.id !== id));
     setWorkAllocations(prev => prev.filter(a => a.jobCardId !== id));
     deleteJobCardFromFirestore(id).catch(err => console.warn('Could not delete job from Firestore:', err));
   };
 
   const toggleCallCompleted = (id: string, completed?: boolean) => {
-    const existing = jobCards.find(j => j.id === id);
+    const existing = jobCardsRef.current.find(j => j.id === id);
     if (!existing) return;
     const nextState = completed !== undefined ? completed : !existing.callCompleted;
-    const { jobCards: nextJobs, updatedJob } = applyJobCardEdit(jobCards, id, {
+    const { jobCards: nextJobs, updatedJob } = applyJobCardEdit(jobCardsRef.current, id, {
       callCompleted: nextState,
       lastCalledAt: nextState ? new Date().toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' }) : undefined,
     });
-    setJobCards(nextJobs);
+    commitJobCards(nextJobs);
 
     if (updatedJob) {
       saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job in Firestore:', err));
@@ -1722,23 +1729,23 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addJobTimelineEvent = (jobId: string, eventData: Omit<import('../types').JobTimelineEvent, 'id'>) => {
-    const { jobCards: nextJobs, updatedJob } = applyJobCardEdit(jobCards, jobId, {}, eventData);
+    const { jobCards: nextJobs, updatedJob } = applyJobCardEdit(jobCardsRef.current, jobId, {}, eventData);
     if (!updatedJob) return;
 
-    setJobCards(nextJobs);
+    commitJobCards(nextJobs);
     saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job timeline in Firestore:', err));
   };
 
   const toggleLinkJobAndVendorBill = (jobId: string, vendorBillId: string) => {
-    const existing = jobCards.find(j => j.id === jobId);
+    const existing = jobCardsRef.current.find(j => j.id === jobId);
     if (existing) {
       const existingLinks = existing.linkedVendorBillIds || [];
       const isLinked = existingLinks.includes(vendorBillId);
       const nextLinks = isLinked ? existingLinks.filter(id => id !== vendorBillId) : [...existingLinks, vendorBillId];
-      const { jobCards: nextJobs, updatedJob } = applyJobCardEdit(jobCards, jobId, {
+      const { jobCards: nextJobs, updatedJob } = applyJobCardEdit(jobCardsRef.current, jobId, {
         linkedVendorBillIds: nextLinks,
       });
-      setJobCards(nextJobs);
+      commitJobCards(nextJobs);
       if (updatedJob) {
         saveJobCardToFirestore(updatedJob).catch(err => console.warn('Could not update job links in Firestore:', err));
       }
@@ -2840,7 +2847,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     priorityOrder?: number
   ): string => {
     const emp = employees.find(e => e.id === employeeId);
-    const job = jobCards.find(j => j.id === jobCardId);
+    const job = jobCardsRef.current.find(j => j.id === jobCardId);
     if (!emp || !job) return '';
 
     const priority = priorityOrder || 1;
@@ -2932,7 +2939,7 @@ Please update your diagnostic notes and call status upon inspection.
     reason?: string, 
     changedBy: string = 'Office Staff'
   ) => {
-    setJobCards(prev => prev.map(job => {
+    const nextJobs = jobCardsRef.current.map(job => {
       if (job.id === jobId) {
         const oldPriority = job.priority || 'P3';
         const priorityLabels: Record<string, string> = {
@@ -2962,7 +2969,8 @@ Please update your diagnostic notes and call status upon inspection.
         return updatedJob;
       }
       return job;
-    }));
+    });
+    commitJobCards(nextJobs);
   };
 
   // Module 1 & 2: Employee Assignment & Reassignment with Audit
@@ -2976,7 +2984,7 @@ Please update your diagnostic notes and call status upon inspection.
     assignedBy: string = 'Office Staff',
     reason?: string
   ) => {
-    setJobCards(prev => prev.map(job => {
+    const nextJobs = jobCardsRef.current.map(job => {
       if (job.id === jobId) {
         const wasReassigned = Boolean(job.assignedEmployeeId && job.assignedEmployeeId !== employeeId);
         const previousTech = job.assignedTechnician;
@@ -3008,7 +3016,8 @@ Please update your diagnostic notes and call status upon inspection.
         return updatedJob;
       }
       return job;
-    }));
+    });
+    commitJobCards(nextJobs);
 
     setWorkAllocations(prev => {
       const existing = prev.find(a => a.jobCardId === jobId);
@@ -3051,7 +3060,7 @@ Please update your diagnostic notes and call status upon inspection.
     jobId: string,
     completionNotes: NonNullable<JobCard['completionNotes']>
   ) => {
-    setJobCards(prev => prev.map(job => {
+    const nextJobs = jobCardsRef.current.map(job => {
       if (job.id === jobId) {
         const updatedJob: JobCard = {
           ...job,
@@ -3074,15 +3083,16 @@ Please update your diagnostic notes and call status upon inspection.
         return updatedJob;
       }
       return job;
-    }));
+    });
+    commitJobCards(nextJobs);
   };
 
   // Module 2: Job Closure with Verification
   const closeJobCard = (jobId: string, closedBy: string, finalNotes?: string) => {
-    const job = jobCards.find(j => j.id === jobId);
+    const job = jobCardsRef.current.find(j => j.id === jobId);
     if (!job) return { success: false, error: 'Job card not found' };
 
-    setJobCards(prev => prev.map(j => {
+    const nextJobs = jobCardsRef.current.map(j => {
       if (j.id === jobId) {
         const updated: JobCard = {
           ...j,
@@ -3108,14 +3118,15 @@ Please update your diagnostic notes and call status upon inspection.
         return updated;
       }
       return j;
-    }));
+    });
+    commitJobCards(nextJobs);
 
     return { success: true };
   };
 
   // Module 2: Reopen Closed Job
   const reopenJobCard = (jobId: string, reason: string, reopenedBy: string) => {
-    setJobCards(prev => prev.map(job => {
+    const nextJobs = jobCardsRef.current.map(job => {
       if (job.id === jobId) {
         const updated: JobCard = {
           ...job,
@@ -3140,7 +3151,8 @@ Please update your diagnostic notes and call status upon inspection.
         return updated;
       }
       return job;
-    }));
+    });
+    commitJobCards(nextJobs);
   };
 
   // Module 3: Salary Advances
