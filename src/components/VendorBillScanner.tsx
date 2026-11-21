@@ -31,7 +31,8 @@ import {
   Layers,
   ArrowLeft,
   ArrowRight,
-  Settings2
+  Settings2,
+  Printer
 } from 'lucide-react';
 import { useSgs } from '../context/SgsContext';
 import { scanBillViaLocalPaddle, testLocalPaddle } from '../services/localPaddleOcr';
@@ -44,7 +45,7 @@ import {
   Vendor,
 } from '../types';
 import * as Acc from '../utils/accounting';
-import { calculateFromInclusiveRate, calculateFromBaseRate, GST_PRESET_RATES } from '../utils/gstUtils';
+import { calculateFromInclusiveRate, calculateFromBaseRate, formatInr, safeNumber } from '../utils/gstUtils';
 import { PaymentAccountSelector } from './PaymentAccountSelector';
 import {
   formatAccountLabel,
@@ -161,11 +162,22 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
   const [payModalError, setPayModalError] = useState<string | null>(null);
   const [isSubmittingBillPay, setIsSubmittingBillPay] = useState(false);
 
-  // Bill Detail Viewer Modal & Multi-page Zoom Modal
+  // Bill Detail Viewer Modal, Printable Bill Slip & Multi-page Zoom Modal
   const [viewingBill, setViewingBill] = useState<VendorBill | null>(null);
+  const [printableVendorBill, setPrintableVendorBill] = useState<VendorBill | null>(null);
   const [viewingBillTab, setViewingBillTab] = useState<'jobs' | 'items'>('jobs');
   const [zoomedImages, setZoomedImages] = useState<string[]>([]);
   const [zoomedPageIndex, setZoomedPageIndex] = useState<number>(0);
+
+  // Strictly resolve currently selected vendor's record & UPI ID (never falls back to global/workshop UPI)
+  const selectedVendorRecord = useMemo(
+    () => Acc.resolveVendorRecord(vendors, selectedVendorId, vendorName),
+    [vendors, selectedVendorId, vendorName]
+  );
+  const selectedVendorUpiId = useMemo(
+    () => Acc.resolveVendorUpiId(vendors, selectedVendorId, vendorName),
+    [vendors, selectedVendorId, vendorName]
+  );
 
   const setZoomedImage = (img: string | null) => {
     if (img) {
@@ -410,6 +422,27 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     }
   };
 
+  const recomputeBillTotals = (
+    nextItems: VendorBillItem[],
+    gstFlag: boolean,
+    nextDiscount: number = discount,
+    nextRoundOff: number = roundOff,
+    syncPaidIfFull: boolean = false
+  ) => {
+    const totals = Acc.computeVendorBillTotals({
+      items: nextItems,
+      isGstBill: gstFlag,
+      discount: nextDiscount,
+      roundOff: nextRoundOff,
+    });
+    setTaxAmount(totals.taxAmount);
+    setTotalAmount(totals.totalAmount);
+    if (syncPaidIfFull || paymentStatus === 'paid') {
+      setPaidAmount(totals.totalAmount);
+    }
+    return totals;
+  };
+
   const handleToggleBillTaxType = (nextGst: boolean) => {
     setIsGstBill(nextGst);
     if (editingBillId && editingBillOrigGst === false && nextGst) {
@@ -421,32 +454,25 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       setConfirmNonGstToGstStock(false);
     }
     const updated = items.map(it => {
-      const qty = Math.max(1, Number(it.quantity) || 1);
-      const currentGross =
-        it.grossUnitCost !== undefined && it.grossUnitCost > 0
-          ? Number(it.grossUnitCost)
-          : Number(((Number(it.unitCost) || 0) * (1 + (Number(it.gstPercent) || 0) / 100)).toFixed(2));
-      const targetPct = nextGst ? (Number(it.gstPercent) > 0 ? Number(it.gstPercent) : 18) : 0;
-      const calc = calculateFromInclusiveRate(currentGross, targetPct, qty);
+      const qty = safeNumber(it.quantity, 0) > 0 ? safeNumber(it.quantity, 1) : 1;
+      const baseRate = Acc.round2(Math.max(0, safeNumber(it.unitCost, 0)));
+      const targetPct = nextGst ? (safeNumber(it.gstPercent, 0) > 0 ? safeNumber(it.gstPercent, 18) : 18) : 0;
+      const calc = nextGst
+        ? calculateFromBaseRate(baseRate, targetPct, qty)
+        : calculateFromBaseRate(baseRate > 0 ? baseRate : safeNumber(it.grossUnitCost, 0), 0, qty);
       return {
         ...it,
-        grossUnitCost: currentGross,
+        quantity: qty,
         gstPercent: targetPct,
         unitCost: calc.baseRate,
+        grossUnitCost: nextGst ? calc.grossRate : calc.baseRate,
         total: calc.baseAmount,
-        gstAmount: calc.totalGst,
-        totalWithGst: calc.totalWithGst,
+        gstAmount: nextGst ? calc.totalGst : 0,
+        totalWithGst: nextGst ? calc.totalWithGst : calc.baseAmount,
       };
     });
     setItems(updated);
-    const sumBase = Number(updated.reduce((acc, it) => acc + (it.total || 0), 0).toFixed(2));
-    const sumGst = nextGst ? Number(updated.reduce((acc, it) => acc + (it.gstAmount || 0), 0).toFixed(2)) : 0;
-    setTaxAmount(sumGst);
-    const nextTotal = Number(Math.max(0, sumBase + sumGst - (discount || 0) + (roundOff || 0)).toFixed(2));
-    setTotalAmount(nextTotal);
-    if (paymentStatus === 'paid') {
-      setPaidAmount(nextTotal);
-    }
+    recomputeBillTotals(updated, nextGst, discount, roundOff, paymentStatus === 'paid');
   };
 
   const openNewVendorBillModal = (preVendor?: Vendor) => {
@@ -460,7 +486,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     setSelectedVendorId(preVendor?.id || '');
     setInvoiceNumber('');
     setInvoiceDate(Acc.todayLocal());
-    setItems([{ itemName: '', quantity: 1, unitCost: 0, grossUnitCost: 0, gstPercent: 18, gstAmount: 0, total: 0, totalWithGst: 0 }]);
+    setItems([{ itemName: '', description: '', quantity: 1, unitCost: 0, grossUnitCost: 0, gstPercent: 18, gstAmount: 0, total: 0, totalWithGst: 0 }]);
     setTaxAmount(0);
     setDiscount(0);
     setRoundOff(0);
@@ -506,33 +532,39 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
 
     const normalizedItems: VendorBillItem[] = (bill.items && bill.items.length > 0
       ? bill.items
-      : [{ itemName: '', quantity: 1, unitCost: 0, grossUnitCost: 0, gstPercent: gstFlag ? 18 : 0, gstAmount: 0, total: 0, totalWithGst: 0 }]
+      : [{ itemName: '', description: '', quantity: 1, unitCost: 0, grossUnitCost: 0, gstPercent: gstFlag ? 18 : 0, gstAmount: 0, total: 0, totalWithGst: 0 }]
     ).map(it => {
-      const qty = Math.max(1, Number(it.quantity) || 1);
-      const pct = !gstFlag ? 0 : (it.gstPercent !== undefined ? Number(it.gstPercent) : 18);
-      const gross = it.grossUnitCost !== undefined && it.grossUnitCost > 0
-        ? Number(it.grossUnitCost)
-        : Number(((Number(it.unitCost) || 0) * (1 + pct / 100)).toFixed(2));
-      const calc = calculateFromInclusiveRate(gross, pct, qty);
+      const qty = safeNumber(it.quantity, 0) > 0 ? safeNumber(it.quantity, 1) : 1;
+      const pct = !gstFlag ? 0 : (it.gstPercent !== undefined ? Math.max(0, safeNumber(it.gstPercent, 18)) : 18);
+      const baseRate = Acc.round2(Math.max(0, safeNumber(it.unitCost, 0)));
+      const calcFromBase = calculateFromBaseRate(baseRate, pct, qty);
+      const gross = !gstFlag
+        ? baseRate
+        : (it.grossUnitCost !== undefined && safeNumber(it.grossUnitCost, 0) > 0
+            ? Acc.round2(safeNumber(it.grossUnitCost, 0))
+            : calcFromBase.grossRate);
       return {
         ...it,
+        description: it.description || '',
         quantity: qty,
         gstPercent: pct,
+        unitCost: baseRate,
         grossUnitCost: gross,
-        unitCost: it.unitCost !== undefined ? Number(it.unitCost) : calc.baseRate,
-        total: it.total !== undefined ? Number(it.total) : calc.baseAmount,
-        gstAmount: !gstFlag ? 0 : (it.gstAmount !== undefined ? Number(it.gstAmount) : calc.totalGst),
-        totalWithGst: !gstFlag ? (it.total !== undefined ? Number(it.total) : calc.baseAmount) : (it.totalWithGst !== undefined ? Number(it.totalWithGst) : calc.totalWithGst),
+        total: it.total !== undefined ? Acc.round2(safeNumber(it.total, 0)) : calcFromBase.baseAmount,
+        gstAmount: !gstFlag ? 0 : (it.gstAmount !== undefined ? Acc.round2(safeNumber(it.gstAmount, 0)) : calcFromBase.totalGst),
+        totalWithGst: !gstFlag
+          ? (it.total !== undefined ? Acc.round2(safeNumber(it.total, 0)) : calcFromBase.baseAmount)
+          : (it.totalWithGst !== undefined ? Acc.round2(safeNumber(it.totalWithGst, 0)) : calcFromBase.totalWithGst),
       };
     });
 
     setItems(normalizedItems);
     setExpandedItemIndices(normalizedItems.map((_, idx) => idx));
-    setTaxAmount(!gstFlag ? 0 : (Number(bill.taxAmount) || 0));
-    setDiscount(Number(bill.discount) || 0);
-    setRoundOff(Number(bill.roundOff) || 0);
-    setTotalAmount(Number(bill.totalAmount) || 0);
-    setPaidAmount(Number(bill.paidAmount) || 0);
+    setTaxAmount(!gstFlag ? 0 : Acc.round2(safeNumber(bill.taxAmount, 0)));
+    setDiscount(Acc.round2(safeNumber(bill.discount, 0)));
+    setRoundOff(Acc.round2(safeNumber(bill.roundOff, 0)));
+    setTotalAmount(Acc.round2(safeNumber(bill.totalAmount, 0)));
+    setPaidAmount(Acc.round2(safeNumber(bill.paidAmount, 0)));
     setPaymentStatus(bill.paymentStatus || 'pending');
     const resolvedMode: PaymentMode = bill.paymentMode || 'upi';
     setPaymentMode(resolvedMode);
@@ -556,79 +588,72 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     setIsScannerModalOpen(true);
   };
 
-  // Dynamic Item calculations with per-item GST input & auto-reduction
+  // Dynamic Item calculations with exact decimal/paise precision & per-item GST
   const handleItemChange = (index: number, field: keyof VendorBillItem, value: any) => {
     const updated = [...items];
     const current = { ...updated[index] };
     const defaultPct = isGstBill ? 18 : 0;
-    const itPct = !isGstBill ? 0 : (current.gstPercent !== undefined ? current.gstPercent : defaultPct);
-    const qty = field === 'quantity' ? Math.max(1, Number(value) || 1) : Math.max(1, current.quantity || 1);
+    const itPct = !isGstBill ? 0 : (current.gstPercent !== undefined ? Math.max(0, safeNumber(current.gstPercent, defaultPct)) : defaultPct);
+    const curQty = safeNumber(current.quantity, 0) > 0 ? safeNumber(current.quantity, 1) : 1;
 
     if (field === 'grossUnitCost') {
-      const gross = Math.max(0, Number(value) || 0);
-      const calc = calculateFromInclusiveRate(gross, itPct, qty);
+      const gross = Acc.round2(Math.max(0, safeNumber(value, 0)));
+      const calc = calculateFromInclusiveRate(gross, itPct, curQty);
       updated[index] = {
         ...current,
         grossUnitCost: gross,
         gstPercent: itPct,
-        quantity: qty,
+        quantity: curQty,
         unitCost: calc.baseRate,
         total: calc.baseAmount,
-        gstAmount: calc.totalGst,
-        totalWithGst: calc.totalWithGst,
+        gstAmount: isGstBill ? calc.totalGst : 0,
+        totalWithGst: isGstBill ? calc.totalWithGst : calc.baseAmount,
       };
     } else if (field === 'gstPercent') {
-      const pct = !isGstBill ? 0 : Math.max(0, Number(value) || 0);
-      const gross = (current.grossUnitCost !== undefined && current.grossUnitCost > 0)
-        ? current.grossUnitCost
-        : (current.unitCost * (1 + (current.gstPercent || 0) / 100));
-      const calc = calculateFromInclusiveRate(gross, pct, qty);
+      const pct = !isGstBill ? 0 : Math.max(0, Math.min(100, safeNumber(value, 0)));
+      const base = Acc.round2(Math.max(0, safeNumber(current.unitCost, 0)));
+      const calc = calculateFromBaseRate(base, pct, curQty);
       updated[index] = {
         ...current,
         gstPercent: pct,
-        grossUnitCost: gross,
-        quantity: qty,
         unitCost: calc.baseRate,
+        grossUnitCost: calc.grossRate,
+        quantity: curQty,
         total: calc.baseAmount,
-        gstAmount: calc.totalGst,
-        totalWithGst: calc.totalWithGst,
+        gstAmount: isGstBill ? calc.totalGst : 0,
+        totalWithGst: isGstBill ? calc.totalWithGst : calc.baseAmount,
       };
     } else if (field === 'unitCost') {
-      const base = Math.max(0, Number(value) || 0);
-      const calc = calculateFromBaseRate(base, itPct, qty);
+      const base = Acc.round2(Math.max(0, safeNumber(value, 0)));
+      const calc = calculateFromBaseRate(base, itPct, curQty);
       updated[index] = {
         ...current,
         unitCost: base,
-        grossUnitCost: calc.grossRate,
+        grossUnitCost: isGstBill ? calc.grossRate : base,
         gstPercent: itPct,
-        quantity: qty,
+        quantity: curQty,
         total: calc.baseAmount,
-        gstAmount: calc.totalGst,
-        totalWithGst: calc.totalWithGst,
+        gstAmount: isGstBill ? calc.totalGst : 0,
+        totalWithGst: isGstBill ? calc.totalWithGst : calc.baseAmount,
       };
     } else if (field === 'quantity') {
-      const q = Math.max(1, Number(value) || 1);
-      const gross = (current.grossUnitCost !== undefined && current.grossUnitCost > 0)
-        ? current.grossUnitCost
-        : (current.unitCost * (1 + itPct / 100));
-      const calc = calculateFromInclusiveRate(gross, itPct, q);
+      const rawQ = safeNumber(value, 0);
+      const q = rawQ > 0 ? rawQ : 0;
+      const base = Acc.round2(Math.max(0, safeNumber(current.unitCost, 0)));
+      const calc = calculateFromBaseRate(base, itPct, q > 0 ? q : 1);
       updated[index] = {
         ...current,
         quantity: q,
-        total: calc.baseAmount,
-        gstAmount: calc.totalGst,
-        totalWithGst: calc.totalWithGst,
+        total: q > 0 ? calc.baseAmount : 0,
+        gstAmount: q > 0 && isGstBill ? calc.totalGst : 0,
+        totalWithGst: q > 0 ? (isGstBill ? calc.totalWithGst : calc.baseAmount) : 0,
       };
     } else {
       updated[index] = { ...current, [field]: value };
     }
 
     setItems(updated);
-
-    const sumBase = Number(updated.reduce((acc, it) => acc + (it.total || 0), 0).toFixed(2));
-    const sumGst = isGstBill ? Number(updated.reduce((acc, it) => acc + (it.gstAmount || 0), 0).toFixed(2)) : 0;
-    setTaxAmount(sumGst);
-    setTotalAmount(Number(Math.max(0, sumBase + sumGst - (discount || 0) + (roundOff || 0)).toFixed(2)));
+    recomputeBillTotals(updated, isGstBill, discount, roundOff);
   };
 
   const handleAddItem = () => {
@@ -637,6 +662,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       setExpandedItemIndices(old => [...old, prev.length]);
       return [...prev, { 
         itemName: '', 
+        description: '',
         quantity: 1, 
         unitCost: 0, 
         grossUnitCost: 0, 
@@ -649,29 +675,27 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
   };
 
   const handleSelectStockItem = (inv: any) => {
-    const defaultPct = isGstBill ? 18 : 0;
-    const calc = calculateFromBaseRate(inv.unitCost || 0, defaultPct, 1);
+    const defaultPct = isGstBill ? (inv.gstPercent !== undefined ? safeNumber(inv.gstPercent, 18) : 18) : 0;
+    const calc = calculateFromBaseRate(safeNumber(inv.unitCost, 0), defaultPct, 1);
     const updated = [
       ...items.filter(it => it.itemName.trim() !== ''),
       {
         itemName: inv.name,
-        hsnCode: inv.hsnCode || '8471',
+        description: inv.notes || '',
+        hsnCode: isGstBill ? (inv.hsnCode || '8471') : undefined,
         quantity: 1,
-        grossUnitCost: calc.grossRate,
+        grossUnitCost: isGstBill ? calc.grossRate : calc.baseRate,
         gstPercent: defaultPct,
         unitCost: calc.baseRate,
         total: calc.baseAmount,
-        gstAmount: calc.totalGst,
-        totalWithGst: calc.totalWithGst,
+        gstAmount: isGstBill ? calc.totalGst : 0,
+        totalWithGst: isGstBill ? calc.totalWithGst : calc.baseAmount,
         matchedInventoryId: inv.id,
         syncMode: 'merge_existing' as const,
       }
     ];
     setItems(updated);
-    const sumBase = Number(updated.reduce((acc, it) => acc + (it.total || 0), 0).toFixed(2));
-    const sumGst = isGstBill ? Number(updated.reduce((acc, it) => acc + (it.gstAmount || 0), 0).toFixed(2)) : 0;
-    setTaxAmount(sumGst);
-    setTotalAmount(Number(Math.max(0, sumBase + sumGst - (discount || 0) + (roundOff || 0)).toFixed(2)));
+    recomputeBillTotals(updated, isGstBill, discount, roundOff);
     setIsStockPickerOpen(false);
     setStockSearchQuery('');
   };
@@ -680,10 +704,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     if (items.length === 1) return;
     const updated = items.filter((_, i) => i !== index);
     setItems(updated);
-    const sumBase = Number(updated.reduce((acc, it) => acc + (it.total || 0), 0).toFixed(2));
-    const sumGst = isGstBill ? Number(updated.reduce((acc, it) => acc + (it.gstAmount || 0), 0).toFixed(2)) : 0;
-    setTaxAmount(sumGst);
-    setTotalAmount(Number(Math.max(0, sumBase + sumGst - (discount || 0) + (roundOff || 0)).toFixed(2)));
+    recomputeBillTotals(updated, isGstBill, discount, roundOff);
   };
 
   // Save new or edited bill
@@ -698,11 +719,49 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       setBillFormError('Please enter invoice / bill number.');
       return;
     }
-    const namedItems = items.filter(it => it.itemName.trim() !== '').map(it => (
-      !isGstBill
-        ? { ...it, gstPercent: 0, gstAmount: 0, totalWithGst: it.total || (it.unitCost * it.quantity) }
-        : it
-    ));
+    const namedItems: VendorBillItem[] = items
+      .filter(it => it.itemName.trim() !== '')
+      .map(it => {
+        const qty = safeNumber(it.quantity, 0);
+        const unitCost = Acc.round2(Math.max(0, safeNumber(it.unitCost, 0)));
+        const trimmedDesc = it.description?.trim() || undefined;
+        if (!isGstBill) {
+          const lineTotal = Acc.round2(unitCost * qty);
+          return {
+            ...it,
+            itemName: it.itemName.trim(),
+            description: trimmedDesc,
+            hsnCode: undefined,
+            quantity: qty,
+            unitCost,
+            grossUnitCost: unitCost,
+            gstPercent: 0,
+            gstAmount: 0,
+            total: lineTotal,
+            totalWithGst: lineTotal,
+          };
+        }
+        const pct = Math.max(0, Math.min(100, safeNumber(it.gstPercent, 0)));
+        const lineBase = Acc.round2(unitCost * qty);
+        const lineTax = it.gstAmount !== undefined && Number.isFinite(Number(it.gstAmount))
+          ? Acc.round2(Math.max(0, Number(it.gstAmount)))
+          : Acc.round2((lineBase * pct) / 100);
+        const lineGrossUnit = it.grossUnitCost !== undefined && Number.isFinite(Number(it.grossUnitCost))
+          ? Acc.round2(Math.max(0, Number(it.grossUnitCost)))
+          : Acc.computeGstInclusiveCost(unitCost, pct);
+        return {
+          ...it,
+          itemName: it.itemName.trim(),
+          description: trimmedDesc,
+          quantity: qty,
+          unitCost,
+          grossUnitCost: lineGrossUnit,
+          gstPercent: pct,
+          total: lineBase,
+          gstAmount: lineTax,
+          totalWithGst: Acc.round2(lineBase + lineTax),
+        };
+      });
     if (namedItems.length === 0) {
       setBillFormError('Please add at least one item with a name.');
       return;
@@ -711,14 +770,16 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       setBillFormError('Each item must have quantity > 0 and unit cost ≥ ₹0.');
       return;
     }
-    if ((Number(totalAmount) || 0) < 0 || (Number(discount) || 0) < 0) {
+    const cleanTotal = Acc.round2(safeNumber(totalAmount, 0));
+    const cleanDiscount = Acc.round2(safeNumber(discount, 0));
+    if (cleanTotal < 0 || cleanDiscount < 0) {
       setBillFormError('Total amount and discount cannot be negative.');
       return;
     }
 
-    const effectivePaid = paymentStatus === 'pending' ? 0 : Math.max(0, Number(paidAmount) || 0);
-    if (effectivePaid > (Number(totalAmount) || 0) + 0.01) {
-      setBillFormError(`Paid amount (₹${effectivePaid.toLocaleString('en-IN')}) cannot exceed Bill Total (₹${(Number(totalAmount) || 0).toLocaleString('en-IN')}).`);
+    const effectivePaid = paymentStatus === 'pending' ? 0 : Acc.round2(Math.max(0, safeNumber(paidAmount, 0)));
+    if (effectivePaid > cleanTotal + 0.01) {
+      setBillFormError(`Paid amount (₹${formatInr(effectivePaid)}) cannot exceed Bill Total (₹${formatInr(cleanTotal)}).`);
       return;
     }
     let resolvedAccountType: PaymentAccountType | undefined;
@@ -771,9 +832,15 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       }
     }
 
-    const sumBase = Number(namedItems.reduce((acc, it) => acc + (it.total || 0), 0).toFixed(2));
-    const effectiveDiscount = Number(discount) || 0;
-    const effectiveRoundOff = Number(roundOff) || 0;
+    const computedTotals = Acc.computeVendorBillTotals({
+      items: namedItems,
+      isGstBill,
+      discount: cleanDiscount,
+      roundOff: Acc.round2(safeNumber(roundOff, 0)),
+    });
+    const sumBase = computedTotals.subtotal;
+    const effectiveDiscount = cleanDiscount;
+    const effectiveRoundOff = Acc.round2(safeNumber(roundOff, 0));
     // Strictly enforce:
     // 1) Only GST bills can sync to Stock & Parts Inventory
     // 2) Converting Without-GST -> GST requires explicit confirmation before adding stock
@@ -781,7 +848,8 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     const effectiveAutoStock = Boolean(
       isGstBill && autoUpdateStock && (!isConvertingNonGstToGst || confirmNonGstToGstStock)
     );
-    const effectiveTaxAmount = isGstBill ? (Number(taxAmount) || 0) : 0;
+    const effectiveTaxAmount = isGstBill ? Acc.round2(Math.max(0, safeNumber(taxAmount, computedTotals.taxAmount))) : 0;
+    const { cgst: effCgst, sgst: effSgst } = isGstBill ? Acc.splitTax(effectiveTaxAmount) : { cgst: 0, sgst: 0 };
 
     const existingBill = editingBillId ? vendorBills.find(b => b.id === editingBillId) : undefined;
     const resolvedImages = billPages.map(p => p.dataUrl);
@@ -798,11 +866,13 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       items: namedItems,
       subtotal: sumBase,
       taxAmount: effectiveTaxAmount,
+      cgstAmount: isGstBill ? effCgst : 0,
+      sgstAmount: isGstBill ? effSgst : 0,
       discount: effectiveDiscount,
       roundOff: effectiveRoundOff,
-      totalAmount,
+      totalAmount: cleanTotal,
       paidAmount: effectivePaid,
-      paymentStatus: (effectivePaid >= totalAmount && totalAmount > 0 ? 'paid' : effectivePaid > 0 ? 'partial' : 'pending') as 'paid' | 'partial' | 'pending',
+      paymentStatus: (effectivePaid >= cleanTotal - 0.005 && cleanTotal > 0 ? 'paid' : effectivePaid > 0 ? 'partial' : 'pending') as 'paid' | 'partial' | 'pending',
       paymentMode: resolvedPaymentMode,
       paymentReference: paymentReference.trim() || undefined,
       notes,
@@ -933,10 +1003,21 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       return;
     }
 
+    const sanitizedVendor = {
+      ...vendorFormData,
+      name: vendorFormData.name.trim(),
+      phone: vendorFormData.phone.trim(),
+      gstin: vendorFormData.gstin.trim(),
+      address: vendorFormData.address.trim(),
+      upiId: vendorFormData.upiId.trim() || undefined,
+      bankDetails: vendorFormData.bankDetails.trim() || undefined,
+      notes: vendorFormData.notes.trim() || undefined,
+    };
+
     if (editingVendor) {
-      updateVendor(editingVendor.id, vendorFormData);
+      updateVendor(editingVendor.id, sanitizedVendor);
     } else {
-      addVendor(vendorFormData);
+      addVendor(sanitizedVendor);
     }
     setIsVendorModalOpen(false);
   };
@@ -947,7 +1028,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     }
   };
 
-  // Aggregated stats per Vendor
+  // Aggregated stats per Vendor (paise-safe rounding)
   const vendorLedgerStats = useMemo(() => {
     const stats: Record<string, { totalPurchases: number; totalPaid: number; pending: number; bills: VendorBill[] }> = {};
     
@@ -964,9 +1045,9 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
       }
 
       if (vId && stats[vId]) {
-        stats[vId].totalPurchases += (bill.totalAmount || 0);
-        stats[vId].totalPaid += (bill.paidAmount || 0);
-        stats[vId].pending += ((bill.totalAmount || 0) - (bill.paidAmount || 0));
+        stats[vId].totalPurchases = Acc.round2(stats[vId].totalPurchases + (bill.totalAmount || 0));
+        stats[vId].totalPaid = Acc.round2(stats[vId].totalPaid + (bill.paidAmount || 0));
+        stats[vId].pending = Acc.round2(Math.max(0, stats[vId].totalPurchases - stats[vId].totalPaid));
         stats[vId].bills.push(bill);
       }
     });
@@ -974,10 +1055,10 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
     return stats;
   }, [vendors, vendorBills]);
 
-  // Overall totals
-  const totalPurchases = vendorBills.reduce((acc, b) => acc + (b.totalAmount || 0), 0);
-  const totalPaid = vendorBills.reduce((acc, b) => acc + (b.paidAmount || 0), 0);
-  const totalPending = totalPurchases - totalPaid;
+  // Overall totals (paise-safe)
+  const totalPurchases = Acc.round2(vendorBills.reduce((acc, b) => acc + (b.totalAmount || 0), 0));
+  const totalPaid = Acc.round2(vendorBills.reduce((acc, b) => acc + (b.paidAmount || 0), 0));
+  const totalPending = Acc.round2(Math.max(0, totalPurchases - totalPaid));
 
   // Filtered Bills
   const filteredBills = useMemo(() => {
@@ -988,7 +1069,10 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
         bill.vendorName.toLowerCase().includes(q) ||
         bill.invoiceNumber.toLowerCase().includes(q) ||
         (bill.paymentReference && bill.paymentReference.toLowerCase().includes(q)) ||
-        bill.items.some(it => it.itemName.toLowerCase().includes(q));
+        bill.items.some(it =>
+          it.itemName.toLowerCase().includes(q) ||
+          (it.description && it.description.toLowerCase().includes(q))
+        );
 
       const matchesVendor = 
         selectedVendorFilter === 'all' || 
@@ -1309,12 +1393,15 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                               <span className="truncate">{vendor.address}</span>
                             </div>
                           )}
-                          {vendor.upiId && (
-                            <div className="flex items-center gap-1.5">
-                              <CreditCard className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                              <span className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold">{vendor.upiId}</span>
-                            </div>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            <CreditCard className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                            <span>UPI ID:</span>
+                            {vendor.upiId?.trim() ? (
+                              <span className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold">{vendor.upiId.trim()}</span>
+                            ) : (
+                              <span className="italic text-slate-400">Not Provided</span>
+                            )}
+                          </div>
                           {vendor.notes && (
                             <p className="italic text-[11px] text-slate-400 pt-0.5">"{vendor.notes}"</p>
                           )}
@@ -1675,9 +1762,19 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                   className={`p-1.5 rounded transition-colors cursor-pointer ${
                                     isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                                   }`}
-                                  title="View full tax bill slip & print"
+                                  title="View bill details"
                                 >
                                   <Eye className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setPrintableVendorBill(bill)}
+                                  className={`p-1.5 rounded transition-colors cursor-pointer ${
+                                    isDark ? 'text-slate-400 hover:text-blue-400 hover:bg-slate-800' : 'text-slate-600 hover:text-blue-700 hover:bg-blue-50'
+                                  }`}
+                                  title={Acc.isVendorBillGst(bill) ? 'Print GST Purchase Bill / PDF' : 'Print Purchase Bill (Without GST) / PDF'}
+                                >
+                                  <Printer className="w-4 h-4" />
                                 </button>
                                 {canDelete && (
                                   <button
@@ -1700,7 +1797,9 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                           </tr>
 
                           {/* 2. EXPANDED INLINE DETAILS (Only shown when clicked) */}
-                          {isExpanded && (
+                          {isExpanded && (() => {
+                            const billIsGst = Acc.isVendorBillGst(bill);
+                            return (
                             <tr key={`${bill.id}-expanded`} className={isDark ? 'bg-slate-950/70 border-b border-slate-800' : 'bg-slate-50/70 border-b border-slate-200'}>
                               <td colSpan={9} className="p-4 space-y-3">
                                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
@@ -1712,9 +1811,15 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                         <Boxes className="w-3.5 h-3.5 text-blue-500" />
                                         <span>Purchased Items & Spares ({bill.items?.length || 0})</span>
                                       </span>
-                                      <span className="text-xs font-mono text-slate-400">
-                                        Tax: ₹{(bill.taxAmount || 0).toLocaleString('en-IN')}
-                                      </span>
+                                      {billIsGst ? (
+                                        <span className="text-xs font-mono text-slate-400">
+                                          GST: ₹{formatInr(bill.taxAmount || 0, true)}
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                                          Without GST Bill
+                                        </span>
+                                      )}
                                     </div>
 
                                     <div className={`rounded-lg border overflow-hidden ${
@@ -1726,11 +1831,11 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                             isDark ? 'bg-slate-900 text-slate-400 border-slate-800' : 'bg-slate-100 text-slate-600 border-slate-200'
                                           }`}>
                                             <tr>
-                                              <th className="py-2 px-3">Item Description</th>
+                                              <th className="py-2 px-3">Item & Description</th>
                                               <th className="py-2 px-3 text-center">Qty</th>
-                                              <th className="py-2 px-3 text-right">Unit Rate</th>
-                                              <th className="py-2 px-3 text-center">GST</th>
-                                              <th className="py-2 px-3 text-right">Total (Inc. GST)</th>
+                                              <th className="py-2 px-3 text-right">{billIsGst ? 'Base Rate' : 'Unit Rate'}</th>
+                                              {billIsGst && <th className="py-2 px-3 text-center">GST</th>}
+                                              <th className="py-2 px-3 text-right">{billIsGst ? 'Total (Inc. GST)' : 'Total'}</th>
                                             </tr>
                                           </thead>
                                           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -1738,25 +1843,32 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                               bill.items.map((item, idx) => (
                                                 <tr key={idx} className={isDark ? 'hover:bg-slate-800/40' : 'hover:bg-slate-50'}>
                                                   <td className="py-2 px-3 font-medium text-slate-800 dark:text-slate-200">
-                                                    {item.itemName}
+                                                    <div className="font-semibold">{item.itemName}</div>
+                                                    {item.description && (
+                                                      <div className="text-[11px] text-slate-500 dark:text-slate-400 whitespace-pre-line mt-0.5">
+                                                        {item.description}
+                                                      </div>
+                                                    )}
                                                   </td>
                                                   <td className="py-2 px-3 text-center font-mono">
                                                     {item.quantity}
                                                   </td>
                                                   <td className="py-2 px-3 text-right font-mono text-slate-500">
-                                                    ₹{item.grossUnitCost || item.unitCost}
+                                                    ₹{formatInr(item.unitCost, true)}
                                                   </td>
-                                                  <td className="py-2 px-3 text-center font-mono text-[11px] text-slate-500">
-                                                    {item.gstPercent || 0}%
-                                                  </td>
+                                                  {billIsGst && (
+                                                    <td className="py-2 px-3 text-center font-mono text-[11px] text-slate-500">
+                                                      {item.gstPercent || 0}%
+                                                    </td>
+                                                  )}
                                                   <td className="py-2 px-3 text-right font-mono font-bold text-slate-900 dark:text-white">
-                                                    ₹{(item.totalWithGst || item.total).toLocaleString('en-IN')}
+                                                    ₹{formatInr(billIsGst ? (item.totalWithGst ?? ((item.total || 0) + (item.gstAmount || 0))) : (item.total || 0), true)}
                                                   </td>
                                                 </tr>
                                               ))
                                             ) : (
                                               <tr>
-                                                <td colSpan={5} className="py-3 text-center text-xs text-slate-400 italic">
+                                                <td colSpan={billIsGst ? 5 : 4} className="py-3 text-center text-xs text-slate-400 italic">
                                                   No itemized records available.
                                                 </td>
                                               </tr>
@@ -1896,7 +2008,8 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                 </div>
                               </td>
                             </tr>
-                          )}
+                            );
+                          })()}
                         </React.Fragment>
                       );
                     })
@@ -2508,6 +2621,35 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                   </div>
                 </div>
 
+                {/* Vendor-Specific Payment Details (strictly from selected vendor record — never global/workshop UPI) */}
+                {(selectedVendorRecord || vendorName.trim()) && (
+                  <div className={`px-3 py-2 rounded-lg border flex flex-wrap items-center justify-between gap-2 text-xs ${
+                    isDark ? 'bg-slate-950/70 border-slate-800 text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-700'
+                  }`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <CreditCard className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Vendor UPI ID:</span>
+                      {selectedVendorUpiId ? (
+                        <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 truncate">
+                          {selectedVendorUpiId}
+                        </span>
+                      ) : (
+                        <span className="italic text-slate-400 text-[11px]">Not Provided</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
+                      {isGstBill && selectedVendorRecord?.gstin && (
+                        <span className="font-mono">
+                          GSTIN: <strong className={isDark ? 'text-slate-200' : 'text-slate-800'}>{selectedVendorRecord.gstin}</strong>
+                        </span>
+                      )}
+                      {selectedVendorRecord?.phone && (
+                        <span className="font-mono">{selectedVendorRecord.phone}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Line Items Container */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between flex-wrap gap-2">
@@ -2645,17 +2787,22 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                               </span>
                               <div className="min-w-0">
                                 <p className={`text-xs font-bold truncate ${it.itemName.trim() ? (isDark ? 'text-white' : 'text-slate-900') : 'text-slate-400 italic'}`}>
-                                  {it.itemName.trim() || 'Click to enter item description...'}
+                                  {it.itemName.trim() || 'Click to enter item name...'}
                                 </p>
+                                {it.description?.trim() && (
+                                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                    {it.description.trim()}
+                                  </p>
+                                )}
                                 <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
-                                  {it.hsnCode && <span className="font-mono">HSN: {it.hsnCode}</span>}
-                                  {it.matchedInventoryId ? (
+                                  {isGstBill && it.hsnCode && <span className="font-mono">HSN: {it.hsnCode}</span>}
+                                  {isGstBill && (it.matchedInventoryId ? (
                                     <span className="text-emerald-500 font-semibold flex items-center gap-0.5">
                                       ✓ Linked to Stock
                                     </span>
                                   ) : (
                                     <span className="text-slate-400">New Item</span>
-                                  )}
+                                  ))}
                                 </div>
                               </div>
                             </div>
@@ -2663,10 +2810,10 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                             <div className="flex items-center gap-3 shrink-0">
                               <div className="text-right font-mono">
                                 <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 block">
-                                  ₹{itemTotalGst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  ₹{formatInr(isGstBill ? itemTotalGst : (it.total || 0), true)}
                                 </span>
                                 <span className="text-[10px] text-slate-400 block">
-                                  {it.quantity} Qty · {it.gstPercent ?? 18}% GST
+                                  {it.quantity} Qty{isGstBill ? ` · ${it.gstPercent ?? 18}% GST` : ''}
                                 </span>
                               </div>
 
@@ -2705,7 +2852,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                           {/* 2. Expanded Inputs (Shown only when clicked) */}
                           {isItemExpanded && (
                             <div className="p-3.5 space-y-2.5 animate-in fade-in duration-150">
-                              {/* Top: Item Name, HSN No, Quantity */}
+                              {/* Top: Item Name, HSN No (GST only), Quantity */}
                               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
                                 {/* Part Name */}
                                 <div className="flex-1 w-full">
@@ -2718,37 +2865,40 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                     list="vendor-bill-stock-datalist"
                                     value={it.itemName}
                                     onChange={(e) => handleItemChange(idx, 'itemName', e.target.value)}
-                                    placeholder="Part Name (e.g. HP 12A Toner, Kingston 240GB SSD)"
+                                    placeholder="Item Name (e.g. RAM, SSD, Adapter)"
                                     className={`w-full rounded-lg px-2.5 py-1.5 text-xs focus:outline-none ${
                                       isDark ? 'bg-slate-950 border border-slate-700 text-slate-200' : 'bg-slate-50 border border-slate-300 text-slate-900'
                                     }`}
                                   />
                                 </div>
 
-                                {/* HSN No */}
-                                <div className="w-full sm:w-28">
-                                  <label className={`block text-[10px] font-bold uppercase mb-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                                    HSN Code
-                                  </label>
-                                  <input
-                                    type="text"
-                                    value={it.hsnCode || ''}
-                                    onChange={(e) => handleItemChange(idx, 'hsnCode', e.target.value)}
-                                    placeholder="HSN No"
-                                    className={`w-full rounded-lg px-2 py-1.5 text-xs font-mono text-center focus:outline-none ${
-                                      isDark ? 'bg-slate-950 border border-slate-700 text-blue-400' : 'bg-slate-50 border border-slate-300 text-blue-700 font-semibold'
-                                    }`}
-                                  />
-                                </div>
+                                {/* HSN No (Only shown for GST Bills) */}
+                                {isGstBill && (
+                                  <div className="w-full sm:w-28">
+                                    <label className={`block text-[10px] font-bold uppercase mb-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                      HSN Code
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={it.hsnCode || ''}
+                                      onChange={(e) => handleItemChange(idx, 'hsnCode', e.target.value)}
+                                      placeholder="HSN No"
+                                      className={`w-full rounded-lg px-2 py-1.5 text-xs font-mono text-center focus:outline-none ${
+                                        isDark ? 'bg-slate-950 border border-slate-700 text-blue-400' : 'bg-slate-50 border border-slate-300 text-blue-700 font-semibold'
+                                      }`}
+                                    />
+                                  </div>
+                                )}
 
                                 {/* Quantity */}
-                                <div className="w-full sm:w-20">
+                                <div className="w-full sm:w-24">
                                   <label className={`block text-[10px] font-bold uppercase mb-0.5 text-center ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                                     Quantity
                                   </label>
                                   <input
                                     type="number"
-                                    min="1"
+                                    min="0.01"
+                                    step="any"
                                     value={it.quantity}
                                     onChange={(e) => handleItemChange(idx, 'quantity', e.target.value)}
                                     placeholder="Qty"
@@ -2759,169 +2909,249 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                                 </div>
                               </div>
 
-                              {/* Stock Connection & Link Bar */}
-                              <div className={`px-2.5 py-1.5 rounded-lg text-[11px] flex flex-wrap items-center justify-between gap-1.5 border ${
-                                it.matchedInventoryId
-                                  ? (isDark ? 'bg-emerald-950/30 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800')
-                                  : (isDark ? 'bg-slate-950/40 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600')
-                              }`}>
-                                <div className="flex items-center gap-1.5">
-                                  <Boxes className="w-3.5 h-3.5 shrink-0 text-blue-500" />
-                                  {it.matchedInventoryId ? (
-                                    <span>
-                                      ✓ Linked to Stock: <strong className="font-semibold text-emerald-600 dark:text-emerald-400">{inventory.find(i => i.id === it.matchedInventoryId)?.name || it.itemName}</strong>
-                                      {' '}(Stock: <span className="font-mono font-bold">{inventory.find(i => i.id === it.matchedInventoryId)?.currentStock ?? 0}</span> units)
-                                    </span>
-                                  ) : (
-                                    <span>Stock Link: Item will be added as new unless matched to existing stock</span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <select
-                                    value={it.matchedInventoryId || ''}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      if (val) {
-                                        const chosen = inventory.find(inv => inv.id === val);
-                                        handleItemChange(idx, 'matchedInventoryId', val);
-                                        handleItemChange(idx, 'syncMode', 'merge_existing');
-                                        if (chosen?.name && !it.itemName.trim()) handleItemChange(idx, 'itemName', chosen.name);
-                                        if (chosen?.hsnCode && !it.hsnCode) handleItemChange(idx, 'hsnCode', chosen.hsnCode);
-                                      } else {
-                                        handleItemChange(idx, 'matchedInventoryId', undefined);
-                                        handleItemChange(idx, 'syncMode', 'create_separate');
-                                      }
-                                    }}
-                                    className={`text-[10px] rounded px-2 py-0.5 border ${
-                                      isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
-                                    }`}
-                                  >
-                                    <option value="">{it.matchedInventoryId ? 'Change stock link...' : 'Search / link to stock item...'}</option>
-                                    {inventory.map((inv, iidx) => (
-                                      <option key={`${inv.id}-${iidx}`} value={inv.id}>
-                                        {inv.name} (Stock: {inv.currentStock}, Cost: ₹{inv.unitCost})
-                                      </option>
-                                    ))}
-                                  </select>
-                                  {it.matchedInventoryId && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        handleItemChange(idx, 'matchedInventoryId', undefined);
-                                        handleItemChange(idx, 'syncMode', 'create_separate');
-                                      }}
-                                      className="text-[10px] text-rose-500 hover:underline px-1 cursor-pointer font-bold"
-                                    >
-                                      Unlink
-                                    </button>
-                                  )}
-                                </div>
+                              {/* Editable Item Description (Separate from Item Name; supports long descriptions) */}
+                              <div>
+                                <label className={`block text-[10px] font-bold uppercase mb-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                                  Item Description (Model / Specs / Serial / Notes)
+                                </label>
+                                <textarea
+                                  rows={2}
+                                  value={it.description || ''}
+                                  onChange={(e) => handleItemChange(idx, 'description', e.target.value)}
+                                  placeholder="e.g. DDR4 8GB Desktop RAM 3200MHz, Kingston NVMe 500GB Gen4, HP 65W Original Adapter..."
+                                  className={`w-full rounded-lg px-2.5 py-1.5 text-xs focus:outline-none resize-y ${
+                                    isDark ? 'bg-slate-950 border border-slate-700 text-slate-200 placeholder:text-slate-600' : 'bg-slate-50 border border-slate-300 text-slate-900 placeholder:text-slate-400'
+                                  }`}
+                                />
                               </div>
 
-                              {/* Bottom Row: Calculation Grid */}
-                              <div className={`p-2.5 rounded-lg border grid grid-cols-2 sm:grid-cols-4 gap-2.5 items-end text-xs ${
-                                isDark ? 'bg-slate-950/60 border-slate-800/80' : 'bg-slate-50 border-slate-200'
-                              }`}>
-                                {/* 1. Rate with GST (Gross / Inclusive) */}
-                                <div>
-                                  <div className="flex items-center justify-between mb-0.5">
-                                    <label className={`text-[10px] font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
-                                      Rate with GST (₹)
-                                    </label>
-                                    <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-950/80 px-1 rounded">Gross</span>
-                                  </div>
-                                  <div className="relative">
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      value={it.grossUnitCost !== undefined ? it.grossUnitCost : Number(((it.unitCost * (1 + (it.gstPercent || 0)/100))).toFixed(2))}
-                                      onChange={(e) => handleItemChange(idx, 'grossUnitCost', e.target.value)}
-                                      placeholder="Rate with GST"
-                                      className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono font-bold focus:outline-none ${
-                                        isDark ? 'bg-slate-900 border border-emerald-800 text-emerald-300' : 'bg-white border border-emerald-300 text-emerald-800'
-                                      }`}
-                                    />
-                                    <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-emerald-500 font-bold">₹</span>
-                                  </div>
-                                </div>
-
-                                {/* 2. Individual GST % Input Box */}
-                                <div>
-                                  <div className="flex items-center justify-between mb-0.5">
-                                    <label className={`text-[10px] font-bold ${isDark ? 'text-blue-400' : 'text-blue-700'}`}>
-                                      GST % Box
-                                    </label>
-                                    <span className="text-[9px] text-blue-500 font-mono">Tax %</span>
+                              {/* Stock Connection & Link Bar (Only for GST Bills) */}
+                              {isGstBill && (
+                                <div className={`px-2.5 py-1.5 rounded-lg text-[11px] flex flex-wrap items-center justify-between gap-1.5 border ${
+                                  it.matchedInventoryId
+                                    ? (isDark ? 'bg-emerald-950/30 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800')
+                                    : (isDark ? 'bg-slate-950/40 border-slate-800 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-600')
+                                }`}>
+                                  <div className="flex items-center gap-1.5">
+                                    <Boxes className="w-3.5 h-3.5 shrink-0 text-blue-500" />
+                                    {it.matchedInventoryId ? (
+                                      <span>
+                                        ✓ Linked to Stock: <strong className="font-semibold text-emerald-600 dark:text-emerald-400">{inventory.find(i => i.id === it.matchedInventoryId)?.name || it.itemName}</strong>
+                                        {' '}(Stock: <span className="font-mono font-bold">{inventory.find(i => i.id === it.matchedInventoryId)?.currentStock ?? 0}</span> units)
+                                      </span>
+                                    ) : (
+                                      <span>Stock Link: Item will be added as new unless matched to existing stock</span>
+                                    )}
                                   </div>
                                   <div className="flex items-center gap-1">
-                                    <div className="relative flex-1">
+                                    <select
+                                      value={it.matchedInventoryId || ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (val) {
+                                          const chosen = inventory.find(inv => inv.id === val);
+                                          handleItemChange(idx, 'matchedInventoryId', val);
+                                          handleItemChange(idx, 'syncMode', 'merge_existing');
+                                          if (chosen?.name && !it.itemName.trim()) handleItemChange(idx, 'itemName', chosen.name);
+                                          if (chosen?.hsnCode && !it.hsnCode) handleItemChange(idx, 'hsnCode', chosen.hsnCode);
+                                        } else {
+                                          handleItemChange(idx, 'matchedInventoryId', undefined);
+                                          handleItemChange(idx, 'syncMode', 'create_separate');
+                                        }
+                                      }}
+                                      className={`text-[10px] rounded px-2 py-0.5 border ${
+                                        isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
+                                      }`}
+                                    >
+                                      <option value="">{it.matchedInventoryId ? 'Change stock link...' : 'Search / link to stock item...'}</option>
+                                      {inventory.map((inv, iidx) => (
+                                        <option key={`${inv.id}-${iidx}`} value={inv.id}>
+                                          {inv.name} (Stock: {inv.currentStock}, Cost: ₹{inv.unitCost})
+                                        </option>
+                                      ))}
+                                    </select>
+                                    {it.matchedInventoryId && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          handleItemChange(idx, 'matchedInventoryId', undefined);
+                                          handleItemChange(idx, 'syncMode', 'create_separate');
+                                        }}
+                                        className="text-[10px] text-rose-500 hover:underline px-1 cursor-pointer font-bold"
+                                      >
+                                        Unlink
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Bottom Row: Calculation Grid (Separate clean layout for GST vs Without-GST) */}
+                              {isGstBill ? (() => {
+                                const lineGstAmt = Acc.round2(it.gstAmount ?? (((it.total || 0) * (it.gstPercent || 0)) / 100));
+                                const { cgst: lineCgst, sgst: lineSgst } = Acc.splitTax(lineGstAmt);
+                                return (
+                                  <div className={`p-2.5 rounded-lg border grid grid-cols-2 sm:grid-cols-5 gap-2.5 items-end text-xs ${
+                                    isDark ? 'bg-slate-950/60 border-slate-800/80' : 'bg-slate-50 border-slate-200'
+                                  }`}>
+                                    {/* 1. Base Rate (Excl. GST) */}
+                                    <div>
+                                      <div className="flex items-center justify-between mb-0.5">
+                                        <label className={`text-[10px] font-bold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                                          Base Rate (₹)
+                                        </label>
+                                        <span className="text-[9px] text-slate-400 font-mono">Excl. GST</span>
+                                      </div>
+                                      <div className="relative">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="any"
+                                          value={it.unitCost}
+                                          onChange={(e) => handleItemChange(idx, 'unitCost', e.target.value)}
+                                          placeholder="0.00"
+                                          className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono font-bold focus:outline-none ${
+                                            isDark ? 'bg-slate-900 border border-slate-700 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
+                                          }`}
+                                        />
+                                        <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                                      </div>
+                                    </div>
+
+                                    {/* 2. Rate with GST (Gross / Inclusive) */}
+                                    <div>
+                                      <div className="flex items-center justify-between mb-0.5">
+                                        <label className={`text-[10px] font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                                          Rate w/ GST (₹)
+                                        </label>
+                                        <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 dark:bg-emerald-950/80 px-1 rounded">Gross</span>
+                                      </div>
+                                      <div className="relative">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="any"
+                                          value={it.grossUnitCost !== undefined ? it.grossUnitCost : Acc.computeGstInclusiveCost(it.unitCost, it.gstPercent || 0)}
+                                          onChange={(e) => handleItemChange(idx, 'grossUnitCost', e.target.value)}
+                                          placeholder="0.00"
+                                          className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono font-bold focus:outline-none ${
+                                            isDark ? 'bg-slate-900 border border-emerald-800 text-emerald-300' : 'bg-white border border-emerald-300 text-emerald-800'
+                                          }`}
+                                        />
+                                        <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-emerald-500 font-bold">₹</span>
+                                      </div>
+                                    </div>
+
+                                    {/* 3. Individual GST % Input Box */}
+                                    <div>
+                                      <div className="flex items-center justify-between mb-0.5">
+                                        <label className={`text-[10px] font-bold ${isDark ? 'text-blue-400' : 'text-blue-700'}`}>
+                                          GST %
+                                        </label>
+                                        <span className="text-[9px] text-blue-500 font-mono">Tax %</span>
+                                      </div>
+                                      <div className="relative">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="100"
+                                          step="any"
+                                          value={it.gstPercent !== undefined ? it.gstPercent : 18}
+                                          onChange={(e) => handleItemChange(idx, 'gstPercent', e.target.value)}
+                                          placeholder="18"
+                                          className={`w-full rounded-md pl-2 pr-4 py-1 text-xs font-mono font-bold text-center focus:outline-none ${
+                                            isDark ? 'bg-slate-900 border border-blue-700 text-blue-300' : 'bg-white border border-blue-400 text-blue-800'
+                                          }`}
+                                        />
+                                        <span className="text-[10px] absolute right-1.5 top-1/2 -translate-y-1/2 text-blue-500 font-bold">%</span>
+                                      </div>
+                                      <div className="flex items-center gap-0.5 mt-1 flex-wrap">
+                                        {[0, 5, 12, 18, 28].map(ratePct => (
+                                          <button
+                                            key={ratePct}
+                                            type="button"
+                                            onClick={() => handleItemChange(idx, 'gstPercent', ratePct)}
+                                            className={`text-[9px] font-bold px-1 py-0.5 rounded transition-colors cursor-pointer ${
+                                              (it.gstPercent ?? 18) === ratePct
+                                                ? 'bg-blue-600 text-white'
+                                                : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-blue-100'
+                                            }`}
+                                          >
+                                            {ratePct}%
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    {/* 4. GST Tax Amount */}
+                                    <div>
+                                      <div className="flex items-center justify-between mb-0.5">
+                                        <label className={`text-[10px] font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+                                          Input GST (₹)
+                                        </label>
+                                      </div>
+                                      <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold border ${
+                                        isDark ? 'bg-slate-900 border-amber-900/60 text-amber-300' : 'bg-white border-amber-200 text-amber-800'
+                                      }`}>
+                                        +₹{lineGstAmt.toFixed(2)}
+                                      </div>
+                                      <span className="text-[9px] text-slate-400 block truncate mt-0.5 font-mono">
+                                        C: ₹{lineCgst.toFixed(2)} | S: ₹{lineSgst.toFixed(2)}
+                                      </span>
+                                    </div>
+
+                                    {/* 5. Item Total with GST */}
+                                    <div className="text-right">
+                                      <label className={`block text-[10px] font-bold mb-0.5 ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                                        Total w/ GST (₹)
+                                      </label>
+                                      <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold text-right border ${
+                                        isDark ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                      }`}>
+                                        ₹{formatInr(itemTotalGst, true)}
+                                      </div>
+                                      <span className="text-[9px] text-slate-400 block truncate mt-0.5 font-mono">
+                                        Base: ₹{formatInr(it.total || 0, true)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })() : (
+                                /* Without-GST Simple Rate & Total Grid (No GST fields shown) */
+                                <div className={`p-2.5 rounded-lg border grid grid-cols-2 gap-3 items-end text-xs ${
+                                  isDark ? 'bg-slate-950/60 border-slate-800/80' : 'bg-amber-50/40 border-amber-200/80'
+                                }`}>
+                                  <div>
+                                    <label className={`block text-[10px] font-bold mb-0.5 ${isDark ? 'text-amber-300' : 'text-amber-800'}`}>
+                                      Unit Rate (₹)
+                                    </label>
+                                    <div className="relative">
                                       <input
                                         type="number"
                                         min="0"
-                                        max="100"
-                                        step="0.5"
-                                        value={it.gstPercent !== undefined ? it.gstPercent : 18}
-                                        onChange={(e) => handleItemChange(idx, 'gstPercent', e.target.value)}
-                                        placeholder="GST %"
-                                        className={`w-full rounded-md pl-2 pr-4 py-1 text-xs font-mono font-bold text-center focus:outline-none ${
-                                          isDark ? 'bg-slate-900 border border-blue-700 text-blue-300' : 'bg-white border border-blue-400 text-blue-800'
+                                        step="any"
+                                        value={it.unitCost}
+                                        onChange={(e) => handleItemChange(idx, 'unitCost', e.target.value)}
+                                        placeholder="0.00"
+                                        className={`w-full rounded-md pl-4 pr-2 py-1.5 text-xs font-mono font-bold focus:outline-none ${
+                                          isDark ? 'bg-slate-900 border border-amber-800/70 text-amber-200' : 'bg-white border border-amber-300 text-slate-900'
                                         }`}
                                       />
-                                      <span className="text-[10px] absolute right-1.5 top-1/2 -translate-y-1/2 text-blue-500 font-bold">%</span>
+                                      <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-amber-500 font-bold">₹</span>
                                     </div>
                                   </div>
-                                  {/* Quick GST % Presets */}
-                                  <div className="flex items-center gap-1 mt-1">
-                                    {[0, 5, 12, 18, 28].map(ratePct => (
-                                      <button
-                                        key={ratePct}
-                                        type="button"
-                                        onClick={() => handleItemChange(idx, 'gstPercent', ratePct)}
-                                        className={`text-[9px] font-bold px-1 py-0.5 rounded transition-colors cursor-pointer ${
-                                          (it.gstPercent ?? 18) === ratePct
-                                            ? 'bg-blue-600 text-white'
-                                            : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-blue-100'
-                                        }`}
-                                      >
-                                        {ratePct}%
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                {/* 3. GST Tax Amount */}
-                                <div>
-                                  <div className="flex items-center justify-between mb-0.5">
-                                    <label className={`text-[10px] font-bold ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
-                                      Input GST (₹)
+                                  <div className="text-right">
+                                    <label className={`block text-[10px] font-bold mb-0.5 ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                                      Line Total (₹)
                                     </label>
-                                    <span className="text-[9px] text-amber-500 font-mono">Tax Amount</span>
+                                    <div className={`rounded-md px-2.5 py-1.5 text-xs font-mono font-bold text-right border ${
+                                      isDark ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                    }`}>
+                                      ₹{formatInr(it.total || 0, true)}
+                                    </div>
                                   </div>
-                                  <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold border ${
-                                    isDark ? 'bg-slate-900 border-amber-900/60 text-amber-300' : 'bg-white border-amber-200 text-amber-800'
-                                  }`}>
-                                    +₹{(it.gstAmount ?? (((it.total || 0) * (it.gstPercent || 0)) / 100)).toFixed(2)}
-                                  </div>
-                                  <span className="text-[9px] text-slate-400 block truncate mt-0.5 font-mono">
-                                    CGST: ₹{(((it.gstAmount || 0) / 2)).toFixed(2)} | SGST: ₹{(((it.gstAmount || 0) / 2)).toFixed(2)}
-                                  </span>
                                 </div>
-
-                                {/* 4. Item Total with GST */}
-                                <div className="text-right">
-                                  <label className={`block text-[10px] font-bold mb-0.5 ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
-                                    Total with GST (₹)
-                                  </label>
-                                  <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold text-right border ${
-                                    isDark ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                                  }`}>
-                                    ₹{itemTotalGst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </div>
-                                  <span className="text-[9px] text-slate-400 block truncate mt-0.5 font-mono">
-                                    Base: ₹{(it.total || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                  </span>
-                                </div>
-                              </div>
+                              )}
 
                               {/* Similar Stock Item Resolution Prompt */}
                               {similarStock && !it.matchedInventoryId && (
@@ -2998,44 +3228,48 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                   </div>
                 </div>
 
-                {/* Financial Totals: Subtotal, Total GST Amount, Discount, Round Off, Total Bill Amount & Payment */}
+                {/* Financial Totals: Subtotal, Total GST (GST bills only), Discount, Round Off, Total Bill Amount & Payment */}
                 <div className={`p-4 rounded-xl border space-y-3 ${
                   isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
                 }`}>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className={`grid grid-cols-2 ${isGstBill ? 'sm:grid-cols-4' : 'sm:grid-cols-3'} gap-3`}>
                     {/* 1. Subtotal / Base Amount */}
                     <div>
                       <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                        Subtotal (Taxable)
+                        {isGstBill ? 'Subtotal (Taxable)' : 'Subtotal'}
                       </label>
                       <div className={`rounded-lg px-3 py-1.5 text-xs font-mono font-bold border ${
                         isDark ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800'
                       }`}>
-                        ₹{Number(items.reduce((acc, it) => acc + (it.total || 0), 0)).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ₹{formatInr(Acc.computeVendorBillTotals({ items, isGstBill, discount, roundOff }).subtotal, true)}
                       </div>
                     </div>
 
-                    {/* 2. Total GST Tax Amount */}
-                    <div>
-                      <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                        Total GST / Tax (₹)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="any"
-                        value={taxAmount}
-                        onChange={(e) => {
-                          const val = Number(e.target.value) || 0;
-                          setTaxAmount(val);
-                          const sum = items.reduce((acc, it) => acc + (it.total || 0), 0);
-                          setTotalAmount(Number(Math.max(0, sum + val - (discount || 0) + (roundOff || 0)).toFixed(2)));
-                        }}
-                        className={`w-full rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-blue-600 focus:outline-none ${
-                          isDark ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-300'
-                        }`}
-                      />
-                    </div>
+                    {/* 2. Total GST Tax Amount (Only shown for GST Bills) */}
+                    {isGstBill && (
+                      <div>
+                        <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                          Total GST / Tax (₹)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={taxAmount}
+                          onChange={(e) => {
+                            const val = Acc.round2(Math.max(0, safeNumber(e.target.value, 0)));
+                            setTaxAmount(val);
+                            const sum = Acc.computeVendorBillTotals({ items, isGstBill, discount, roundOff }).subtotal;
+                            const nextTot = Acc.round2(Math.max(0, sum + val - (discount || 0) + (roundOff || 0)));
+                            setTotalAmount(nextTot);
+                            if (paymentStatus === 'paid') setPaidAmount(nextTot);
+                          }}
+                          className={`w-full rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-blue-600 focus:outline-none ${
+                            isDark ? 'bg-slate-900 border border-slate-800' : 'bg-white border border-slate-300'
+                          }`}
+                        />
+                      </div>
+                    )}
 
                     {/* 3. Discount (₹) */}
                     <div>
@@ -3049,10 +3283,13 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                           step="any"
                           value={discount === 0 ? '' : discount}
                           onChange={(e) => {
-                            const val = Math.max(0, Number(e.target.value) || 0);
+                            const val = Acc.round2(Math.max(0, safeNumber(e.target.value, 0)));
                             setDiscount(val);
-                            const sum = items.reduce((acc, it) => acc + (it.total || 0), 0);
-                            setTotalAmount(Number(Math.max(0, sum + taxAmount - val + (roundOff || 0)).toFixed(2)));
+                            const sum = Acc.computeVendorBillTotals({ items, isGstBill, discount: val, roundOff }).subtotal;
+                            const effTax = isGstBill ? taxAmount : 0;
+                            const nextTot = Acc.round2(Math.max(0, sum + effTax - val + (roundOff || 0)));
+                            setTotalAmount(nextTot);
+                            if (paymentStatus === 'paid') setPaidAmount(nextTot);
                           }}
                           placeholder="0.00"
                           className={`w-full rounded-lg pl-6 pr-3 py-1.5 text-xs font-mono focus:outline-none ${
@@ -3072,12 +3309,15 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                         <button
                           type="button"
                           onClick={() => {
-                            const sum = items.reduce((acc, it) => acc + (it.total || 0), 0);
-                            const base = sum + taxAmount - discount;
+                            const sum = Acc.computeVendorBillTotals({ items, isGstBill, discount, roundOff: 0 }).subtotal;
+                            const effTax = isGstBill ? taxAmount : 0;
+                            const base = Acc.round2(sum + effTax - discount);
                             const rounded = Math.round(base);
-                            const diff = Number((rounded - base).toFixed(2));
+                            const diff = Acc.round2(rounded - base);
                             setRoundOff(diff);
-                            setTotalAmount(Number(Math.max(0, base + diff).toFixed(2)));
+                            const nextTot = Acc.round2(Math.max(0, base + diff));
+                            setTotalAmount(nextTot);
+                            if (paymentStatus === 'paid') setPaidAmount(nextTot);
                           }}
                           className="text-[10px] text-blue-600 hover:underline cursor-pointer font-bold"
                           title="Auto-calculate round off to nearest rupee"
@@ -3091,10 +3331,13 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                           step="any"
                           value={roundOff === 0 ? '' : roundOff}
                           onChange={(e) => {
-                            const val = Number(e.target.value) || 0;
+                            const val = Acc.round2(safeNumber(e.target.value, 0));
                             setRoundOff(val);
-                            const sum = items.reduce((acc, it) => acc + (it.total || 0), 0);
-                            setTotalAmount(Number(Math.max(0, sum + taxAmount - discount + val).toFixed(2)));
+                            const sum = Acc.computeVendorBillTotals({ items, isGstBill, discount, roundOff: val }).subtotal;
+                            const effTax = isGstBill ? taxAmount : 0;
+                            const nextTot = Acc.round2(Math.max(0, sum + effTax - discount + val));
+                            setTotalAmount(nextTot);
+                            if (paymentStatus === 'paid') setPaidAmount(nextTot);
                           }}
                           placeholder="0.00"
                           className={`w-full rounded-lg pl-6 pr-3 py-1.5 text-xs font-mono focus:outline-none ${
@@ -3114,8 +3357,14 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                       </label>
                       <input
                         type="number"
+                        min="0"
+                        step="any"
                         value={totalAmount}
-                        onChange={(e) => setTotalAmount(Number(e.target.value) || 0)}
+                        onChange={(e) => {
+                          const val = Acc.round2(Math.max(0, safeNumber(e.target.value, 0)));
+                          setTotalAmount(val);
+                          if (paymentStatus === 'paid') setPaidAmount(val);
+                        }}
                         className={`w-full rounded-lg px-3 py-1.5 text-xs font-mono font-bold ${
                           isDark ? 'bg-slate-900 border border-emerald-900 text-emerald-400' : 'bg-emerald-50 border border-emerald-200 text-emerald-800'
                         }`}
@@ -3134,11 +3383,13 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                       </div>
                       <input
                         type="number"
+                        min="0"
+                        step="any"
                         value={paidAmount}
                         onChange={(e) => {
-                          const val = Number(e.target.value);
+                          const val = Acc.round2(Math.max(0, safeNumber(e.target.value, 0)));
                           setPaidAmount(val);
-                          if (val >= totalAmount) setPaymentStatus('paid');
+                          if (val >= totalAmount - 0.005 && totalAmount > 0) setPaymentStatus('paid');
                           else if (val > 0) setPaymentStatus('partial');
                           else setPaymentStatus('pending');
                         }}
@@ -3464,17 +3715,37 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
               <div className="grid grid-cols-3 gap-2 text-center text-xs">
                 <div className={`p-2 rounded-lg border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
                   <span className="text-[10px] text-slate-400 block">Total Bill</span>
-                  <span className="font-mono font-bold">₹{currentBill.totalAmount.toLocaleString('en-IN')}</span>
+                  <span className="font-mono font-bold">₹{formatInr(currentBill.totalAmount, true)}</span>
                 </div>
                 <div className={`p-2 rounded-lg border ${isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
                   <span className="text-[10px] text-slate-400 block">Paid So Far</span>
-                  <span className="font-mono font-bold text-emerald-500">₹{alreadyPaid.toLocaleString('en-IN')}</span>
+                  <span className="font-mono font-bold text-emerald-500">₹{formatInr(alreadyPaid, true)}</span>
                 </div>
                 <div className={`p-2 rounded-lg border ${isDark ? 'bg-amber-950/30 border-amber-900/60' : 'bg-amber-50 border-amber-200'}`}>
                   <span className="text-[10px] text-amber-500 block">Remaining Due</span>
-                  <span className="font-mono font-bold text-amber-500">₹{remainingDue.toLocaleString('en-IN')}</span>
+                  <span className="font-mono font-bold text-amber-500">₹{formatInr(remainingDue, true)}</span>
                 </div>
               </div>
+
+              {/* Vendor-Specific UPI ID (Strictly from this vendor's saved profile) */}
+              {(() => {
+                const vendorUpi = Acc.resolveVendorUpiId(vendors, currentBill.vendorId, currentBill.vendorName);
+                return (
+                  <div className={`px-3 py-2 rounded-lg border flex items-center justify-between gap-2 text-xs ${
+                    isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                      <CreditCard className="w-3.5 h-3.5 text-emerald-500" />
+                      Vendor UPI ID
+                    </span>
+                    {vendorUpi ? (
+                      <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">{vendorUpi}</span>
+                    ) : (
+                      <span className="italic text-slate-400 text-[11px]">Not Provided</span>
+                    )}
+                  </div>
+                );
+              })()}
 
               <form onSubmit={handleConfirmPaymentUpdate} className="space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -3482,11 +3753,11 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                     <label className="block text-xs font-semibold mb-1">Amount Paying Now (₹) *</label>
                     <input
                       type="number"
-                      min="1"
-                      step="0.01"
+                      min="0.01"
+                      step="any"
                       max={remainingDue > 0 ? remainingDue : currentBill.totalAmount}
                       value={payModalAmount}
-                      onChange={(e) => setPayModalAmount(Number(e.target.value))}
+                      onChange={(e) => setPayModalAmount(Acc.round2(safeNumber(e.target.value, 0)))}
                       className={`w-full rounded-lg px-3 py-2 text-xs font-mono font-bold ${
                         isDark ? 'bg-slate-950 border border-slate-800 text-emerald-400' : 'bg-slate-50 border border-slate-300 text-emerald-700'
                       }`}
@@ -3573,15 +3844,26 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
             <div className={`px-4 sm:px-5 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
               isDark ? 'border-slate-800' : 'border-slate-200'
             }`}>
-              <div className="flex items-center gap-2">
-                <FileText className="w-5 h-5 text-blue-600" />
-                <div>
-                  <h3 className="text-base font-bold">Vendor Invoice: {viewingBill.invoiceNumber}</h3>
-                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                    {viewingBill.vendorName} · Dated: {viewingBill.invoiceDate}
-                  </p>
+                <div className="flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-blue-600" />
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-base font-bold">
+                        {Acc.isVendorBillGst(viewingBill) ? 'GST Purchase Invoice:' : 'Purchase Bill:'} {viewingBill.invoiceNumber}
+                      </h3>
+                      <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded ${
+                        Acc.isVendorBillGst(viewingBill)
+                          ? 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300'
+                          : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                      }`}>
+                        {Acc.isVendorBillGst(viewingBill) ? 'GST Bill' : 'Without GST'}
+                      </span>
+                    </div>
+                    <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                      {viewingBill.vendorName} · Dated: {viewingBill.invoiceDate}
+                    </p>
+                  </div>
                 </div>
-              </div>
               <button
                 onClick={() => setViewingBill(null)}
                 className="p-1 rounded-lg text-slate-400 hover:text-slate-200 cursor-pointer"
@@ -3792,73 +4074,107 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                 );
               })()}
 
-              {/* Items Table */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Invoiced Line Items</h4>
-                <div className={`rounded-xl border overflow-hidden ${
-                  isDark ? 'border-slate-800 bg-slate-950' : 'border-slate-200 bg-slate-50'
-                }`}>
-                  <table className="w-full text-xs text-left">
-                    <thead className={`border-b font-semibold ${
-                      isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-600'
+              {/* Items Table (Strictly separates GST Purchase Invoice vs Without-GST Simple Bill) */}
+              {(() => {
+                const viewIsGst = Acc.isVendorBillGst(viewingBill);
+                const viewVendorUpi = Acc.resolveVendorUpiId(vendors, viewingBill.vendorId, viewingBill.vendorName);
+                const { cgst: viewCgst, sgst: viewSgst } = viewIsGst ? Acc.splitTax(viewingBill.taxAmount || 0) : { cgst: 0, sgst: 0 };
+                const viewPending = Acc.round2(Math.max(0, (viewingBill.totalAmount || 0) - (viewingBill.paidAmount || 0)));
+                return (
+                  <>
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                        {viewIsGst ? 'Invoiced Line Items (GST)' : 'Purchased Items (Without GST)'}
+                      </h4>
+                      <div className={`rounded-xl border overflow-hidden ${
+                        isDark ? 'border-slate-800 bg-slate-950' : 'border-slate-200 bg-slate-50'
+                      }`}>
+                        <table className="w-full text-xs text-left">
+                          <thead className={`border-b font-semibold ${
+                            isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-600'
+                          }`}>
+                            <tr>
+                              <th className="py-2 px-3">Item & Description</th>
+                              {viewIsGst && <th className="py-2 px-2">HSN</th>}
+                              <th className="py-2 px-2 text-center">Qty</th>
+                              <th className="py-2 px-2 text-right">{viewIsGst ? 'Base Rate' : 'Rate'}</th>
+                              {viewIsGst && <th className="py-2 px-2 text-center">GST %</th>}
+                              {viewIsGst && <th className="py-2 px-2 text-right">Input GST</th>}
+                              <th className="py-2 px-3 text-right">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                            {viewingBill.items.map((it, idx) => {
+                              const itGst = viewIsGst ? (it.gstPercent !== undefined ? it.gstPercent : 0) : 0;
+                              const lineBase = Acc.round2(it.total !== undefined ? it.total : (it.unitCost * it.quantity));
+                              const itTax = viewIsGst
+                                ? Acc.round2(it.gstAmount !== undefined ? it.gstAmount : ((lineBase * itGst) / 100))
+                                : 0;
+                              const itTotal = viewIsGst
+                                ? Acc.round2(it.totalWithGst !== undefined ? it.totalWithGst : (lineBase + itTax))
+                                : lineBase;
+                              return (
+                                <tr key={idx}>
+                                  <td className="py-2 px-3">
+                                    <div className="font-semibold">{it.itemName}</div>
+                                    {it.description && (
+                                      <div className="text-[11px] text-slate-500 dark:text-slate-400 whitespace-pre-line mt-0.5">
+                                        {it.description}
+                                      </div>
+                                    )}
+                                  </td>
+                                  {viewIsGst && <td className="py-2 px-2 font-mono text-[11px] text-blue-500">{it.hsnCode || '—'}</td>}
+                                  <td className="py-2 px-2 text-center font-mono">{it.quantity}</td>
+                                  <td className="py-2 px-2 text-right font-mono">₹{formatInr(it.unitCost, true)}</td>
+                                  {viewIsGst && <td className="py-2 px-2 text-center font-mono font-bold text-blue-600">{itGst}%</td>}
+                                  {viewIsGst && <td className="py-2 px-2 text-right font-mono text-amber-600">₹{formatInr(itTax, true)}</td>}
+                                  <td className="py-2 px-3 text-right font-mono font-bold">₹{formatInr(itTotal, true)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Financial & Payment Summary */}
+                    <div className={`grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-xl border ${
+                      isDark ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'
                     }`}>
-                      <tr>
-                        <th className="py-2 px-3">Item Description</th>
-                        <th className="py-2 px-2">HSN</th>
-                        <th className="py-2 px-2 text-center">Qty</th>
-                        <th className="py-2 px-2 text-center">GST %</th>
-                        <th className="py-2 px-2 text-right">Input GST</th>
-                        <th className="py-2 px-3 text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {viewingBill.items.map((it, idx) => {
-                        const itGst = it.gstPercent !== undefined ? it.gstPercent : 18;
-                        const itTax = it.gstAmount ?? Number((((it.total || (it.unitCost * it.quantity)) * itGst) / 100).toFixed(2));
-                        const itTotal = it.totalWithGst ?? Number(((it.total || 0) + itTax).toFixed(2));
-                        return (
-                          <tr key={idx}>
-                            <td className="py-2 px-3 font-medium">{it.itemName}</td>
-                            <td className="py-2 px-2 font-mono text-[11px] text-blue-500">{it.hsnCode || '—'}</td>
-                            <td className="py-2 px-2 text-center font-mono">{it.quantity}</td>
-                            <td className="py-2 px-2 text-center font-mono font-bold text-blue-600">{itGst}%</td>
-                            <td className="py-2 px-2 text-right font-mono text-amber-600">₹{itTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                            <td className="py-2 px-3 text-right font-mono font-bold">₹{itTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                      <div className="space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-400">Payment & Vendor Details</span>
+                        <p className="text-xs">Status: <strong className="uppercase">{viewingBill.paymentStatus}</strong></p>
+                        <p className="text-xs">Mode: <strong className="uppercase">{viewingBill.paymentMode || 'UPI'}</strong></p>
+                        <p className="text-xs">
+                          Vendor UPI ID:{' '}
+                          {viewVendorUpi ? (
+                            <strong className="font-mono text-emerald-600 dark:text-emerald-400">{viewVendorUpi}</strong>
+                          ) : (
+                            <span className="italic text-slate-400">Not Provided</span>
+                          )}
+                        </p>
+                        {viewingBill.paymentReference && (
+                          <p className="text-xs font-mono">Ref / UTR: <strong className="text-blue-500">{viewingBill.paymentReference}</strong></p>
+                        )}
+                        {viewIsGst && viewingBill.taxAmount !== undefined && viewingBill.taxAmount > 0 && (
+                          <p className="text-xs text-blue-600 font-semibold pt-1 font-mono">
+                            Input GST Credit: ₹{formatInr(viewingBill.taxAmount, true)} (CGST: ₹{viewCgst.toFixed(2)} | SGST: ₹{viewSgst.toFixed(2)})
+                          </p>
+                        )}
+                      </div>
 
-              {/* Financial & Payment Summary */}
-              <div className={`grid grid-cols-2 gap-3 p-3.5 rounded-xl border ${
-                isDark ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'
-              }`}>
-                <div className="space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Payment Breakdown</span>
-                  <p className="text-xs">Status: <strong className="uppercase">{viewingBill.paymentStatus}</strong></p>
-                  <p className="text-xs">Mode: <strong className="uppercase">{viewingBill.paymentMode || 'UPI'}</strong></p>
-                  {viewingBill.paymentReference && (
-                    <p className="text-xs font-mono">Ref / UTR: <strong className="text-blue-500">{viewingBill.paymentReference}</strong></p>
-                  )}
-                  {viewingBill.taxAmount !== undefined && viewingBill.taxAmount > 0 && (
-                    <p className="text-xs text-blue-600 font-semibold pt-1">
-                      Input GST Credit: ₹{viewingBill.taxAmount.toLocaleString('en-IN')} (CGST: ₹{Math.round((viewingBill.taxAmount / 2) * 10) / 10} | SGST: ₹{Math.round((viewingBill.taxAmount / 2) * 10) / 10})
-                    </p>
-                  )}
-                </div>
-
-                <div className="text-right space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-slate-400">Total Amounts</span>
-                  <p className="text-xs font-mono">Total: <strong>₹{viewingBill.totalAmount.toLocaleString('en-IN')}</strong></p>
-                  <p className="text-xs font-mono text-emerald-600">Paid: <strong>₹{viewingBill.paidAmount.toLocaleString('en-IN')}</strong></p>
-                  <p className="text-xs font-mono text-amber-600">
-                    Pending: <strong>₹{(viewingBill.totalAmount - viewingBill.paidAmount).toLocaleString('en-IN')}</strong>
-                  </p>
-                </div>
-              </div>
+                      <div className="text-right space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-400">Total Amounts</span>
+                        <p className="text-xs font-mono">Total: <strong>₹{formatInr(viewingBill.totalAmount, true)}</strong></p>
+                        <p className="text-xs font-mono text-emerald-600">Paid: <strong>₹{formatInr(viewingBill.paidAmount, true)}</strong></p>
+                        <p className="text-xs font-mono text-amber-600">
+                          Pending: <strong>₹{formatInr(viewPending, true)}</strong>
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
 
               {/* Recorded Vendor Payment History */}
               {(() => {
@@ -3883,7 +4199,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                           <span className="mx-1.5 text-slate-400">·</span>
                           <span>{formatAccountLabel(vp.accountType, vp.bankAccountId, bankAccounts, vp.paymentMode)}</span>
                         </div>
-                        <span className="font-mono font-bold text-emerald-500">₹{vp.amount.toLocaleString('en-IN')}</span>
+                        <span className="font-mono font-bold text-emerald-500">₹{formatInr(vp.amount, true)}</span>
                       </div>
                     ))}
                   </div>
@@ -3893,7 +4209,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
           )}
         </div>
 
-            <div className={`px-6 py-3 border-t flex items-center justify-between gap-2 ${
+            <div className={`px-6 py-3 border-t flex items-center justify-between gap-2 flex-wrap ${
               isDark ? 'border-slate-800 bg-slate-950/40' : 'border-slate-200 bg-slate-50'
             }`}>
               <div className="flex items-center gap-2">
@@ -3912,6 +4228,18 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                 )}
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = viewingBill;
+                    setViewingBill(null);
+                    setPrintableVendorBill(target);
+                  }}
+                  className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Print / PDF</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => openEditVendorBillModal(viewingBill)}
@@ -4025,6 +4353,227 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
           )}
         </div>
       )}
+
+      {/* Printable Vendor Purchase Bill Slip Modal (Separate GST Purchase Invoice vs Without-GST Simple Bill) */}
+      {printableVendorBill && (() => {
+        const pBill = printableVendorBill;
+        const pIsGst = Acc.isVendorBillGst(pBill);
+        const pVendor = Acc.resolveVendorRecord(vendors, pBill.vendorId, pBill.vendorName);
+        const pVendorUpi = Acc.resolveVendorUpiId(vendors, pBill.vendorId, pBill.vendorName);
+        const pTotals = Acc.computeVendorBillTotals({
+          items: pBill.items || [],
+          isGstBill: pIsGst,
+          discount: pBill.discount || 0,
+          roundOff: pBill.roundOff || 0,
+        });
+        const effTax = pIsGst ? Acc.round2(pBill.taxAmount ?? pTotals.taxAmount) : 0;
+        const { cgst: pCgst, sgst: pSgst } = pIsGst ? Acc.splitTax(effTax) : { cgst: 0, sgst: 0 };
+        const pPending = Acc.round2(Math.max(0, (pBill.totalAmount || 0) - (pBill.paidAmount || 0)));
+
+        return (
+          <div className="print-modal-overlay fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+            <div className="print-modal-dialog bg-white text-slate-900 border rounded-2xl w-full max-w-3xl max-h-[94vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              {/* Action Toolbar (Hidden on Print) */}
+              <div className="no-print px-5 py-3 border-b flex items-center justify-between shrink-0 bg-slate-100">
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  {pIsGst ? 'GST Purchase Bill Print Preview' : 'Purchase Bill (Without GST) Print Preview'} ({pBill.invoiceNumber})
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg cursor-pointer shadow-xs"
+                  >
+                    <Printer className="w-3.5 h-3.5" /> Print A4 / Save PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPrintableVendorBill(null)}
+                    className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* A4 Printable Sheet */}
+              <div className="print-modal-scroll p-3 sm:p-5 overflow-y-auto flex-1 bg-slate-200/60 flex justify-center print:p-0 print:bg-white">
+                <div className="quotation-print bg-white shadow-xl rounded-sm w-full max-w-[794px] p-5 sm:p-6 print:p-0 text-[11px] leading-snug font-sans text-slate-900 print:shadow-none print:w-[194mm] print:max-w-none space-y-3">
+                  {/* Header */}
+                  <div className={`border-b-2 pb-2.5 flex items-start justify-between gap-4 ${pIsGst ? 'border-blue-800' : 'border-slate-700'}`}>
+                    <div className="min-w-0">
+                      <h2 className="text-base font-black tracking-tight text-slate-900 uppercase">
+                        {pBill.vendorName}
+                      </h2>
+                      {pVendor?.address && (
+                        <p className="text-[10.5px] text-slate-600 mt-0.5">{pVendor.address}</p>
+                      )}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-slate-600 mt-1 font-mono">
+                        {pVendor?.phone && <span>Ph: {pVendor.phone}</span>}
+                        {pIsGst && pVendor?.gstin && (
+                          <span>GSTIN: <strong className="text-slate-900">{pVendor.gstin}</strong></span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <div className={`text-[11px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded text-white ${
+                        pIsGst ? 'bg-blue-800' : 'bg-slate-800'
+                      }`}>
+                        {pIsGst ? 'GST PURCHASE BILL' : 'PURCHASE BILL'}
+                      </div>
+                      <div className={`inline-block px-2 py-0.5 mt-1 rounded text-[9px] font-bold border ${
+                        pIsGst
+                          ? 'bg-blue-50 text-blue-900 border-blue-200'
+                          : 'bg-amber-50 text-amber-900 border-amber-300'
+                      }`}>
+                        {pIsGst ? 'WITH GST · STOCK RECORD' : 'NON-GST PURCHASE SLIP'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bill Meta & Buyer/Vendor Payment Details */}
+                  <div className="grid grid-cols-2 gap-3 p-2.5 rounded-lg bg-slate-50 border border-slate-200 text-[10.5px]">
+                    <div className="space-y-0.5">
+                      <p className="text-[9.5px] font-bold uppercase text-slate-500">Billed To (Buyer)</p>
+                      <p className="font-bold text-slate-900">{adminSettings.workshopName || 'Spider Grid Solutions'}</p>
+                      {adminSettings.workshopAddress && <p className="text-slate-600">{adminSettings.workshopAddress}</p>}
+                      {pIsGst && adminSettings.workshopGstin && (
+                        <p className="font-mono text-[10px]">GSTIN: <strong>{adminSettings.workshopGstin}</strong></p>
+                      )}
+                    </div>
+                    <div className="space-y-0.5 text-right">
+                      <p>Bill / Inv No: <strong className="font-mono">{pBill.invoiceNumber}</strong></p>
+                      <p>Bill Date: <strong className="font-mono">{pBill.invoiceDate}</strong></p>
+                      <p>
+                        Payment Status:{' '}
+                        <strong className="uppercase">{pBill.paymentStatus}</strong>
+                        {pBill.paymentMode ? ` (${pBill.paymentMode.toUpperCase()})` : ''}
+                      </p>
+                      <p>
+                        Vendor UPI ID:{' '}
+                        {pVendorUpi ? (
+                          <strong className="font-mono text-emerald-700">{pVendorUpi}</strong>
+                        ) : (
+                          <span className="italic text-slate-500">Not Provided</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Items Table */}
+                  <table className="w-full border-collapse border border-slate-300 text-[10.5px]">
+                    <thead className="bg-slate-100 text-slate-800 uppercase text-[9.5px] font-bold">
+                      <tr>
+                        <th className="border border-slate-300 py-1.5 px-2 text-center w-8">#</th>
+                        <th className="border border-slate-300 py-1.5 px-2 text-left">Item & Description</th>
+                        {pIsGst && <th className="border border-slate-300 py-1.5 px-2 text-center w-16">HSN</th>}
+                        <th className="border border-slate-300 py-1.5 px-2 text-center w-12">Qty</th>
+                        <th className="border border-slate-300 py-1.5 px-2 text-right w-20">{pIsGst ? 'Base Rate' : 'Rate (₹)'}</th>
+                        {pIsGst && <th className="border border-slate-300 py-1.5 px-2 text-center w-14">GST %</th>}
+                        {pIsGst && <th className="border border-slate-300 py-1.5 px-2 text-right w-20">GST (₹)</th>}
+                        <th className="border border-slate-300 py-1.5 px-2 text-right w-24">Total (₹)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(pBill.items || []).map((it, idx) => {
+                        const lineBase = Acc.round2(it.total !== undefined ? it.total : (it.unitCost * it.quantity));
+                        const lineGstPct = pIsGst ? Math.max(0, Number(it.gstPercent) || 0) : 0;
+                        const lineGstAmt = pIsGst
+                          ? Acc.round2(it.gstAmount !== undefined ? it.gstAmount : ((lineBase * lineGstPct) / 100))
+                          : 0;
+                        const lineTotal = pIsGst
+                          ? Acc.round2(it.totalWithGst !== undefined ? it.totalWithGst : (lineBase + lineGstAmt))
+                          : lineBase;
+                        return (
+                          <tr key={idx}>
+                            <td className="border border-slate-300 py-1.5 px-2 text-center font-mono">{idx + 1}</td>
+                            <td className="border border-slate-300 py-1.5 px-2">
+                              <div className="font-bold text-slate-900">{it.itemName}</div>
+                              {it.description && (
+                                <div className="text-[10px] text-slate-600 whitespace-pre-line mt-0.5">
+                                  {it.description}
+                                </div>
+                              )}
+                            </td>
+                            {pIsGst && <td className="border border-slate-300 py-1.5 px-2 text-center font-mono">{it.hsnCode || '—'}</td>}
+                            <td className="border border-slate-300 py-1.5 px-2 text-center font-mono">{it.quantity}</td>
+                            <td className="border border-slate-300 py-1.5 px-2 text-right font-mono">₹{formatInr(it.unitCost, true)}</td>
+                            {pIsGst && <td className="border border-slate-300 py-1.5 px-2 text-center font-mono">{lineGstPct}%</td>}
+                            {pIsGst && <td className="border border-slate-300 py-1.5 px-2 text-right font-mono">₹{formatInr(lineGstAmt, true)}</td>}
+                            <td className="border border-slate-300 py-1.5 px-2 text-right font-mono font-bold">₹{formatInr(lineTotal, true)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+
+                  {/* Totals & Payment Footer */}
+                  <div className="grid grid-cols-2 gap-4 pt-1 items-start">
+                    <div className="space-y-1 text-[10px] text-slate-600">
+                      <p className="font-bold uppercase text-slate-700 text-[9.5px]">Vendor Payment Details</p>
+                      <p>
+                        UPI ID:{' '}
+                        {pVendorUpi ? (
+                          <strong className="font-mono text-slate-900">{pVendorUpi}</strong>
+                        ) : (
+                          <span className="italic">Not Provided</span>
+                        )}
+                      </p>
+                      {pVendor?.bankDetails && <p>Bank: {pVendor.bankDetails}</p>}
+                      {pBill.paymentReference && <p className="font-mono">Ref / UTR: {pBill.paymentReference}</p>}
+                      {pBill.notes && <p className="italic pt-1">Notes: {pBill.notes}</p>}
+                    </div>
+
+                    <div className="border border-slate-300 rounded-lg p-2.5 space-y-1 text-[10.5px]">
+                      <div className="flex justify-between font-mono">
+                        <span className="text-slate-600 font-sans">{pIsGst ? 'Taxable Subtotal:' : 'Subtotal:'}</span>
+                        <span>₹{formatInr(pBill.subtotal ?? pTotals.subtotal, true)}</span>
+                      </div>
+                      {pIsGst && effTax > 0 && (
+                        <>
+                          <div className="flex justify-between font-mono text-slate-700">
+                            <span className="font-sans">CGST:</span>
+                            <span>+₹{pCgst.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between font-mono text-slate-700">
+                            <span className="font-sans">SGST:</span>
+                            <span>+₹{pSgst.toFixed(2)}</span>
+                          </div>
+                        </>
+                      )}
+                      {(pBill.discount || 0) > 0 && (
+                        <div className="flex justify-between font-mono text-rose-700">
+                          <span className="font-sans">Discount:</span>
+                          <span>-₹{formatInr(pBill.discount || 0, true)}</span>
+                        </div>
+                      )}
+                      {(pBill.roundOff || 0) !== 0 && (
+                        <div className="flex justify-between font-mono text-slate-600">
+                          <span className="font-sans">Round Off:</span>
+                          <span>{(pBill.roundOff || 0) > 0 ? '+' : ''}₹{formatInr(pBill.roundOff || 0, true)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between font-mono font-black text-xs pt-1.5 border-t border-slate-300">
+                        <span className="font-sans uppercase">Grand Total:</span>
+                        <span>₹{formatInr(pBill.totalAmount, true)}</span>
+                      </div>
+                      <div className="flex justify-between font-mono text-emerald-700 pt-0.5">
+                        <span className="font-sans">Paid:</span>
+                        <span>₹{formatInr(pBill.paidAmount || 0, true)}</span>
+                      </div>
+                      <div className="flex justify-between font-mono text-amber-700">
+                        <span className="font-sans">Balance Due:</span>
+                        <span>₹{formatInr(pPending, true)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

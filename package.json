@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx tests/ledger.test.ts && tsx tests/ocr_layout.test.ts && tsx tests/ocr_inclusive.test.ts && tsx tests/price_code.test.ts && tsx tests/money_flow_integration.test.ts && tsx tests/advanced_finance.test.ts && tsx tests/recovery_regression.test.ts"
+    "test": "tsx tests/ledger.test.ts && tsx tests/ocr_layout.test.ts && tsx tests/ocr_inclusive.test.ts && tsx tests/price_code.test.ts && tsx tests/money_flow_integration.test.ts && tsx tests/advanced_finance.test.ts && tsx tests/recovery_regression.test.ts && tsx tests/vendor_improvements.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

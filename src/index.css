@@ -173,7 +173,7 @@ body.light ::-webkit-scrollbar-thumb {
     padding: 0 !important;
   }
 
-  .quotation-header img {
+  .quotation-header-banner img {
     width: 100% !important;
     max-width: 100% !important;
     height: auto !important;
@@ -181,6 +181,17 @@ body.light ::-webkit-scrollbar-thumb {
     display: block !important;
     object-fit: contain !important;
     margin: 0 auto !important;
+  }
+
+  .firm-print-logo {
+    height: 48px !important;
+    width: auto !important;
+    max-width: 155px !important;
+    max-height: 52px !important;
+    object-fit: contain !important;
+    display: block !important;
+    flex-shrink: 0 !important;
+    margin: 0 !important;
   }
 
   .quotation-footer {

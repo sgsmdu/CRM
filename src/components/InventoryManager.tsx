@@ -28,7 +28,8 @@ import {
 import { useSgs } from '../context/SgsContext';
 import { InventoryItem, DeviceCategory, VendorBill } from '../types';
 import { inventoryToCsv, parseInventoryCsv } from '../utils/csv';
-import { todayLocal } from '../utils/accounting';
+import { todayLocal, round2, computeGstInclusiveCost, resolveSpareCostForFirm } from '../utils/accounting';
+import { formatInr } from '../utils/gstUtils';
 import { encodeAmountToCode } from '../utils/priceCode';
 
 export const InventoryManager: React.FC = () => {
@@ -179,10 +180,10 @@ export const InventoryManager: React.FC = () => {
     addInventoryItem({
       name: newItemName,
       category: newItemCategory,
-      currentStock: Number(newItemStock) || 0,
-      minStockAlert: Number(newItemMinAlert) || 2,
-      unitCost: Number(newItemCost) || 0,
-      unitPrice: Number(newItemPrice) || 0,
+      currentStock: Math.max(0, Number(newItemStock) || 0),
+      minStockAlert: Math.max(0, Number(newItemMinAlert) || 2),
+      unitCost: round2(Math.max(0, Number(newItemCost) || 0)),
+      unitPrice: round2(Math.max(0, Number(newItemPrice) || 0)),
       sku: newItemSku || `SKU-${Date.now().toString().slice(-4)}`,
       location: newItemLocation,
     });
@@ -262,13 +263,21 @@ export const InventoryManager: React.FC = () => {
     e.preventDefault();
     if (!selectedItemForEdit || !editForm.name.trim()) return;
 
+    const nextUnitCost = round2(Math.max(0, Number(editForm.unitCost) || 0));
+    const nextUnitPrice = round2(Math.max(0, Number(editForm.unitPrice) || 0));
+    const itemGstPct = selectedItemForEdit.gstPercent || 0;
+    const nextUnitCostWithGst = itemGstPct > 0
+      ? computeGstInclusiveCost(nextUnitCost, itemGstPct)
+      : selectedItemForEdit.unitCostWithGst;
+
     updateInventoryItem(selectedItemForEdit.id, {
       name: editForm.name,
       category: editForm.category,
-      currentStock: Number(editForm.currentStock) || 0,
-      minStockAlert: Number(editForm.minStockAlert) || 1,
-      unitCost: Number(editForm.unitCost) || 0,
-      unitPrice: Number(editForm.unitPrice) || 0,
+      currentStock: Math.max(0, Number(editForm.currentStock) || 0),
+      minStockAlert: Math.max(0, Number(editForm.minStockAlert) || 1),
+      unitCost: nextUnitCost,
+      unitCostWithGst: nextUnitCostWithGst,
+      unitPrice: nextUnitPrice,
       sku: editForm.sku,
       location: editForm.location,
       hsnCode: editForm.hsnCode,
@@ -279,7 +288,13 @@ export const InventoryManager: React.FC = () => {
       notes: editForm.notes,
     });
 
-    setSelectedItemForEdit(prev => prev ? { ...prev, ...editForm } : null);
+    setSelectedItemForEdit(prev => prev ? {
+      ...prev,
+      ...editForm,
+      unitCost: nextUnitCost,
+      unitCostWithGst: nextUnitCostWithGst,
+      unitPrice: nextUnitPrice,
+    } : null);
     setEditSaveSuccess(true);
     setTimeout(() => setEditSaveSuccess(false), 2000);
   };
@@ -1239,6 +1254,8 @@ export const InventoryManager: React.FC = () => {
                   <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Initial Stock Qty</label>
                   <input
                     type="number"
+                    min="0"
+                    step="any"
                     value={newItemStock}
                     onChange={(e) => setNewItemStock(Number(e.target.value))}
                     className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
@@ -1250,6 +1267,8 @@ export const InventoryManager: React.FC = () => {
                   <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Min Stock Alert</label>
                   <input
                     type="number"
+                    min="0"
+                    step="any"
                     value={newItemMinAlert}
                     onChange={(e) => setNewItemMinAlert(Number(e.target.value))}
                     className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
@@ -1264,6 +1283,8 @@ export const InventoryManager: React.FC = () => {
                   <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Cost Price (₹) - without GST</label>
                   <input
                     type="number"
+                    min="0"
+                    step="any"
                     value={newItemCost}
                     onChange={(e) => setNewItemCost(Number(e.target.value))}
                     className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
@@ -1275,6 +1296,8 @@ export const InventoryManager: React.FC = () => {
                   <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Sale Rate (₹) - including GST</label>
                   <input
                     type="number"
+                    min="0"
+                    step="any"
                     value={newItemPrice}
                     onChange={(e) => setNewItemPrice(Number(e.target.value))}
                     className={`w-full rounded-lg px-3 py-2 text-xs font-mono font-bold focus:outline-none ${
@@ -1481,6 +1504,7 @@ export const InventoryManager: React.FC = () => {
                       <input
                         type="number"
                         min="0"
+                        step="any"
                         value={editForm.currentStock}
                         onChange={(e) => setEditForm({ ...editForm, currentStock: Number(e.target.value) })}
                         className={`w-full rounded-lg px-3 py-2 text-xs font-mono font-bold focus:outline-none ${
@@ -1496,6 +1520,7 @@ export const InventoryManager: React.FC = () => {
                       <input
                         type="number"
                         min="0"
+                        step="any"
                         value={editForm.minStockAlert}
                         onChange={(e) => setEditForm({ ...editForm, minStockAlert: Number(e.target.value) })}
                         className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
@@ -1514,12 +1539,29 @@ export const InventoryManager: React.FC = () => {
                       <input
                         type="number"
                         min="0"
+                        step="any"
                         value={editForm.unitCost}
                         onChange={(e) => setEditForm({ ...editForm, unitCost: Number(e.target.value) })}
                         className={`w-full rounded-lg px-3 py-2 text-xs font-mono focus:outline-none ${
                           isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-white border border-slate-300 text-slate-900'
                         }`}
                       />
+                      {selectedItemForEdit && (() => {
+                        const previewItem: InventoryItem = {
+                          ...selectedItemForEdit,
+                          unitCost: Number(editForm.unitCost) || 0,
+                          unitCostWithGst: selectedItemForEdit.gstPercent
+                            ? computeGstInclusiveCost(Number(editForm.unitCost) || 0, selectedItemForEdit.gstPercent)
+                            : selectedItemForEdit.unitCostWithGst,
+                        };
+                        const pandiyanCost = resolveSpareCostForFirm(previewItem, 'pandiyan', vendorBills);
+                        if (!pandiyanCost.isGstInclusive) return null;
+                        return (
+                          <p className="text-[10px] font-mono text-amber-600 dark:text-amber-400 mt-1">
+                            Pandiyan Spare Cost (Incl. {pandiyanCost.gstPercent}% GST): <strong>₹{formatInr(pandiyanCost.spareCost, true)}</strong>
+                          </p>
+                        );
+                      })()}
                     </div>
 
                     <div>
@@ -1529,6 +1571,7 @@ export const InventoryManager: React.FC = () => {
                       <input
                         type="number"
                         min="0"
+                        step="any"
                         value={editForm.unitPrice}
                         onChange={(e) => setEditForm({ ...editForm, unitPrice: Number(e.target.value) })}
                         className={`w-full rounded-lg px-3 py-2 text-xs font-mono font-bold focus:outline-none ${

@@ -200,6 +200,7 @@ export interface JobCard {
 
 export interface VendorBillItem {
   itemName: string;
+  description?: string; // Detailed item description (separate from itemName)
   hsnCode?: string;
   quantity: number;
   unitCost: number; // Base unit cost (without GST)
@@ -249,7 +250,9 @@ export interface InventoryItem {
   category: DeviceCategory;
   currentStock: number;
   minStockAlert: number;
-  unitCost: number;
+  unitCost: number; // Base unit cost WITHOUT GST (for SGS accounting & ITC)
+  gstPercent?: number; // Purchase GST % from GST vendor bill (0 for non-GST)
+  unitCostWithGst?: number; // GST-inclusive purchase cost (Base + GST) for Pandiyan Computers Spare Cost
   unitPrice: number;
   sku?: string;
   location?: string;

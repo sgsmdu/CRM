@@ -17,6 +17,7 @@
  *  - Cancel / delete / edit of an invoice or vendor bill reverses stock + cash
  */
 import type {
+  BillingFirm,
   CashFlowEntry,
   CustomerPaymentAllocation,
   CustomerPaymentAllocationItem,
@@ -28,6 +29,7 @@ import type {
   PaymentMode,
   PaymentModeChoice,
   StockTransaction,
+  Vendor,
   VendorBill,
   VendorBillItem,
   VendorPaymentRecord,
@@ -55,8 +57,189 @@ export const todayLocal = (d: Date = new Date()): string => {
 
 /** CGST + SGST that always add up exactly to the total tax. */
 export function splitTax(totalTax: number): { cgst: number; sgst: number } {
-  const cgst = round2(totalTax / 2);
-  return { cgst, sgst: round2(totalTax - cgst) };
+  const safe = round2(Math.max(0, Number(totalTax) || 0));
+  const cgst = round2(safe / 2);
+  return { cgst, sgst: round2(safe - cgst) };
+}
+
+/** Compute GST-inclusive purchase cost from a base cost and GST %. Never adds GST if gstPercent <= 0. */
+export function computeGstInclusiveCost(baseCost: number, gstPercent: number): number {
+  const base = round2(Math.max(0, Number(baseCost) || 0));
+  const pct = Math.max(0, Math.min(100, Number(gstPercent) || 0));
+  if (pct <= 0 || base <= 0) return base;
+  const gstAmt = round2((base * pct) / 100);
+  return round2(base + gstAmt);
+}
+
+/**
+ * Resolve the Spare Cost (₹) to display/use for an inventory item on an invoice:
+ * - Spider Grid Solutions (GST firm, claims Input GST Credit): uses base unitCost WITHOUT GST.
+ * - Pandiyan Computers (Non-GST firm, cannot claim ITC): uses GST-inclusive purchase cost
+ *   (Base Cost + Applicable GST Amount) when the stock came from a GST vendor purchase.
+ * - Never assumes 18% GST for Without-GST purchases or items without GST, and never adds GST twice.
+ */
+export function resolveSpareCostForFirm(
+  inv: InventoryItem,
+  billingFirm: BillingFirm,
+  vendorBills: VendorBill[] = []
+): {
+  spareCost: number;
+  baseCost: number;
+  gstPercent: number;
+  gstAmount: number;
+  isGstInclusive: boolean;
+} {
+  const baseCost = round2(Math.max(0, Number(inv.unitCost) || 0));
+  const linkedBill = inv.vendorBillId
+    ? vendorBills.find(b => b.id === inv.vendorBillId)
+    : undefined;
+
+  let gstPercent = 0;
+  let inclusiveCost = baseCost;
+  let isGstApplicable = false;
+
+  if (linkedBill && !isVendorBillGst(linkedBill)) {
+    // Explicitly a Without-GST vendor bill: never assume 18% GST
+    gstPercent = 0;
+    inclusiveCost = baseCost;
+    isGstApplicable = false;
+  } else if (inv.gstPercent !== undefined && Number.isFinite(Number(inv.gstPercent))) {
+    gstPercent = Math.max(0, Math.min(100, Number(inv.gstPercent) || 0));
+    if (gstPercent > 0) {
+      inclusiveCost =
+        inv.unitCostWithGst !== undefined && Number(inv.unitCostWithGst) > 0
+          ? round2(Number(inv.unitCostWithGst))
+          : computeGstInclusiveCost(baseCost, gstPercent);
+      isGstApplicable = true;
+    } else {
+      inclusiveCost = baseCost;
+      isGstApplicable = false;
+    }
+  } else if (inv.unitCostWithGst !== undefined && Number(inv.unitCostWithGst) > baseCost) {
+    inclusiveCost = round2(Number(inv.unitCostWithGst));
+    gstPercent = baseCost > 0 ? round2(((inclusiveCost - baseCost) / baseCost) * 100) : 0;
+    isGstApplicable = true;
+  } else if (linkedBill && isVendorBillGst(linkedBill)) {
+    // Legacy inventory record linked to a GST vendor bill prior to storing gstPercent on InventoryItem
+    const invNorm = inv.name.trim().toLowerCase();
+    const matchedLine =
+      (linkedBill.items || []).find(it => it.matchedInventoryId === inv.id) ||
+      (linkedBill.items || []).find(it => it.itemName?.trim().toLowerCase() === invNorm);
+    const derivedPct = matchedLine
+      ? Math.max(0, Number(matchedLine.gstPercent) || 0)
+      : 0;
+    gstPercent = derivedPct;
+    inclusiveCost = derivedPct > 0 ? computeGstInclusiveCost(baseCost, derivedPct) : baseCost;
+    isGstApplicable = derivedPct > 0;
+  }
+
+  const gstAmount = isGstApplicable ? round2(Math.max(0, inclusiveCost - baseCost)) : 0;
+
+  if (billingFirm === 'pandiyan') {
+    return {
+      spareCost: isGstApplicable ? inclusiveCost : baseCost,
+      baseCost,
+      gstPercent,
+      gstAmount,
+      isGstInclusive: isGstApplicable,
+    };
+  }
+
+  return {
+    spareCost: baseCost,
+    baseCost,
+    gstPercent,
+    gstAmount,
+    isGstInclusive: false,
+  };
+}
+
+/** Find a vendor record strictly by vendorId first, then exact case-insensitive name. */
+export function resolveVendorRecord(
+  vendors: Vendor[],
+  vendorId?: string,
+  vendorName?: string
+): Vendor | undefined {
+  if (vendorId) {
+    const byId = vendors.find(v => v.id === vendorId);
+    if (byId) return byId;
+  }
+  const norm = vendorName?.trim().toLowerCase();
+  if (!norm) return undefined;
+  return vendors.find(v => v.name.trim().toLowerCase() === norm);
+}
+
+/**
+ * Resolve ONLY the specific vendor's saved UPI ID.
+ * Returns null when the vendor has no UPI ID saved (never falls back to any global or workshop UPI).
+ */
+export function resolveVendorUpiId(
+  vendors: Vendor[],
+  vendorId?: string,
+  vendorName?: string
+): string | null {
+  const v = resolveVendorRecord(vendors, vendorId, vendorName);
+  const upi = v?.upiId?.trim();
+  return upi ? upi : null;
+}
+
+/**
+ * Paise-safe Vendor Bill total summary.
+ * Guarantees: subtotal + taxAmount - discount + roundOff === totalAmount (clamped >= 0).
+ */
+export function computeVendorBillTotals(params: {
+  items: VendorBillItem[];
+  isGstBill: boolean;
+  discount?: number;
+  roundOff?: number;
+}): {
+  subtotal: number;
+  taxAmount: number;
+  cgst: number;
+  sgst: number;
+  discount: number;
+  roundOff: number;
+  totalAmount: number;
+} {
+  const { items = [], isGstBill, discount = 0, roundOff = 0 } = params;
+  let subPaise = 0;
+  let taxPaise = 0;
+
+  for (const it of items) {
+    const qty = Math.max(0, Number(it.quantity) || 0);
+    const baseUnit = round2(Math.max(0, Number(it.unitCost) || 0));
+    const lineBase =
+      it.total !== undefined && Number.isFinite(Number(it.total))
+        ? round2(Math.max(0, Number(it.total)))
+        : round2(baseUnit * qty);
+    const lineTax = isGstBill
+      ? it.gstAmount !== undefined && Number.isFinite(Number(it.gstAmount))
+        ? round2(Math.max(0, Number(it.gstAmount)))
+        : round2((lineBase * Math.max(0, Number(it.gstPercent) || 0)) / 100)
+      : 0;
+    subPaise += Math.round(lineBase * 100);
+    taxPaise += Math.round(lineTax * 100);
+  }
+
+  const subtotal = subPaise / 100;
+  const taxAmount = isGstBill ? taxPaise / 100 : 0;
+  const { cgst, sgst } = splitTax(taxAmount);
+  const safeDiscount = round2(Math.max(0, Number(discount) || 0));
+  const safeRoundOff = round2(Number(roundOff) || 0);
+  const totalPaise = Math.max(
+    0,
+    subPaise + (isGstBill ? taxPaise : 0) - Math.round(safeDiscount * 100) + Math.round(safeRoundOff * 100)
+  );
+
+  return {
+    subtotal,
+    taxAmount,
+    cgst,
+    sgst,
+    discount: safeDiscount,
+    roundOff: safeRoundOff,
+    totalAmount: totalPaise / 100,
+  };
 }
 
 // ------------------------------------------------------------------ invoice maths
@@ -608,13 +791,22 @@ function resolveBillLandedBase(bill: VendorBill, item: VendorBillItem): number {
   return round2((Number(item.unitCost) || 0) * discountRatio);
 }
 
+function resolveBillLandedWithGst(bill: VendorBill, item: VendorBillItem): { landedBase: number; landedWithGst: number; gstPct: number } {
+  const landedBase = resolveBillLandedBase(bill, item);
+  if (!isVendorBillGst(bill)) {
+    return { landedBase, landedWithGst: landedBase, gstPct: 0 };
+  }
+  const gstPct = Math.max(0, Math.min(100, Number(item.gstPercent) || 0));
+  const landedWithGst = computeGstInclusiveCost(landedBase, gstPct);
+  return { landedBase, landedWithGst, gstPct };
+}
+
 function applyVendorBillStockItems(s: LedgerState, bill: VendorBill, itemsToApply: VendorBillItem[]): LedgerState {
   let st = s;
   for (const item of itemsToApply) {
     const qty = Number(item.quantity) || 0;
     if (qty <= 0 || !item.itemName?.trim()) continue;
-    const landedBase = resolveBillLandedBase(bill, item);
-    const gstPct = item.gstPercent ?? 18;
+    const { landedBase, landedWithGst, gstPct } = resolveBillLandedWithGst(bill, item);
 
     const target = item.matchedInventoryId
       ? st.inventory.find(i => i.id === item.matchedInventoryId)
@@ -623,12 +815,21 @@ function applyVendorBillStockItems(s: LedgerState, bill: VendorBill, itemsToAppl
         : undefined;
 
     if (target && item.syncMode !== 'create_separate') {
-      const newStock = target.currentStock + qty;
-      // weighted-average cost so profit on later sales is right
+      const newStock = round2(target.currentStock + qty);
+      // weighted-average base cost (for SGS tax/profit accounting)
       const newCost =
-        target.currentStock > 0
+        target.currentStock > 0 && newStock > 0
           ? round2((target.currentStock * target.unitCost + qty * landedBase) / newStock)
           : landedBase;
+      // weighted-average GST-inclusive cost (for Pandiyan Computers Non-GST spare cost)
+      const existingInclusive =
+        target.unitCostWithGst !== undefined && target.unitCostWithGst > 0
+          ? target.unitCostWithGst
+          : computeGstInclusiveCost(target.unitCost, target.gstPercent ?? gstPct);
+      const newCostWithGst =
+        target.currentStock > 0 && newStock > 0
+          ? round2((target.currentStock * existingInclusive + qty * landedWithGst) / newStock)
+          : landedWithGst;
       st = {
         ...st,
         inventory: st.inventory.map(i =>
@@ -636,6 +837,8 @@ function applyVendorBillStockItems(s: LedgerState, bill: VendorBill, itemsToAppl
             ? {
                 ...i,
                 unitCost: newCost,
+                gstPercent: gstPct,
+                unitCostWithGst: newCostWithGst,
                 unitPrice: i.unitPrice > 0 ? i.unitPrice : suggestedSellingPrice(landedBase, gstPct),
                 hsnCode: i.hsnCode || item.hsnCode,
                 vendorBillId: bill.id,
@@ -659,6 +862,8 @@ function applyVendorBillStockItems(s: LedgerState, bill: VendorBill, itemsToAppl
         currentStock: 0,
         minStockAlert: 2,
         unitCost: landedBase,
+        gstPercent: gstPct,
+        unitCostWithGst: landedWithGst,
         unitPrice: suggestedSellingPrice(landedBase, gstPct),
         sku: `SP-${Date.now().toString().slice(-5)}${Math.floor(Math.random() * 90 + 10)}`,
         location: 'Main Shelf',
@@ -787,13 +992,20 @@ function reconcileEditedGstBillStock(s: LedgerState, bill: VendorBill): LedgerSt
     if (!invItem) return;
 
     if (delta > 0 && desired) {
-      const landedBase = resolveBillLandedBase(bill, desired.item);
-      const gstPct = desired.item.gstPercent ?? 18;
-      const newStock = invItem.currentStock + delta;
+      const { landedBase, landedWithGst, gstPct } = resolveBillLandedWithGst(bill, desired.item);
+      const newStock = round2(invItem.currentStock + delta);
       const newCost =
-        invItem.currentStock > 0
+        invItem.currentStock > 0 && newStock > 0
           ? round2((invItem.currentStock * invItem.unitCost + delta * landedBase) / newStock)
           : landedBase;
+      const existingInclusive =
+        invItem.unitCostWithGst !== undefined && invItem.unitCostWithGst > 0
+          ? invItem.unitCostWithGst
+          : computeGstInclusiveCost(invItem.unitCost, invItem.gstPercent ?? gstPct);
+      const newCostWithGst =
+        invItem.currentStock > 0 && newStock > 0
+          ? round2((invItem.currentStock * existingInclusive + delta * landedWithGst) / newStock)
+          : landedWithGst;
       st = {
         ...st,
         inventory: st.inventory.map(i =>
@@ -801,6 +1013,8 @@ function reconcileEditedGstBillStock(s: LedgerState, bill: VendorBill): LedgerSt
             ? {
                 ...i,
                 unitCost: newCost,
+                gstPercent: gstPct,
+                unitCostWithGst: newCostWithGst,
                 unitPrice: i.unitPrice > 0 ? i.unitPrice : suggestedSellingPrice(landedBase, gstPct),
                 hsnCode: i.hsnCode || desired.item.hsnCode,
                 vendorBillId: bill.id,
@@ -843,7 +1057,7 @@ function reconcileEditedGstBillStock(s: LedgerState, bill: VendorBill): LedgerSt
         stockTx: [tx, ...st.stockTx],
       };
     } else if (delta === 0 && desired) {
-      const landedBase = resolveBillLandedBase(bill, desired.item);
+      const { landedBase, landedWithGst, gstPct } = resolveBillLandedWithGst(bill, desired.item);
       st = {
         ...st,
         inventory: st.inventory.map(i =>
@@ -851,6 +1065,8 @@ function reconcileEditedGstBillStock(s: LedgerState, bill: VendorBill): LedgerSt
             ? {
                 ...i,
                 unitCost: i.vendorBillId === bill.id && i.currentStock === prevQty ? landedBase : i.unitCost,
+                gstPercent: gstPct,
+                unitCostWithGst: i.vendorBillId === bill.id && i.currentStock === prevQty ? landedWithGst : i.unitCostWithGst,
                 vendorName: bill.vendorName,
                 vendorInvoiceNumber: bill.invoiceNumber,
                 vendorBillDate: bill.invoiceDate,

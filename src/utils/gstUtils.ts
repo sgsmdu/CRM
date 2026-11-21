@@ -4,6 +4,56 @@
 
 export const GST_PRESET_RATES = [0, 5, 12, 18, 28] as const;
 
+/** Safely coerce any value to a finite number (never NaN or Infinity). */
+export function safeNumber(value: unknown, fallback = 0): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/** Round to exact 2 decimal places (paise) with epsilon compensation so 100.10, 1.005, etc. stay accurate. */
+export function roundMoney(value: number): number {
+  const n = safeNumber(value, 0);
+  if (n === 0) return 0;
+  return Math.round((n + Math.sign(n) * Number.EPSILON) * 100) / 100;
+}
+
+/** Convert rupees to integer paise safely. */
+export function toPaise(rupees: number): number {
+  const n = safeNumber(rupees, 0);
+  return Math.round((n + Math.sign(n) * Number.EPSILON) * 100);
+}
+
+/** Convert integer paise back to exact 2-decimal rupees. */
+export function fromPaise(paise: number): number {
+  const p = Math.round(safeNumber(paise, 0));
+  return p === 0 ? 0 : p / 100;
+}
+
+/** Exact addition of monetary values via integer paise (prevents float drift like 100.10 + 18.02 = 118.11999999999999). */
+export function addMoney(...values: number[]): number {
+  return fromPaise(values.reduce((acc, v) => acc + toPaise(v), 0));
+}
+
+/** Exact subtraction of monetary values via integer paise. */
+export function subMoney(a: number, b: number): number {
+  return fromPaise(toPaise(a) - toPaise(b));
+}
+
+/** Exact multiplication rounded to 2 decimal places. */
+export function mulMoney(a: number, b: number): number {
+  return roundMoney(safeNumber(a, 0) * safeNumber(b, 0));
+}
+
+/** Format rupee value with Indian grouping and 2 decimals whenever paise exist (or always when forced). */
+export function formatInr(amount: number, alwaysDecimals = false): string {
+  const v = roundMoney(amount);
+  const hasPaise = alwaysDecimals || Math.abs(toPaise(v) % 100) !== 0;
+  return v.toLocaleString('en-IN', {
+    minimumFractionDigits: hasPaise ? 2 : 0,
+    maximumFractionDigits: 2,
+  });
+}
+
 export interface CommonHsnCode {
   code: string;
   description: string;
@@ -49,19 +99,20 @@ export function calculateFromInclusiveRate(
   discount = 0,
   isInterState = false
 ): ItemGstCalculation {
-  const q = Number(quantity) > 0 ? Number(quantity) : 1;
-  const gross = Math.max(0, Number(grossRate) || 0);
-  const pct = Math.max(0, Number(gstPercent) || 0);
-  const disc = Math.max(0, Number(discount) || 0);
+  const rawQty = safeNumber(quantity, 0);
+  const q = rawQty > 0 ? rawQty : 1;
+  const gross = roundMoney(Math.max(0, safeNumber(grossRate, 0)));
+  const pct = Math.max(0, Math.min(100, safeNumber(gstPercent, 0)));
+  const disc = roundMoney(Math.max(0, safeNumber(discount, 0)));
 
   if (pct === 0 || gross === 0) {
-    const rawTotal = Math.max(0, (gross * q) - disc);
-    const total = Math.round(rawTotal * 100) / 100;
+    const baseAmount = mulMoney(gross, q);
+    const total = Math.max(0, subMoney(baseAmount, disc));
     return {
       baseRate: gross,
       grossRate: gross,
       unitGst: 0,
-      baseAmount: Math.round(gross * q * 100) / 100,
+      baseAmount,
       discount: disc,
       taxableAmount: total,
       totalGst: 0,
@@ -73,19 +124,20 @@ export function calculateFromInclusiveRate(
     };
   }
 
-  // Exact 2-decimal precision base rate
-  const baseRate = Math.round((gross / (1 + pct / 100)) * 100) / 100;
-  const unitGst = Math.round((gross - baseRate) * 100) / 100;
-  const baseAmount = Math.round(baseRate * q * 100) / 100;
+  // Exact 2-decimal precision base rate (baseRate + unitGst === gross)
+  const factor = 1 + pct / 100;
+  const baseRate = roundMoney(gross / factor);
+  const unitGst = subMoney(gross, baseRate);
+  const baseAmount = mulMoney(baseRate, q);
 
   // Total gross after discount
-  const totalWithGst = Math.round(Math.max(0, (gross * q) - disc) * 100) / 100;
-  // Taxable after discount
-  const taxableAmount = Math.round((totalWithGst / (1 + pct / 100)) * 100) / 100;
-  const totalGst = Math.round((totalWithGst - taxableAmount) * 100) / 100;
+  const totalWithGst = Math.max(0, subMoney(mulMoney(gross, q), disc));
+  // Taxable after discount (taxableAmount + totalGst === totalWithGst)
+  const taxableAmount = roundMoney(totalWithGst / factor);
+  const totalGst = subMoney(totalWithGst, taxableAmount);
 
-  const halfGst = isInterState ? 0 : Math.round((totalGst / 2) * 100) / 100;
-  const otherHalf = isInterState ? 0 : Math.round((totalGst - halfGst) * 100) / 100; // CGST + SGST always equals total GST
+  const halfGst = isInterState ? 0 : roundMoney(totalGst / 2);
+  const otherHalf = isInterState ? 0 : subMoney(totalGst, halfGst); // CGST + SGST always equals total GST
   const igst = isInterState ? totalGst : 0;
 
   return {
@@ -115,19 +167,20 @@ export function calculateFromBaseRate(
   discount = 0,
   isInterState = false
 ): ItemGstCalculation {
-  const q = Number(quantity) > 0 ? Number(quantity) : 1;
-  const base = Math.max(0, Number(baseRate) || 0);
-  const pct = Math.max(0, Number(gstPercent) || 0);
-  const disc = Math.max(0, Number(discount) || 0);
+  const rawQty = safeNumber(quantity, 0);
+  const q = rawQty > 0 ? rawQty : 1;
+  const base = roundMoney(Math.max(0, safeNumber(baseRate, 0)));
+  const pct = Math.max(0, Math.min(100, safeNumber(gstPercent, 0)));
+  const disc = roundMoney(Math.max(0, safeNumber(discount, 0)));
 
   if (pct === 0 || base === 0) {
-    const rawTotal = Math.max(0, (base * q) - disc);
-    const total = Math.round(rawTotal * 100) / 100;
+    const baseAmount = mulMoney(base, q);
+    const total = Math.max(0, subMoney(baseAmount, disc));
     return {
       baseRate: base,
       grossRate: base,
       unitGst: 0,
-      baseAmount: Math.round(base * q * 100) / 100,
+      baseAmount,
       discount: disc,
       taxableAmount: total,
       totalGst: 0,
@@ -139,17 +192,17 @@ export function calculateFromBaseRate(
     };
   }
 
-  const unitGst = Math.round(((base * pct) / 100) * 100) / 100;
-  const grossRate = Math.round((base + unitGst) * 100) / 100;
-  const baseAmount = Math.round(base * q * 100) / 100;
-  
-  // Taxable amount is baseAmount minus discount
-  const taxableAmount = Math.round(Math.max(0, baseAmount - disc) * 100) / 100;
-  const totalGst = Math.round(((taxableAmount * pct) / 100) * 100) / 100;
-  const totalWithGst = Math.round((taxableAmount + totalGst) * 100) / 100;
+  const unitGst = roundMoney((base * pct) / 100);
+  const grossRate = addMoney(base, unitGst);
+  const baseAmount = mulMoney(base, q);
 
-  const halfGst = isInterState ? 0 : Math.round((totalGst / 2) * 100) / 100;
-  const otherHalf = isInterState ? 0 : Math.round((totalGst - halfGst) * 100) / 100; // CGST + SGST always equals total GST
+  // Taxable amount is baseAmount minus discount
+  const taxableAmount = Math.max(0, subMoney(baseAmount, disc));
+  const totalGst = roundMoney((taxableAmount * pct) / 100);
+  const totalWithGst = addMoney(taxableAmount, totalGst);
+
+  const halfGst = isInterState ? 0 : roundMoney(totalGst / 2);
+  const otherHalf = isInterState ? 0 : subMoney(totalGst, halfGst); // CGST + SGST always equals total GST
   const igst = isInterState ? totalGst : 0;
 
   return {
@@ -223,60 +276,76 @@ export function calculateInvoiceSummary(
     isNonGstFirm = false,
   } = options;
 
-  let totalTaxable = 0;
-  let totalItemDiscount = 0;
-  let totalCgst = 0;
-  let totalSgst = 0;
-  let totalIgst = 0;
-  let totalTax = 0;
-  let totalCostOfGoods = 0;
+  let totalTaxablePaise = 0;
+  let totalItemDiscountPaise = 0;
+  let totalCgstPaise = 0;
+  let totalSgstPaise = 0;
+  let totalIgstPaise = 0;
+  let totalTaxPaise = 0;
+  let totalCostOfGoodsPaise = 0;
 
   items.forEach(it => {
-    const qty = Number(it.quantity) > 0 ? Number(it.quantity) : 1;
+    const rawQty = safeNumber(it.quantity, 0);
+    const qty = rawQty > 0 ? rawQty : 1;
     // cost counts for services too when entered (consumables, outside labour)
-    const pCost = Math.max(0, Number(it.purchaseCost) || 0);
-    totalCostOfGoods += pCost * qty;
+    const pCost = roundMoney(Math.max(0, safeNumber(it.purchaseCost, 0)));
+    totalCostOfGoodsPaise += toPaise(mulMoney(pCost, qty));
 
     if (isNonGstFirm) {
-      const rate = Math.max(0, Number(it.grossRate !== undefined ? it.grossRate : it.rate) || 0);
-      const lineTotal = rate * qty;
-      totalTaxable += lineTotal;
+      const rate = roundMoney(Math.max(0, safeNumber(it.grossRate !== undefined ? it.grossRate : it.rate, 0)));
+      const lineDisc = roundMoney(Math.max(0, safeNumber(it.discount, 0)));
+      const lineTotal = Math.max(0, subMoney(mulMoney(rate, qty), lineDisc));
+      totalItemDiscountPaise += toPaise(lineDisc);
+      totalTaxablePaise += toPaise(lineTotal);
       return;
     }
 
-    const pct = Math.max(0, Number(it.gstPercent) || 0);
-    const lineDisc = Math.max(0, Number(it.discount) || 0);
-    totalItemDiscount += lineDisc;
+    const pct = Math.max(0, Math.min(100, safeNumber(it.gstPercent, 0)));
+    const lineDisc = roundMoney(Math.max(0, safeNumber(it.discount, 0)));
+    totalItemDiscountPaise += toPaise(lineDisc);
 
-    // Use baseRate if available, else derive from grossRate
+    // Use grossRate when present, else derive from base rate
     let itemCalc: ItemGstCalculation;
-    if (it.grossRate !== undefined && it.grossRate > 0) {
+    if (it.grossRate !== undefined && safeNumber(it.grossRate, 0) > 0) {
       itemCalc = calculateFromInclusiveRate(it.grossRate, pct, qty, lineDisc, isInterState);
     } else {
       itemCalc = calculateFromBaseRate(it.rate, pct, qty, lineDisc, isInterState);
     }
 
-    totalTaxable += itemCalc.taxableAmount;
-    totalCgst += itemCalc.cgst;
-    totalSgst += itemCalc.sgst;
-    totalIgst += itemCalc.igst;
-    totalTax += itemCalc.totalGst;
+    totalTaxablePaise += toPaise(itemCalc.taxableAmount);
+    totalCgstPaise += toPaise(itemCalc.cgst);
+    totalSgstPaise += toPaise(itemCalc.sgst);
+    totalIgstPaise += toPaise(itemCalc.igst);
+    totalTaxPaise += toPaise(itemCalc.totalGst);
   });
 
-  const netTaxableAmount = Math.max(0, totalTaxable - invoiceDiscount);
+  const totalTaxable = fromPaise(totalTaxablePaise);
+  const totalItemDiscount = fromPaise(totalItemDiscountPaise);
+  const totalCostOfGoods = fromPaise(totalCostOfGoodsPaise);
+  const safeInvDiscount = roundMoney(Math.max(0, safeNumber(invoiceDiscount, 0)));
+  const safeExtraCost = roundMoney(Math.max(0, safeNumber(manualExtraCost, 0)));
+
+  const netTaxableAmount = Math.max(0, subMoney(totalTaxable, safeInvDiscount));
 
   // If there's an invoice-level discount on a GST invoice, adjust taxes proportionally
-  let finalCgst = totalCgst;
-  let finalSgst = totalSgst;
-  let finalIgst = totalIgst;
-  let finalTotalTax = totalTax;
+  let finalCgst = fromPaise(totalCgstPaise);
+  let finalSgst = fromPaise(totalSgstPaise);
+  let finalIgst = fromPaise(totalIgstPaise);
+  let finalTotalTax = fromPaise(totalTaxPaise);
 
-  if (!isNonGstFirm && invoiceDiscount > 0 && totalTaxable > 0) {
+  if (!isNonGstFirm && safeInvDiscount > 0 && totalTaxable > 0) {
     const ratio = netTaxableAmount / totalTaxable;
-    finalCgst = Math.round(totalCgst * ratio * 100) / 100;
-    finalSgst = Math.round(totalSgst * ratio * 100) / 100;
-    finalIgst = Math.round(totalIgst * ratio * 100) / 100;
-    finalTotalTax = isInterState ? finalIgst : (finalCgst + finalSgst);
+    if (isInterState) {
+      finalIgst = roundMoney(finalIgst * ratio);
+      finalCgst = 0;
+      finalSgst = 0;
+      finalTotalTax = finalIgst;
+    } else {
+      finalTotalTax = roundMoney(finalTotalTax * ratio);
+      finalCgst = roundMoney(finalTotalTax / 2);
+      finalSgst = subMoney(finalTotalTax, finalCgst);
+      finalIgst = 0;
+    }
   }
 
   if (isNonGstFirm) {
@@ -286,28 +355,28 @@ export function calculateInvoiceSummary(
     finalTotalTax = 0;
   }
 
-  const unroundedTotal = Number((netTaxableAmount + finalTotalTax).toFixed(2));
-  
-  let roundOff = Number(roundOffAdjustment.toFixed(2));
+  const unroundedTotal = addMoney(netTaxableAmount, finalTotalTax);
+
+  let roundOff = roundMoney(safeNumber(roundOffAdjustment, 0));
   if (autoRoundOff) {
     const target = Math.round(unroundedTotal);
-    roundOff = Number((target - unroundedTotal).toFixed(2));
+    roundOff = subMoney(target, unroundedTotal);
   }
 
-  const grandTotal = Math.max(0, Number((unroundedTotal + roundOff).toFixed(2)));
+  const grandTotal = Math.max(0, addMoney(unroundedTotal, roundOff));
 
   // Profit calculation: (Taxable Revenue - Cost of Goods Sold - Manual Extra Costs)
-  const grossProfit = Number((netTaxableAmount - totalCostOfGoods).toFixed(2));
-  const netProfit = Number((grossProfit - manualExtraCost).toFixed(2));
-  const profitMarginPercent = netTaxableAmount > 0 
-    ? Number(((netProfit / netTaxableAmount) * 100).toFixed(1)) 
+  const grossProfit = subMoney(netTaxableAmount, totalCostOfGoods);
+  const netProfit = subMoney(grossProfit, safeExtraCost);
+  const profitMarginPercent = netTaxableAmount > 0
+    ? roundMoney((netProfit / netTaxableAmount) * 100)
     : 0;
 
   return {
-    subtotal: Number(totalTaxable.toFixed(2)),
-    totalItemDiscount: Number(totalItemDiscount.toFixed(2)),
-    invoiceDiscount: Number(invoiceDiscount.toFixed(2)),
-    netTaxableAmount: Number(netTaxableAmount.toFixed(2)),
+    subtotal: totalTaxable,
+    totalItemDiscount,
+    invoiceDiscount: safeInvDiscount,
+    netTaxableAmount,
     totalCgst: Number(finalCgst.toFixed(2)),
     totalSgst: Number(finalSgst.toFixed(2)),
     totalIgst: Number(finalIgst.toFixed(2)),

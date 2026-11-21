@@ -287,16 +287,16 @@ export const SgsLogo: React.FC<{ url?: string; className?: string; size?: 'sm' |
   const logoSrc = url || OFFICIAL_SGS_LOGO_URL;
   const sizeClasses = {
     sm: 'h-8 max-w-[130px]',
-    md: 'h-12 max-w-[190px]',
-    lg: 'h-16 max-w-[260px]',
-    xl: 'h-20 max-w-[320px]',
-  }[size] || 'h-12 max-w-[190px]';
+    md: 'h-12 max-w-[180px]',
+    lg: 'h-16 max-w-[240px]',
+    xl: 'h-20 max-w-[300px]',
+  }[size] || 'h-12 max-w-[180px]';
 
   return (
     <img
       src={logoSrc}
       alt="Spider Grid Solutions Logo"
-      className={`object-contain transition-transform select-none ${sizeClasses} ${className}`}
+      className={`firm-print-logo block w-auto shrink-0 object-contain transition-transform select-none ${sizeClasses} ${className}`}
     />
   );
 };
@@ -311,16 +311,16 @@ export const PandiyanLogo: React.FC<{ url?: string; className?: string; size?: '
 }) => {
   const logoSrc = url || DEFAULT_PANDIYAN_LOGO_DATA_URL;
   const sizeClasses = {
-    sm: 'h-8 max-w-[130px]',
-    md: 'h-12 max-w-[190px]',
-    lg: 'h-16 max-w-[260px]',
+    sm: 'h-9 max-w-[130px]',
+    md: 'h-12 max-w-[175px]',
+    lg: 'h-16 max-w-[240px]',
   }[size];
 
   return (
     <img
       src={logoSrc}
       alt="Pandiyan Computers Logo"
-      className={`object-contain transition-transform select-none ${sizeClasses} ${className}`}
+      className={`firm-print-logo block w-auto shrink-0 object-contain transition-transform select-none ${sizeClasses} ${className}`}
     />
   );
 };

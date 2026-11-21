@@ -65,7 +65,9 @@ import {
   calculateInvoiceSummary, 
   GST_PRESET_RATES, 
   COMMON_IT_HSN_CODES,
-  ItemGstCalculation 
+  ItemGstCalculation,
+  formatInr,
+  safeNumber,
 } from '../utils/gstUtils';
 import * as Acc from '../utils/accounting';
 import {
@@ -109,6 +111,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     addCashFlowEntry, 
     adminSettings, 
     inventory,
+    vendorBills,
     theme,
     canDelete,
     isAdmin
@@ -558,8 +561,9 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
 
   const handleSelectStockItem = (inv: InventoryItem) => {
     const defaultPct = billingFirm === 'pandiyan' ? 0 : (adminSettings.defaultGstPercent || 18);
-    const unitP = inv.unitPrice || 0;
+    const unitP = Acc.round2(safeNumber(inv.unitPrice, 0));
     const calc = calculateFromInclusiveRate(unitP, defaultPct, 1);
+    const costInfo = Acc.resolveSpareCostForFirm(inv, billingFirm, vendorBills);
     setDocItems(prev => [
       ...prev,
       {
@@ -568,11 +572,11 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
         quantity: 1,
         grossRate: unitP,
         gstPercent: defaultPct,
-        rate: calc.baseRate,
-        amount: calc.baseAmount,
-        gstAmount: calc.totalGst,
-        totalWithGst: calc.totalWithGst,
-        purchaseCost: inv.unitCost || 0,
+        rate: billingFirm === 'pandiyan' ? unitP : calc.baseRate,
+        amount: billingFirm === 'pandiyan' ? unitP : calc.baseAmount,
+        gstAmount: billingFirm === 'pandiyan' ? 0 : calc.totalGst,
+        totalWithGst: billingFirm === 'pandiyan' ? unitP : calc.totalWithGst,
+        purchaseCost: costInfo.spareCost,
         isService: false,
         inventoryItemId: inv.id,
       }
@@ -611,15 +615,16 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
     const current = { ...updated[index] };
     const defaultPct = billingFirm === 'pandiyan' ? 0 : (adminSettings.defaultGstPercent || 18);
     const itPct = current.gstPercent !== undefined ? current.gstPercent : defaultPct;
-    const qty = field === 'quantity' ? Math.max(1, Number(value) || 1) : Math.max(1, current.quantity || 1);
-    const disc = field === 'discount' ? Math.max(0, Number(value) || 0) : Math.max(0, current.discount || 0);
+    const parsedQty = field === 'quantity' ? safeNumber(value, 1) : safeNumber(current.quantity, 1);
+    const qty = parsedQty > 0 ? parsedQty : 1;
+    const disc = field === 'discount' ? Acc.round2(Math.max(0, safeNumber(value, 0))) : Acc.round2(Math.max(0, safeNumber(current.discount, 0)));
 
     // Pandiyan Computers: Completely Non-GST firm - direct rate * qty - discount, 0 tax
     if (billingFirm === 'pandiyan') {
       const unitP = field === 'grossRate' || field === 'rate'
-        ? Math.max(0, Number(value) || 0)
-        : (current.grossRate !== undefined ? current.grossRate : (current.rate || 0));
-      const totalAmt = Number(Math.max(0, (unitP * qty) - disc).toFixed(2));
+        ? Acc.round2(Math.max(0, safeNumber(value, 0)))
+        : Acc.round2(Math.max(0, safeNumber(current.grossRate !== undefined ? current.grossRate : current.rate, 0)));
+      const totalAmt = Acc.round2(Math.max(0, (unitP * qty) - disc));
       updated[index] = {
         ...current,
         rate: unitP,
@@ -631,7 +636,9 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
         gstAmount: 0,
         totalWithGst: totalAmt,
       };
-      if (field !== 'grossRate' && field !== 'rate' && field !== 'quantity' && field !== 'discount') {
+      if (field === 'purchaseCost') {
+        updated[index] = { ...updated[index], purchaseCost: Acc.round2(Math.max(0, safeNumber(value, 0))) };
+      } else if (field !== 'grossRate' && field !== 'rate' && field !== 'quantity' && field !== 'discount') {
         updated[index] = { ...updated[index], [field]: value };
       }
       setDocItems(updated);
@@ -640,7 +647,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
 
     if (field === 'grossRate') {
       // User inputs amount with GST (Rate with GST)
-      const gross = Math.max(0, Number(value) || 0);
+      const gross = Acc.round2(Math.max(0, safeNumber(value, 0)));
       const calc = calculateFromInclusiveRate(gross, itPct, qty, disc, isInterState);
       updated[index] = {
         ...current,
@@ -658,7 +665,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
       };
     } else if (field === 'rate') {
       // User directly inputs Base Rate (Without GST)
-      const base = Math.max(0, Number(value) || 0);
+      const base = Acc.round2(Math.max(0, safeNumber(value, 0)));
       const calc = calculateFromBaseRate(base, itPct, qty, disc, isInterState);
       updated[index] = {
         ...current,
@@ -715,6 +722,8 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
         sgstAmount: calc.sgst,
         igstAmount: calc.igst,
       };
+    } else if (field === 'purchaseCost') {
+      updated[index] = { ...current, purchaseCost: Acc.round2(Math.max(0, safeNumber(value, 0))) };
     } else {
       updated[index] = { ...current, [field]: value };
     }
@@ -1946,8 +1955,8 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                       <tbody className={`divide-y ${isDark ? 'divide-slate-800' : 'divide-slate-100'}`}>
                         {liveViewingInvoice.items.map((it, idx) => {
                           const itGst = it.gstPercent !== undefined ? it.gstPercent : (liveViewingInvoice.billingFirm === 'pandiyan' ? 0 : liveViewingInvoice.gstPercent);
-                          const itTax = it.gstAmount ?? Math.round(((it.amount || (it.rate * it.quantity)) * itGst) / 100);
-                          const itTotal = it.totalWithGst ?? (it.amount + itTax);
+                          const itTax = it.gstAmount ?? Acc.round2(((it.amount || (it.rate * it.quantity)) * itGst) / 100);
+                          const itTotal = it.totalWithGst ?? Acc.round2((it.amount || 0) + itTax);
                           return (
                             <tr key={idx}>
                               <td className="py-2 px-3 font-semibold whitespace-pre-line">{it.description}</td>
@@ -1957,19 +1966,19 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                                 </td>
                               )}
                               <td className="py-2 px-2 text-center font-mono">{it.quantity}</td>
-                              <td className="py-2 px-2 text-right font-mono">₹{it.rate.toLocaleString('en-IN')}</td>
+                              <td className="py-2 px-2 text-right font-mono">₹{formatInr(it.rate, true)}</td>
                               {liveViewingInvoice.billingFirm !== 'pandiyan' && (
                                 <>
                                   <td className="py-2 px-2 text-center font-mono font-bold text-blue-600">
                                     {itGst}%
                                   </td>
                                   <td className="py-2 px-2 text-right font-mono text-amber-600">
-                                    ₹{itTax.toLocaleString('en-IN')}
+                                    ₹{formatInr(itTax, true)}
                                   </td>
                                 </>
                               )}
                               <td className="py-2 px-3 text-right font-mono font-bold">
-                                ₹{itTotal.toLocaleString('en-IN')}
+                                ₹{formatInr(itTotal, true)}
                               </td>
                             </tr>
                           );
@@ -2417,6 +2426,10 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                           setDocItems(prev => prev.map(it => {
                             const gross = it.grossRate !== undefined && it.grossRate > 0 ? it.grossRate : (it.rate || 0);
                             const calc = calculateFromInclusiveRate(gross, defPct, it.quantity || 1);
+                            const linkedInv = it.inventoryItemId ? inventory.find(i => i.id === it.inventoryItemId) : undefined;
+                            const resolvedCost = linkedInv
+                              ? Acc.resolveSpareCostForFirm(linkedInv, 'sgs', vendorBills).spareCost
+                              : it.purchaseCost;
                             return {
                               ...it,
                               hsnCode: it.hsnCode || adminSettings.defaultHsnCode || '998713',
@@ -2426,6 +2439,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                               amount: calc.baseAmount,
                               gstAmount: calc.totalGst,
                               totalWithGst: calc.totalWithGst,
+                              purchaseCost: resolvedCost,
                             };
                           }));
                         }}
@@ -2446,7 +2460,13 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                           setBillingFirm('pandiyan');
                           setGstPercent(0);
                           setDocItems(prev => prev.map(it => {
-                            const val = it.grossRate !== undefined && it.grossRate > 0 ? it.grossRate : it.rate;
+                            const val = Acc.round2(it.grossRate !== undefined && it.grossRate > 0 ? it.grossRate : (it.rate || 0));
+                            const qty = it.quantity || 1;
+                            const lineTotal = Acc.round2(Math.max(0, val * qty - (it.discount || 0)));
+                            const linkedInv = it.inventoryItemId ? inventory.find(i => i.id === it.inventoryItemId) : undefined;
+                            const resolvedCost = linkedInv
+                              ? Acc.resolveSpareCostForFirm(linkedInv, 'pandiyan', vendorBills).spareCost
+                              : it.purchaseCost;
                             return {
                               ...it,
                               hsnCode: undefined,
@@ -2454,8 +2474,9 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                               gstAmount: 0,
                               grossRate: val,
                               rate: val,
-                              amount: Number((val * (it.quantity || 1)).toFixed(2)),
-                              totalWithGst: Number((val * (it.quantity || 1)).toFixed(2)),
+                              amount: lineTotal,
+                              totalWithGst: lineTotal,
+                              purchaseCost: resolvedCost,
                             };
                           }));
                         }}
@@ -2970,7 +2991,8 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                           </label>
                           <input
                             type="number"
-                            min="1"
+                            min="0.01"
+                            step="any"
                             value={item.quantity}
                             onChange={(e) => handleDocItemChange(idx, 'quantity', e.target.value)}
                             placeholder="Qty"
@@ -2995,7 +3017,10 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                       </div>
 
                       {/* Bottom Row: GST Breakdown & Calculation Grid (Base Rate column removed) */}
-                      {billingFirm === 'pandiyan' ? (
+                      {billingFirm === 'pandiyan' ? (() => {
+                        const linkedInv = item.inventoryItemId ? inventory.find(i => i.id === item.inventoryItemId) : undefined;
+                        const spareCostInfo = linkedInv ? Acc.resolveSpareCostForFirm(linkedInv, 'pandiyan', vendorBills) : null;
+                        return (
                         <div className={`p-2.5 rounded-lg border grid grid-cols-2 sm:grid-cols-4 gap-2.5 items-end text-xs ${
                           isDark ? 'bg-slate-950/60 border-slate-800/80' : 'bg-slate-50 border-slate-200'
                         }`}>
@@ -3011,9 +3036,10 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                               <input
                                 type="number"
                                 min="0"
-                                value={item.grossRate !== undefined && item.grossRate > 0 ? item.grossRate : (item.rate || 0)}
+                                step="any"
+                                value={item.grossRate !== undefined && item.grossRate > 0 ? item.grossRate : (item.rate || '')}
                                 onChange={(e) => handleDocItemChange(idx, 'grossRate', e.target.value)}
-                                placeholder="Rate"
+                                placeholder="0.00"
                                 className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono font-bold focus:outline-none ${
                                   isDark ? 'bg-slate-900 border border-amber-800 text-amber-300' : 'bg-white border border-amber-300 text-amber-800'
                                 }`}
@@ -3022,7 +3048,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                             </div>
                           </div>
 
-                          {/* 2. Spare Cost (for Profit & Loss) */}
+                          {/* 2. Spare Cost (GST-inclusive for GST-purchased stock) */}
                           <div>
                             <label className={`block text-[10px] font-bold mb-0.5 truncate ${isDark ? 'text-rose-400' : 'text-rose-700'}`}>
                               Spare Cost (₹)
@@ -3031,16 +3057,24 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                               <input
                                 type="number"
                                 min="0"
-                                value={item.purchaseCost || 0}
-                                onChange={(e) => handleDocItemChange(idx, 'purchaseCost', Number(e.target.value))}
-                                placeholder="Spare Cost"
+                                step="any"
+                                value={item.purchaseCost || ''}
+                                onChange={(e) => handleDocItemChange(idx, 'purchaseCost', e.target.value)}
+                                placeholder="0.00"
                                 className={`w-full rounded-md pl-4 pr-1.5 py-1 text-xs font-mono focus:outline-none ${
                                   isDark ? 'bg-slate-900 border border-slate-700 text-rose-300' : 'bg-white border border-slate-300 text-rose-700'
                                 }`}
                               />
                               <span className="text-[10px] absolute left-1.5 top-1/2 -translate-y-1/2 text-rose-400">₹</span>
                             </div>
-                            <span className="text-[9px] text-slate-500 block truncate mt-0.5">Workshop cost</span>
+                            <span
+                              className="text-[9px] text-slate-500 block truncate mt-0.5"
+                              title={spareCostInfo?.isGstInclusive ? `Base ₹${formatInr(spareCostInfo.baseCost, true)} + ${spareCostInfo.gstPercent}% GST (₹${formatInr(spareCostInfo.gstAmount, true)})` : 'Workshop purchase cost'}
+                            >
+                              {spareCostInfo?.isGstInclusive
+                                ? `Incl. ${spareCostInfo.gstPercent}% GST (Base ₹${formatInr(spareCostInfo.baseCost, true)})`
+                                : 'Purchase cost (No GST)'}
+                            </span>
                           </div>
 
                           {/* 3. Quantity Display */}
@@ -3051,10 +3085,10 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                             <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold border ${
                               isDark ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-800'
                             }`}>
-                              {item.quantity} unit{item.quantity > 1 ? 's' : ''}
+                              {item.quantity} unit{item.quantity !== 1 ? 's' : ''}
                             </div>
                             <span className="text-[9px] text-slate-400 block truncate mt-0.5 font-mono">
-                              ₹{(item.grossRate || item.rate || 0)} × {item.quantity}
+                              ₹{formatInr(item.grossRate || item.rate || 0, true)} × {item.quantity}
                             </span>
                           </div>
 
@@ -3066,14 +3100,15 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                             <div className={`rounded-md px-2 py-1 text-xs font-mono font-bold text-right border ${
                               isDark ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-200 text-emerald-800'
                             }`}>
-                              ₹{(item.amount ?? ((item.rate || 0) * (item.quantity || 1))).toLocaleString('en-IN')}
+                              ₹{formatInr(item.amount ?? Acc.round2((item.rate || 0) * (item.quantity || 1)), true)}
                             </div>
                             <span className="text-[9px] text-amber-500 block truncate mt-0.5 font-sans">
-                              Exempt / Nil Tax
+                              Non-GST Slip
                             </span>
                           </div>
                         </div>
-                      ) : (
+                        );
+                      })() : (
                         <div className={`p-3 rounded-lg border grid grid-cols-2 sm:grid-cols-6 gap-2.5 items-end text-xs ${
                           isDark ? 'bg-slate-950/60 border-slate-800/80' : 'bg-slate-50 border-slate-200'
                         }`}>
@@ -3285,8 +3320,10 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                     </label>
                     <input
                       type="number"
-                      value={manualExtraCost}
-                      onChange={(e) => setManualExtraCost(Number(e.target.value))}
+                      min="0"
+                      step="any"
+                      value={manualExtraCost || ''}
+                      onChange={(e) => setManualExtraCost(Acc.round2(Math.max(0, safeNumber(e.target.value, 0))))}
                       placeholder="e.g. Travel, outside lathe"
                       className={`w-full rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-none ${
                         isDark ? 'bg-slate-900 border border-slate-700 text-rose-400' : 'bg-white border border-slate-300 text-rose-700'
@@ -3803,15 +3840,17 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                   const pThemeKey = printableInvoice.pandiyanTheme || adminSettings.pandiyanBillingTheme || 'warm_amber';
                   const pTheme = PANDIYAN_THEMES[pThemeKey] || PANDIYAN_THEMES.warm_amber;
                   return (
-                    <div className={`quotation-header border-b-2 pb-2 ${pTheme.headerBorder}`}>
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <PandiyanLogo url={adminSettings.pandiyanLogoUrl} size="md" />
-                          <div className="min-w-0">
-                            <h2 className={`text-base font-black tracking-tight ${pTheme.primary}`}>
+                    <div className={`quotation-header border-b-2 pb-2.5 ${pTheme.headerBorder}`}>
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="shrink-0 flex items-center">
+                            <PandiyanLogo url={adminSettings.pandiyanLogoUrl} size="md" />
+                          </div>
+                          <div className="min-w-0 space-y-0.5">
+                            <h2 className={`text-base font-black tracking-tight leading-tight ${pTheme.primary}`}>
                               {adminSettings.pandiyanFirmName || 'PANDIYAN COMPUTERS'}
                             </h2>
-                            <p className="text-[10.5px] text-slate-700 font-medium leading-tight">
+                            <p className="text-[10.5px] text-slate-700 font-medium leading-snug">
                               {adminSettings.pandiyanAddress || 'Shop No. 14, Simmakkal Main Road, Madurai - 625001'} · Ph: {adminSettings.pandiyanPhone || '+91 9176795665'}
                             </p>
                             {adminSettings.pandiyanEmail && (
@@ -3820,11 +3859,11 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                           </div>
                         </div>
 
-                        <div className="text-right shrink-0">
-                          <div className={`text-[11px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded text-white ${pTheme.badgeBg}`}>
+                        <div className="text-right shrink-0 flex flex-col items-end justify-center">
+                          <div className={`text-[11px] font-black uppercase tracking-wider px-2.5 py-1 rounded text-white whitespace-nowrap ${pTheme.badgeBg}`}>
                             {printableInvoice.type === 'invoice' ? 'SALES & ESTIMATE SLIP' : 'ESTIMATE / QUOTE'}
                           </div>
-                          <div className="inline-block px-2 py-0.5 mt-1 rounded text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                          <div className="inline-block px-2 py-0.5 mt-1 rounded text-[9px] font-bold bg-amber-100 text-amber-900 border border-amber-300 whitespace-nowrap">
                             NON-GST COUNTER
                           </div>
                         </div>
@@ -3835,7 +3874,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
               ) : printableInvoice.type === 'quotation' && adminSettings.quotationHeaderImageUrl ? (
                 /* SGS Quote with Full-Width Uploaded Quotation Header */
                 <div className="space-y-1.5">
-                  <div className="quotation-header w-full bg-white m-0 p-0">
+                  <div className="quotation-header quotation-header-banner w-full bg-white m-0 p-0">
                     <img
                       src={adminSettings.quotationHeaderImageUrl}
                       alt="Quotation Letterhead Header"
@@ -3955,15 +3994,15 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                             </td>
                           )}
                           <td className="py-1 px-1.5 text-center font-mono align-top">{it.quantity}</td>
-                          <td className="py-1 px-1.5 text-right font-mono align-top">₹{it.rate.toLocaleString('en-IN')}</td>
+                          <td className="py-1 px-1.5 text-right font-mono align-top">₹{formatInr(it.rate, true)}</td>
                           {printableInvoice.billingFirm !== 'pandiyan' && (
                             <>
                               <td className="py-1 px-1.5 text-center font-mono text-blue-700 font-bold align-top">{itGst}%</td>
-                              <td className="py-1 px-1.5 text-right font-mono text-slate-700 align-top">₹{itTax.toFixed(2)}</td>
+                              <td className="py-1 px-1.5 text-right font-mono text-slate-700 align-top">₹{formatInr(itTax, true)}</td>
                             </>
                           )}
                           <td className="py-1 px-2 text-right font-mono font-bold align-top">
-                            ₹{itTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            ₹{formatInr(itTotal, true)}
                           </td>
                         </tr>
                       );
@@ -4031,12 +4070,12 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                 {/* Right Column: Summary Totals */}
                 <div className="sm:col-span-5 p-2 rounded border border-slate-200 bg-slate-50/60 space-y-1 text-[10.5px]">
                   <div className="flex justify-between text-slate-600">
-                    <span>Taxable Value:</span>
-                    <span className="font-mono">₹{printableInvoice.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span>{printableInvoice.billingFirm === 'pandiyan' ? 'Subtotal:' : 'Taxable Value:'}</span>
+                    <span className="font-mono">₹{formatInr(printableInvoice.subtotal, true)}</span>
                   </div>
                   {printableInvoice.billingFirm !== 'pandiyan' && printableInvoice.taxAmount > 0 && (() => {
                     const rows = Acc.taxByRate(printableInvoice).filter(r => r.tax > 0);
-                    const money = (n: number) => `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+                    const money = (n: number) => `₹${formatInr(n, true)}`;
                     const pct = (r: number, half: boolean) => (half ? r / 2 : r).toString();
                     return (
                       <>
@@ -4067,7 +4106,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                   {printableInvoice.discount !== undefined && printableInvoice.discount > 0 && (
                     <div className="flex justify-between text-rose-600 font-semibold">
                       <span>Discount:</span>
-                      <span className="font-mono">-₹{printableInvoice.discount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span className="font-mono">-₹{formatInr(printableInvoice.discount, true)}</span>
                     </div>
                   )}
                   {printableInvoice.roundOff !== undefined && printableInvoice.roundOff !== 0 && (
@@ -4078,23 +4117,23 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                   )}
                   <div className="flex justify-between font-black text-xs border-t border-slate-300 pt-1 text-slate-900">
                     <span>Grand Total:</span>
-                    <span className="font-mono">₹{printableInvoice.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="font-mono">₹{formatInr(printableInvoice.grandTotal, true)}</span>
                   </div>
                   <div className="flex justify-between text-emerald-700 font-bold">
                     <span>Paid Amount:</span>
-                    <span className="font-mono">₹{printableInvoice.paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    <span className="font-mono">₹{formatInr(printableInvoice.paidAmount, true)}</span>
                   </div>
-                  {printableInvoice.grandTotal - printableInvoice.paidAmount > 0 && (
+                  {Acc.round2(printableInvoice.grandTotal - printableInvoice.paidAmount) > 0 && (
                     <div className="flex justify-between text-rose-700 font-bold border-t border-dashed border-slate-300 pt-0.5">
                       <span>Balance Due:</span>
-                      <span className="font-mono">₹{(printableInvoice.grandTotal - printableInvoice.paidAmount).toLocaleString('en-IN')}</span>
+                      <span className="font-mono">₹{formatInr(Acc.round2(Math.max(0, printableInvoice.grandTotal - printableInvoice.paidAmount)), true)}</span>
                     </div>
                   )}
                 </div>
               </div>
 
               {/* Scan & Pay QR (when balance due) */}
-              {printableInvoice.status !== 'cancelled' && adminSettings.workshopUpiId && isValidUpiId(adminSettings.workshopUpiId) && printableInvoice.grandTotal - printableInvoice.paidAmount > 0 && (
+              {printableInvoice.status !== 'cancelled' && adminSettings.workshopUpiId && isValidUpiId(adminSettings.workshopUpiId) && Acc.round2(printableInvoice.grandTotal - printableInvoice.paidAmount) > 0 && (
                 <div className="model-section flex items-center gap-2.5 p-2 rounded border border-emerald-200 bg-emerald-50/50">
                   <UpiQr link={upiPayLink(
                     adminSettings.workshopUpiId,
@@ -4103,7 +4142,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                     printableInvoice.invoiceNumber
                   )} />
                   <div className="text-[10px] text-slate-700 leading-tight">
-                    <p className="font-bold text-emerald-800">Scan to pay ₹{Acc.round2(printableInvoice.grandTotal - printableInvoice.paidAmount).toLocaleString('en-IN')}</p>
+                    <p className="font-bold text-emerald-800">Scan to pay ₹{formatInr(Acc.round2(printableInvoice.grandTotal - printableInvoice.paidAmount), true)}</p>
                     <p>GPay · PhonePe · Paytm · any UPI app</p>
                     <p className="font-mono text-slate-500">{adminSettings.workshopUpiId}</p>
                   </div>
