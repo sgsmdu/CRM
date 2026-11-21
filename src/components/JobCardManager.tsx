@@ -660,69 +660,69 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="sgs-page">
       
       {/* Toast Notification */}
       {toastMessage && (
-        <div className="fixed top-20 right-6 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in slide-in-from-top-2 duration-200">
+        <div className="fixed top-16 right-4 z-50 bg-emerald-600 text-white px-3.5 py-2 rounded-xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in slide-in-from-top-2 duration-200">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
 
       {/* Top Action & Manager Navigation Bar */}
-      <div className={`p-4 rounded-xl border flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 transition-colors ${
+      <div className={`p-3 sm:p-4 rounded-xl border flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 transition-colors ${
         isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200/90 shadow-xs'
       }`}>
-        <div>
-          <h2 className={`text-base font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+        <div className="min-w-0">
+          <h2 className={`text-base sm:text-lg font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
             Service & Sales Work Orders
           </h2>
-          <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-            Manage workshop jobs, priority ordering, employee assignments, timeline tracking, and WhatsApp sharing
+          <p className={`text-xs mt-0.5 line-clamp-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+            Manage workshop jobs, priority ordering, assignments, timeline tracking, and WhatsApp sharing
           </p>
         </div>
 
         {/* Manager View Switcher & New Job Trigger */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className={`flex items-center p-1 rounded-lg border ${
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0 min-w-0">
+          <div className={`flex items-center p-1 rounded-lg border overflow-x-auto scrollbar-none ${
             isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'
           }`}>
             <button
               type="button"
               onClick={() => setActiveManagerTab('cards')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2.5 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                 activeManagerTab === 'cards'
                   ? 'bg-blue-600 text-white shadow-xs'
                   : isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Job Cards ({jobCards.length})</span>
+              <FileText className="w-3.5 h-3.5 shrink-0" />
+              <span>Cards ({jobCards.length})</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveManagerTab('list')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2.5 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                 activeManagerTab === 'list'
                   ? 'bg-blue-600 text-white shadow-xs'
                   : isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <ListOrdered className="w-3.5 h-3.5" />
-              <span>Job Card List (13 Statuses)</span>
+              <ListOrdered className="w-3.5 h-3.5 shrink-0" />
+              <span>Status List</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveManagerTab('allocation')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2.5 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
                 activeManagerTab === 'allocation'
                   ? 'bg-blue-600 text-white shadow-xs'
                   : isDark ? 'text-slate-400 hover:text-white' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <Layers className="w-3.5 h-3.5" />
-              <span>Work Allocation & Priority ({jobCards.filter(j => j.status !== 'completed' && j.status !== 'delivered').length})</span>
+              <Layers className="w-3.5 h-3.5 shrink-0" />
+              <span>Allocation ({jobCards.filter(j => j.status !== 'completed' && j.status !== 'delivered').length})</span>
             </button>
           </div>
 
@@ -735,9 +735,9 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
               setCustomerArea('');
               setIsCreateModalOpen(true);
             }}
-            className="flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-md shadow-blue-500/20 cursor-pointer"
+            className="h-9 flex items-center justify-center gap-1.5 px-3.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm shadow-blue-500/20 cursor-pointer whitespace-nowrap shrink-0"
           >
-            <Plus className="w-4 h-4" />
+            <Plus className="w-4 h-4 shrink-0" />
             <span>New Job Card</span>
           </button>
         </div>
@@ -761,10 +761,10 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
       ) : (
         <>
           {/* Filter & Search Bar */}
-          <div className={`p-4 rounded-xl border space-y-3 transition-colors ${
+          <div className={`sgs-toolbar space-y-2.5 transition-colors ${
             isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200/80 shadow-xs'
           }`}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2">
               
               {/* Comprehensive Search Input */}
               <div className="relative lg:col-span-2">
@@ -1229,19 +1229,19 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
 
       {/* Create Job Card Modal with Golden Customer Search & Select */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-2xl border shadow-2xl animate-in fade-in zoom-in-95 duration-200 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
-            <div className={`px-6 py-4 border-b flex items-center justify-between shrink-0 ${
-              isDark ? 'border-slate-800' : 'border-slate-200'
+            <div className={`px-4 sm:px-5 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
+              isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'
             }`}>
-              <div>
-                <h3 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+              <div className="min-w-0">
+                <h3 className={`text-sm sm:text-base font-bold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>
                   {editingJob ? `Edit Job Card — ${editingJob.jobId}` : 'Create Service / Sales Job Card'}
                 </h3>
-                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  {editingJob ? 'Update customer, device details, intake info or technician notes' : 'Search Customers or enter custom walk-in client'}
+                <p className={`text-[11px] truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  {editingJob ? 'Update customer, device details, intake info or notes' : 'Search Customers or enter walk-in client'}
                 </p>
               </div>
               <button
@@ -1250,13 +1250,13 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
                   setIsCreateModalOpen(false);
                   onClearPreselectedCustomer();
                 }}
-                className={`p-1 rounded-lg ${isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                className={`p-1.5 rounded-lg shrink-0 ${isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateJobSubmit} className="p-6 space-y-4 overflow-y-auto flex-1">
+            <form onSubmit={handleCreateJobSubmit} className="p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain flex-1 min-h-0">
               
               {/* Customer Search & Select Component */}
               <div className="space-y-2">
@@ -1696,33 +1696,33 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
 
       {/* WhatsApp Message Dispatcher Modal with 3 Message Options (Welcome, Flow, Review) */}
       {selectedJobForWhatsApp && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-xl border shadow-2xl animate-in fade-in zoom-in-95 duration-200 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
-            <div className={`px-6 py-4 border-b flex items-center justify-between ${
-              isDark ? 'border-slate-800' : 'border-slate-200'
+            <div className={`px-4 sm:px-5 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
+              isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'
             }`}>
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-600 flex items-center justify-center">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-600 flex items-center justify-center shrink-0">
                   <MessageSquare className="w-4 h-4" />
                 </div>
-                <div>
-                  <h3 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>WhatsApp Dispatch Hub</h3>
-                  <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                <div className="min-w-0">
+                  <h3 className={`text-sm sm:text-base font-bold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>WhatsApp Dispatch Hub</h3>
+                  <p className={`text-[11px] truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                     To: <strong className={isDark ? 'text-slate-200' : 'text-slate-800'}>{selectedJobForWhatsApp.customerName}</strong> ({selectedJobForWhatsApp.customerPhone || 'No Phone'})
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setSelectedJobForWhatsApp(null)}
-                className={`p-1 rounded-lg ${isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                className={`p-1.5 rounded-lg shrink-0 ${isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain flex-1 min-h-0">
               {/* Message Type 3-Way Tabs */}
               <div className={`flex items-center gap-1.5 p-1 border rounded-xl overflow-x-auto ${
                 isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'
@@ -1861,8 +1861,8 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
 
       {/* Timeline Step Action Confirmation Dialog with Notes, Quote, Hold & Custom Inputs */}
       {timelineModalJob && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-lg border shadow-2xl p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className={`flex items-center justify-between pb-3 border-b ${
@@ -2087,8 +2087,8 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
 
       {/* View Complete Timeline History Modal */}
       {viewHistoryJob && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4 max-h-[85vh] flex flex-col ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-lg border shadow-2xl p-4 sm:p-5 space-y-3.5 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className={`flex items-center justify-between pb-3 border-b shrink-0 ${
@@ -2175,8 +2175,8 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
         const isOverdue = (job.estimatedDelivery || job.intakeDate) < todayStr && job.status !== 'completed' && job.status !== 'delivered';
 
         return (
-          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-            <div className={`border rounded-2xl w-full max-w-4xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+          <div className="sgs-modal-backdrop">
+            <div className={`sgs-modal-sheet sm:max-w-4xl border shadow-2xl animate-in fade-in zoom-in-95 duration-200 ${
               isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
             }`}>
               
@@ -3016,8 +3016,8 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
 
       {/* Work Completion Modal (Module 2.4) */}
       {completionModalJob && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-lg border shadow-2xl p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className={`flex items-center justify-between pb-3 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
@@ -3174,8 +3174,8 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
 
       {/* Administrative Closure Modal (Module 2.6) */}
       {closureModalJob && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-md border shadow-2xl p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className={`flex items-center justify-between pb-3 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
@@ -3249,8 +3249,8 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
 
       {/* Reopen Job Modal (Module 2.2) */}
       {reopenModalJob && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-md border shadow-2xl p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className={`flex items-center justify-between pb-3 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
@@ -3311,8 +3311,8 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
 
       {/* Staff Assignment & Reassignment Modal (Module 1.3) */}
       {reassignJobModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-md border shadow-2xl p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className={`flex items-center justify-between pb-3 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
@@ -3415,8 +3415,8 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
 
       {/* Priority Change Modal (Module 1.2) */}
       {priorityModalJob && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-md border shadow-2xl p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className={`flex items-center justify-between pb-3 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
@@ -3547,8 +3547,8 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
 
       {/* Batch Action Modal for Multi-Selection */}
       {batchActionType && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-md border shadow-2xl p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className={`flex items-center justify-between pb-3 border-b ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
@@ -3807,8 +3807,8 @@ export const JobCardManager: React.FC<JobCardManagerProps> = ({
         });
 
         return (
-          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-            <div className={`border rounded-2xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+          <div className="sgs-modal-backdrop">
+            <div className={`sgs-modal-sheet sm:max-w-2xl border shadow-2xl animate-in fade-in zoom-in-95 duration-200 ${
               isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
             }`}>
               {/* Modal Header */}

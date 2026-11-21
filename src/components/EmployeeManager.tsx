@@ -496,7 +496,7 @@ export const EmployeeManager: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-200">
+    <div className="sgs-page animate-in fade-in duration-200">
       {empToast && (
         <div className="fixed top-6 right-6 z-50 bg-purple-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in fade-in slide-in-from-top-2">
           <Sparkles className="w-4 h-4" />
@@ -505,16 +505,16 @@ export const EmployeeManager: React.FC = () => {
       )}
       
       {/* Top Banner */}
-      <div className={`p-6 rounded-2xl border transition-all ${
+      <div className={`p-3.5 sm:p-4 rounded-xl border transition-all ${
         isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200 shadow-sm'
       }`}>
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-purple-600/10 text-purple-600 flex items-center justify-center">
-              <Users className="w-5 h-5" />
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-purple-600/10 text-purple-600 flex items-center justify-center shrink-0">
+              <Users className="w-4.5 h-4.5" />
             </div>
-            <div>
-              <h1 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
+            <div className="min-w-0">
+              <h1 className={`text-lg sm:text-xl font-bold leading-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
                 Staff, Attendance & Work Allocation
               </h1>
               <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -523,10 +523,10 @@ export const EmployeeManager: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <button
               onClick={handleOpenAddEmployee}
-              className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm cursor-pointer transition-all"
+              className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-sm cursor-pointer transition-all"
             >
               <UserPlus className="w-4 h-4" />
               <span>+ Add New Staff</span>
@@ -535,16 +535,16 @@ export const EmployeeManager: React.FC = () => {
         </div>
 
         {/* Sub-tabs */}
-        <div className="flex items-center gap-2 mt-6 border-b border-slate-200 dark:border-slate-800 pb-3">
+        <div className="flex items-center gap-1.5 mt-3.5 border-t border-slate-200 dark:border-slate-800 pt-3 overflow-x-auto scrollbar-thin">
           <button
             onClick={() => setActiveSubTab('roster')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
               activeSubTab === 'roster'
                 ? 'bg-purple-600 text-white shadow-md shadow-purple-500/20'
                 : (isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100')
             }`}
           >
-            <Briefcase className="w-4 h-4" />
+            <Briefcase className="w-3.5 h-3.5" />
             <span>Staff Roster & Work Allocation</span>
             <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
               activeSubTab === 'roster' ? 'bg-purple-700 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
@@ -555,25 +555,25 @@ export const EmployeeManager: React.FC = () => {
 
           <button
             onClick={() => setActiveSubTab('attendance')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
               activeSubTab === 'attendance'
                 ? 'bg-purple-600 text-white shadow-md shadow-purple-500/20'
                 : (isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100')
             }`}
           >
-            <Calendar className="w-4 h-4" />
+            <Calendar className="w-3.5 h-3.5" />
             <span>Daily Attendance</span>
           </button>
 
           <button
             onClick={() => setActiveSubTab('salary')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
               activeSubTab === 'salary'
                 ? 'bg-purple-600 text-white shadow-md shadow-purple-500/20'
                 : (isDark ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100')
             }`}
           >
-            <DollarSign className="w-4 h-4" />
+            <DollarSign className="w-3.5 h-3.5" />
             <span>Monthly Salary & Slips</span>
           </button>
         </div>
@@ -592,8 +592,8 @@ export const EmployeeManager: React.FC = () => {
 
       {/* SUB-TAB 1: ROSTER & WORK ALLOCATION */}
       {activeSubTab === 'roster' && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
             {employees.map(emp => {
               const assignedJobs = jobCards.filter(j => j.assignedEmployeeId === emp.id && j.status !== 'work_completed' && j.status !== 'completed' && j.status !== 'delivered' && j.status !== 'billed');
               const todayAtt = getEmpAttendance(emp.id, todayLocal());
@@ -601,7 +601,7 @@ export const EmployeeManager: React.FC = () => {
               return (
                 <div
                   key={emp.id}
-                  className={`p-5 rounded-2xl border transition-all flex flex-col justify-between ${
+                  className={`p-3.5 sm:p-4 rounded-xl border transition-all flex flex-col justify-between ${
                     isDark ? 'bg-slate-900 border-slate-800 hover:border-purple-500/50' : 'bg-white border-slate-200 hover:border-purple-400 shadow-sm'
                   }`}
                 >
@@ -1076,8 +1076,8 @@ export const EmployeeManager: React.FC = () => {
 
       {/* WORK ALLOCATION & ATTACHMENT MODAL / DRAWER (Triggered on Emp Name click) */}
       {selectedEmpForAllocation && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-2xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-2xl animate-in fade-in zoom-in-95 duration-200 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             {/* Header */}
@@ -1104,7 +1104,7 @@ export const EmployeeManager: React.FC = () => {
             </div>
 
             {/* Body */}
-            <div className="p-6 overflow-y-auto space-y-5 flex-1">
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
               
               {/* Employee Quick Info */}
               <div className={`p-3.5 rounded-xl border flex items-center justify-between text-xs ${
@@ -1286,8 +1286,8 @@ export const EmployeeManager: React.FC = () => {
 
       {/* PAY SALARY MODAL */}
       {payingEmp && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden p-6 space-y-4 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-md block overflow-y-auto p-4 sm:p-5 space-y-3.5 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <h3 className="text-base font-bold">Record Salary Payment</h3>
@@ -1366,8 +1366,8 @@ export const EmployeeManager: React.FC = () => {
 
       {/* ADD / EDIT EMPLOYEE MODAL */}
       {isAddEmpModalOpen && (
-        <div className="fixed inset-0 z-[60] bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl p-6 space-y-4 ${
+        <div className="sgs-modal-backdrop z-[60]">
+          <div className={`sgs-modal-sheet sm:max-w-lg block overflow-y-auto p-4 sm:p-5 space-y-3.5 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between">
@@ -1622,8 +1622,8 @@ export const EmployeeManager: React.FC = () => {
 
       {/* 1. MONTHLY ATTENDANCE CALENDAR & EDIT MODAL (Module 3 - Requirement 3) */}
       {selectedEmpForCalendar && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-4xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-4xl animate-in fade-in zoom-in-95 duration-200 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             {/* Modal Header */}
@@ -1701,7 +1701,7 @@ export const EmployeeManager: React.FC = () => {
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
               
               {/* Monthly Summary Cards */}
               {(() => {
@@ -1999,8 +1999,8 @@ export const EmployeeManager: React.FC = () => {
 
       {/* 2. MULTI-PAID INSTALLMENT MODAL (Module 3 - Requirement 4) */}
       {payingInstallment && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-lg block overflow-y-auto p-4 sm:p-5 space-y-3.5 animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
@@ -2148,8 +2148,8 @@ export const EmployeeManager: React.FC = () => {
 
       {/* 3. DETAILED WAGE SLIP & PAYMENT LOGS MODAL (Module 3) */}
       {viewingWageSlip && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-2xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-2xl animate-in fade-in zoom-in-95 duration-200 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             {/* Header */}
@@ -2183,7 +2183,7 @@ export const EmployeeManager: React.FC = () => {
             </div>
 
             {/* Printable Content */}
-            <div className="p-6 overflow-y-auto space-y-5 flex-1">
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1">
               
               {/* Firm Letterhead */}
               <div className="flex items-start justify-between pb-4 border-b border-slate-200 dark:border-slate-800">

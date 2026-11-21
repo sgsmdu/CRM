@@ -621,133 +621,131 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="sgs-page">
       
       {/* Top Banner & Title */}
-      <div className={`flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b ${
+      <div className={`flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b ${
         isDark ? 'border-slate-800' : 'border-slate-200'
       }`}>
-        <div>
-          <div className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wider mb-1 ${
+        <div className="min-w-0">
+          <div className={`flex flex-wrap items-center gap-1.5 text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider mb-0.5 ${
             isDark ? 'text-blue-400' : 'text-blue-700'
           }`}>
             <span>Referral Engine</span>
             <span>·</span>
             <span>People & Attribution</span>
-            <span>·</span>
-            <span>Google Contacts Sync</span>
           </div>
-          <h1 className={`text-xl font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-            Lead Source & Referrers Hub ({leadSources.length})
+          <h1 className={`text-lg sm:text-xl font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+            Lead Source & Referrers ({leadSources.length})
           </h1>
-          <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-            Manage person-level referrals (School friends, Relatives, Business Network) with 1-click Google Contacts sync and tracked sales revenue.
+          <p className={`text-xs mt-0.5 line-clamp-2 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+            Manage person-level referrals with 1-click Google Contacts sync and tracked sales revenue.
           </p>
         </div>
 
-        <div className="flex items-center flex-wrap gap-2.5">
+        <div className="grid grid-cols-1 sm:flex items-center gap-2 shrink-0">
           <button
             onClick={handleSyncAllLeadsToContacts}
-            className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg border transition-all cursor-pointer ${
+            className={`h-9 flex items-center justify-center gap-1.5 px-3 text-xs font-semibold rounded-lg border transition-all cursor-pointer whitespace-nowrap ${
               isDark 
                 ? 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800 hover:border-slate-600' 
                 : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 shadow-xs'
             }`}
             title="Download all lead sources as Google Contacts vCard (.vcf) file"
           >
-            <Download className="w-3.5 h-3.5 text-blue-500" />
-            <span>Sync All to Google Contacts (.vcf)</span>
+            <Download className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+            <span>Export Contacts (.vcf)</span>
           </button>
 
           <button
             onClick={handleOpenAddModal}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all shadow-md shadow-blue-600/20 cursor-pointer shrink-0"
+            className="h-9 flex items-center justify-center gap-1.5 px-3.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all shadow-sm shadow-blue-600/20 cursor-pointer shrink-0 whitespace-nowrap"
           >
-            <UserPlus className="w-4 h-4" />
+            <UserPlus className="w-4 h-4 shrink-0" />
             <span>Register Lead Person</span>
           </button>
         </div>
       </div>
 
       {/* KPI Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className={`p-4 rounded-xl border transition-colors ${
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+        <div className={`p-3 rounded-xl border transition-colors min-w-0 ${
           isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200/80 shadow-xs'
         }`}>
-          <div className="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-slate-500">
-            <span>Lead Sources</span>
-            <Users className="w-4 h-4 text-blue-500" />
+          <div className="flex items-center justify-between gap-1 text-[11px] font-medium uppercase tracking-wider text-slate-500">
+            <span className="truncate">Lead Sources</span>
+            <Users className="w-3.5 h-3.5 text-blue-500 shrink-0" />
           </div>
-          <div className="flex items-baseline justify-between mt-2">
-            <span className={`text-2xl font-bold font-mono ${isDark ? 'text-white' : 'text-slate-900'}`}>
+          <div className="flex items-baseline justify-between gap-1 mt-1.5">
+            <span className={`text-lg sm:text-xl font-bold font-mono tabular-nums ${isDark ? 'text-white' : 'text-slate-900'}`}>
               {leadSources.length}
             </span>
-            <span className="text-[11px] font-semibold text-blue-600">
+            <span className="text-[10px] sm:text-[11px] font-semibold text-blue-500 truncate">
               Registered
             </span>
           </div>
         </div>
 
-        <div className={`p-4 rounded-xl border transition-colors ${
+        <div className={`p-3 rounded-xl border transition-colors min-w-0 ${
           isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200/80 shadow-xs'
         }`}>
-          <div className="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-slate-500">
-            <span>Referred Customers</span>
-            <UserCheck className="w-4 h-4 text-emerald-500" />
+          <div className="flex items-center justify-between gap-1 text-[11px] font-medium uppercase tracking-wider text-slate-500">
+            <span className="truncate">Referred</span>
+            <UserCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
           </div>
-          <div className="flex items-baseline justify-between mt-2">
-            <span className={`text-2xl font-bold font-mono ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+          <div className="flex items-baseline justify-between gap-1 mt-1.5">
+            <span className={`text-lg sm:text-xl font-bold font-mono tabular-nums ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
               {totalReferredCustomers}
             </span>
-            <span className="text-[11px] font-semibold text-emerald-600">
-              From Leads
+            <span className="text-[10px] sm:text-[11px] font-semibold text-emerald-600 truncate">
+              Customers
             </span>
           </div>
         </div>
 
-        <div className={`p-4 rounded-xl border transition-colors ${
+        <div className={`p-3 rounded-xl border transition-colors min-w-0 ${
           isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200/80 shadow-xs'
         }`}>
-          <div className="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-slate-500">
-            <span>Business Generated</span>
-            <IndianRupee className="w-4 h-4 text-amber-500" />
+          <div className="flex items-center justify-between gap-1 text-[11px] font-medium uppercase tracking-wider text-slate-500">
+            <span className="truncate">Revenue</span>
+            <IndianRupee className="w-3.5 h-3.5 text-amber-500 shrink-0" />
           </div>
-          <div className="flex items-baseline justify-between mt-2">
-            <span className={`text-2xl font-bold font-mono ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+          <div className="flex items-baseline justify-between gap-1 mt-1.5">
+            <span className={`text-lg sm:text-xl font-bold font-mono tabular-nums truncate ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
               ₹{totalBusinessRevenue.toLocaleString('en-IN')}
             </span>
-            <span className="text-[11px] font-semibold text-amber-600">
+            <span className="text-[10px] font-semibold text-amber-600 hidden sm:inline shrink-0">
               Attributed
             </span>
           </div>
         </div>
 
-        <div className={`p-4 rounded-xl border transition-colors ${
+        <div className={`p-3 rounded-xl border transition-colors min-w-0 ${
           isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200/80 shadow-xs'
         }`}>
-          <div className="flex items-center justify-between text-xs font-medium uppercase tracking-wider text-slate-500">
-            <span>Google Contacts Synced</span>
-            <CheckCircle2 className="w-4 h-4 text-sky-500" />
+          <div className="flex items-center justify-between gap-1 text-[11px] font-medium uppercase tracking-wider text-slate-500">
+            <span className="truncate">Synced</span>
+            <CheckCircle2 className="w-3.5 h-3.5 text-sky-500 shrink-0" />
           </div>
-          <div className="flex items-baseline justify-between mt-2">
-            <span className={`text-2xl font-bold font-mono ${isDark ? 'text-sky-400' : 'text-sky-700'}`}>
+          <div className="flex items-baseline justify-between gap-1 mt-1.5">
+            <span className={`text-lg sm:text-xl font-bold font-mono tabular-nums ${isDark ? 'text-sky-400' : 'text-sky-700'}`}>
               {leadSources.filter(l => l.syncedWithGoogleContacts).length}
             </span>
-            <span className={`text-[11px] font-semibold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              of {leadSources.length} in Phone
+            <span className={`text-[10px] sm:text-[11px] font-semibold truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+              of {leadSources.length}
             </span>
           </div>
         </div>
       </div>
 
       {/* Filter & Search Bar */}
-      <div className={`p-4 rounded-xl border space-y-3 ${
+      <div className={`sgs-toolbar space-y-2.5 ${
         isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200/90 shadow-xs'
       }`}>
-        <div className="flex flex-col md:flex-row gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
           
           {/* Search Box */}
-          <div className="relative flex-1">
+          <div className="relative md:col-span-6">
             <Search className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-slate-400' : 'text-slate-400'}`} />
             <input
               type="text"
@@ -771,11 +769,11 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
           </div>
 
           {/* Category Filter */}
-          <div className="w-full md:w-56">
+          <div className="md:col-span-3">
             <select
               value={selectedCategory}
               onChange={(e) => setSelectedCategory(e.target.value)}
-              className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
+              className={`w-full h-9 rounded-lg px-2.5 text-xs focus:outline-none ${
                 isDark 
                   ? 'bg-slate-950 border border-slate-800 text-slate-300 focus:border-blue-500' 
                   : 'bg-white border border-slate-300 text-slate-900 focus:border-blue-600'
@@ -796,11 +794,11 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
           </div>
 
           {/* Sync Status Filter */}
-          <div className="w-full md:w-48">
+          <div className="md:col-span-3">
             <select
               value={syncFilter}
               onChange={(e) => setSyncFilter(e.target.value as any)}
-              className={`w-full rounded-lg px-3 py-2 text-xs focus:outline-none ${
+              className={`w-full h-9 rounded-lg px-2.5 text-xs focus:outline-none ${
                 isDark 
                   ? 'bg-slate-950 border border-slate-800 text-slate-300 focus:border-blue-500' 
                   : 'bg-white border border-slate-300 text-slate-900 focus:border-blue-600'
@@ -874,9 +872,9 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
       </div>
 
       {/* Lead Cards / Directory Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
         {filteredLeads.length === 0 ? (
-          <div className={`col-span-full py-16 text-center rounded-xl border ${
+          <div className={`col-span-full py-10 text-center rounded-xl border ${
             isDark ? 'bg-slate-900/40 border-slate-800 text-slate-400' : 'bg-white border-slate-200 text-slate-500'
           }`}>
             <Users className="w-8 h-8 mx-auto mb-2 text-slate-400 opacity-60" />
@@ -1277,61 +1275,61 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
         const totalPendingCommissions = referredClients.filter(c => c.referralCommissionStatus !== 'paid').reduce((sum, c) => sum + (c.referralCommissionAmount || 0), 0);
 
         return (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-            <div className={`border rounded-2xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+          <div className="sgs-modal-backdrop">
+            <div className={`sgs-modal-sheet sm:max-w-2xl border shadow-2xl animate-in fade-in zoom-in-95 duration-200 ${
               isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
             }`}>
               {/* Modal Header */}
-              <div className={`px-6 py-4 border-b flex items-center justify-between shrink-0 ${
+              <div className={`px-4 sm:px-5 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
                 isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'
               }`}>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-base font-bold flex items-center gap-2">
-                      <span>Referred Clients: {viewingReferredCustomersLead.name}</span>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-sm sm:text-base font-bold truncate">
+                      Referred Clients: {viewingReferredCustomersLead.name}
                     </h3>
-                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300 font-bold">
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300 font-bold shrink-0">
                       {totalClients} Clients
                     </span>
                   </div>
-                  <p className={`text-xs mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                    Add separate manual referral commission per client with instant paid/pending tracking
+                  <p className={`text-[11px] mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                    Add manual referral commission per client with paid/pending tracking
                   </p>
                 </div>
                 <button
                   onClick={() => setViewingReferredCustomersLead(null)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-200 cursor-pointer"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 cursor-pointer shrink-0"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               {/* Commission Summary Metrics Banner */}
-              <div className={`px-6 py-3 border-b grid grid-cols-3 gap-3 text-center shrink-0 ${
+              <div className={`px-4 sm:px-5 py-2.5 border-b grid grid-cols-3 gap-2 text-center shrink-0 ${
                 isDark ? 'bg-slate-950/40 border-slate-800' : 'bg-amber-50/50 border-amber-100'
               }`}>
-                <div className="p-2 rounded-xl bg-white/60 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
-                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Allocated</span>
-                  <span className="text-sm font-bold font-mono text-slate-800 dark:text-slate-100">
+                <div className="p-2 rounded-lg bg-white/60 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold block truncate">Allocated</span>
+                  <span className="text-xs sm:text-sm font-bold font-mono text-slate-800 dark:text-slate-100">
                     ₹{totalClientCommissions.toLocaleString('en-IN')}
                   </span>
                 </div>
-                <div className="p-2 rounded-xl bg-white/60 dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/40">
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 uppercase font-semibold block">Paid to Referrer</span>
-                  <span className="text-sm font-bold font-mono text-emerald-600">
+                <div className="p-2 rounded-lg bg-white/60 dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/40">
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 uppercase font-semibold block truncate">Paid</span>
+                  <span className="text-xs sm:text-sm font-bold font-mono text-emerald-600">
                     ₹{totalPaidCommissions.toLocaleString('en-IN')}
                   </span>
                 </div>
-                <div className="p-2 rounded-xl bg-white/60 dark:bg-slate-900 border border-amber-200 dark:border-amber-900/40">
-                  <span className="text-[10px] text-amber-600 dark:text-amber-400 uppercase font-semibold block">Pending Payout</span>
-                  <span className="text-sm font-bold font-mono text-amber-600 dark:text-amber-400">
+                <div className="p-2 rounded-lg bg-white/60 dark:bg-slate-900 border border-amber-200 dark:border-amber-900/40">
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400 uppercase font-semibold block truncate">Pending</span>
+                  <span className="text-xs sm:text-sm font-bold font-mono text-amber-600 dark:text-amber-400">
                     ₹{totalPendingCommissions.toLocaleString('en-IN')}
                   </span>
                 </div>
               </div>
 
               {/* Client List with Manual Commission Editors */}
-              <div className="p-6 overflow-y-auto space-y-4 flex-1">
+              <div className="p-4 sm:p-5 overflow-y-auto overscroll-contain space-y-3 flex-1 min-h-0">
                 {referredClients.length === 0 ? (
                   <div className="text-center py-10 space-y-2">
                     <p className="text-xs text-slate-400">
@@ -1385,30 +1383,31 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
 
       {/* Add / Edit Lead Source Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-lg border shadow-2xl animate-in fade-in zoom-in-95 duration-200 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
-            <div className={`px-6 py-4 border-b flex items-center justify-between ${
-              isDark ? 'border-slate-800' : 'border-slate-200'
+            <div className={`px-4 sm:px-5 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
+              isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'
             }`}>
-              <div>
-                <h3 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                  {editingLead ? 'Edit Lead Person / Source' : 'Register New Lead Person / Source'}
+              <div className="min-w-0">
+                <h3 className={`text-sm sm:text-base font-bold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  {editingLead ? 'Edit Lead Person / Source' : 'Register New Lead Person'}
                 </h3>
-                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Record referrers from school, family, and business network for customer attribution
+                <p className={`text-[11px] truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Record referrers from school, family, and business network
                 </p>
               </div>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className={`p-1 rounded-lg ${isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
+                className={`p-1.5 rounded-lg shrink-0 ${isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'}`}
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleFormSubmit} className="p-6 space-y-4">
+            <form onSubmit={handleFormSubmit} className="flex flex-col flex-1 min-h-0">
+              <div className="p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain flex-1 min-h-0">
               <div>
                 <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
                   Lead Person / Source Name *
@@ -1672,21 +1671,23 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
                 </label>
               </div>
 
-              <div className={`flex items-center justify-end gap-3 pt-4 border-t ${
-                isDark ? 'border-slate-800' : 'border-slate-200'
+              </div>
+
+              <div className={`px-4 sm:px-5 py-3 border-t flex items-center justify-end gap-2 shrink-0 ${
+                isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'
               }`}>
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className={`px-4 py-2 text-xs rounded-lg transition-colors cursor-pointer ${
-                    isDark ? 'text-slate-400 hover:text-slate-200 bg-slate-800' : 'text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200'
+                  className={`h-9 px-4 text-xs font-medium rounded-lg transition-colors cursor-pointer ${
+                    isDark ? 'text-slate-300 hover:text-white bg-slate-800' : 'text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200'
                   }`}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-md shadow-blue-600/20 cursor-pointer"
+                  className="h-9 px-4 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm shadow-blue-600/20 cursor-pointer"
                 >
                   {editingLead ? 'Save Changes' : 'Register Lead Source'}
                 </button>
@@ -1698,31 +1699,31 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
 
       {/* Quick Meeting & Gift Handover Modal */}
       {meetingModalLead && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-md border shadow-2xl animate-in fade-in zoom-in-95 duration-200 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
-            <div className={`px-6 py-4 border-b flex items-center justify-between ${
-              isDark ? 'border-slate-800' : 'border-slate-200'
+            <div className={`px-4 sm:px-5 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
+              isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'
             }`}>
-              <div>
-                <h3 className="text-base font-bold flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4 text-blue-500" />
-                  <span>Meeting Plan: {meetingModalLead.name}</span>
+              <div className="min-w-0">
+                <h3 className="text-sm sm:text-base font-bold flex items-center gap-1.5 truncate">
+                  <Calendar className="w-4 h-4 text-blue-500 shrink-0" />
+                  <span className="truncate">Meeting Plan: {meetingModalLead.name}</span>
                 </h3>
-                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Schedule next meet, review discussions, and assign appreciation gift
+                <p className={`text-[11px] truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Schedule next meet and assign appreciation gift
                 </p>
               </div>
               <button
                 onClick={() => setMeetingModalLead(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-200"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveMeetingModal} className="p-6 space-y-4">
+            <form onSubmit={handleSaveMeetingModal} className="p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain flex-1 min-h-0">
               <div>
                 <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
                   Date of Last Meeting
@@ -1826,31 +1827,31 @@ export const LeadSourceManager: React.FC<LeadSourceManagerProps> = ({
 
       {/* Payout Commission Modal */}
       {payCommissionLead && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-sm border shadow-2xl animate-in fade-in zoom-in-95 duration-200 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
-            <div className={`px-6 py-4 border-b flex items-center justify-between ${
-              isDark ? 'border-slate-800' : 'border-slate-200'
+            <div className={`px-4 sm:px-5 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
+              isDark ? 'border-slate-800 bg-slate-950/60' : 'border-slate-200 bg-slate-50'
             }`}>
-              <div>
-                <h3 className="text-base font-bold flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
-                  <Award className="w-4 h-4" />
-                  <span>Pay Commission: {payCommissionLead.name}</span>
+              <div className="min-w-0">
+                <h3 className="text-sm sm:text-base font-bold flex items-center gap-1.5 text-amber-600 dark:text-amber-400 truncate">
+                  <Award className="w-4 h-4 shrink-0" />
+                  <span className="truncate">Pay Commission: {payCommissionLead.name}</span>
                 </h3>
-                <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                <p className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                   Record referral commission payment
                 </p>
               </div>
               <button
                 onClick={() => setPayCommissionLead(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-200"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveCommissionPayment} className="p-6 space-y-4">
+            <form onSubmit={handleSaveCommissionPayment} className="p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain flex-1 min-h-0">
               <div>
                 <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
                   Payment Amount (₹)

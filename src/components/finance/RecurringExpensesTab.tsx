@@ -319,11 +319,11 @@ export const RecurringExpensesTab: React.FC<{ onShowToast?: (msg: string) => voi
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3 sm:space-y-4">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
         <div>
-          <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
+          <h2 className="text-lg sm:text-xl font-bold tracking-tight flex items-center gap-2">
             <Repeat className="w-5 h-5 text-purple-500" />
             <span>Recurring Monthly Expenses & Reminders</span>
           </h2>
@@ -332,7 +332,7 @@ export const RecurringExpensesTab: React.FC<{ onShowToast?: (msg: string) => voi
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-2 sm:flex items-center gap-2 w-full sm:w-auto">
           <button
             type="button"
             onClick={() => {
@@ -343,7 +343,7 @@ export const RecurringExpensesTab: React.FC<{ onShowToast?: (msg: string) => voi
                   : 'All upcoming recurring reminders are already up to date.'
               );
             }}
-            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl border cursor-pointer ${
+            className={`flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl border cursor-pointer ${
               isDark
                 ? 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800'
                 : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
@@ -354,47 +354,47 @@ export const RecurringExpensesTab: React.FC<{ onShowToast?: (msg: string) => voi
           <button
             type="button"
             onClick={openNewTemplate}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-sm cursor-pointer"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-sm cursor-pointer"
           >
-            <Plus className="w-4 h-4" /> + New Recurring Expense
+            <Plus className="w-4 h-4" /> + New Recurring
           </button>
         </div>
       </div>
 
       {/* KPI Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-          <span className="text-[11px] font-bold uppercase text-slate-400">Active Schedules</span>
-          <div className="mt-1.5 text-2xl font-bold font-mono">{metrics.activeCount}</div>
-          <span className="text-[11px] text-slate-500">Est. ₹{metrics.monthlyEquivalent.toLocaleString('en-IN')}/month</span>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+        <div className={`p-3 sm:p-3.5 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+          <span className="text-[10px] sm:text-[11px] font-bold uppercase text-slate-400">Active Schedules</span>
+          <div className="mt-1 text-lg sm:text-2xl font-bold font-mono">{metrics.activeCount}</div>
+          <span className="text-[10px] sm:text-[11px] text-slate-500">Est. ₹{metrics.monthlyEquivalent.toLocaleString('en-IN')}/month</span>
         </div>
 
-        <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-          <span className="text-[11px] font-bold uppercase text-amber-500">Pending Due Bills</span>
-          <div className="mt-1.5 text-2xl font-bold font-mono text-amber-500">
+        <div className={`p-3 sm:p-3.5 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+          <span className="text-[10px] sm:text-[11px] font-bold uppercase text-amber-500">Pending Due Bills</span>
+          <div className="mt-1 text-lg sm:text-2xl font-bold font-mono text-amber-500">
             ₹{metrics.pendingAmount.toLocaleString('en-IN')}
           </div>
-          <span className="text-[11px] text-slate-500">{metrics.pendingCount} unpaid period(s)</span>
+          <span className="text-[10px] sm:text-[11px] text-slate-500">{metrics.pendingCount} unpaid period(s)</span>
         </div>
 
-        <div className={`p-4 rounded-xl border ${
+        <div className={`p-3 sm:p-3.5 rounded-xl border ${
           metrics.overdueCount > 0
             ? isDark ? 'bg-rose-950/30 border-rose-900/60' : 'bg-rose-50 border-rose-200'
             : isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
         }`}>
-          <span className="text-[11px] font-bold uppercase text-rose-500">Overdue Reminders</span>
-          <div className="mt-1.5 text-2xl font-bold font-mono text-rose-600 dark:text-rose-400">
+          <span className="text-[10px] sm:text-[11px] font-bold uppercase text-rose-500">Overdue Reminders</span>
+          <div className="mt-1 text-lg sm:text-2xl font-bold font-mono text-rose-600 dark:text-rose-400">
             {metrics.overdueCount}
           </div>
-          <span className="text-[11px] text-slate-500">Requires manual confirmation</span>
+          <span className="text-[10px] sm:text-[11px] text-slate-500">Requires manual confirmation</span>
         </div>
 
-        <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-          <span className="text-[11px] font-bold uppercase text-emerald-500">Paid This Month</span>
-          <div className="mt-1.5 text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
+        <div className={`p-3 sm:p-3.5 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+          <span className="text-[10px] sm:text-[11px] font-bold uppercase text-emerald-500">Paid This Month</span>
+          <div className="mt-1 text-lg sm:text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
             ₹{metrics.paidThisMonth.toLocaleString('en-IN')}
           </div>
-          <span className="text-[11px] text-slate-500">Posted to Operating Expenses</span>
+          <span className="text-[10px] sm:text-[11px] text-slate-500">Posted to Operating Expenses</span>
         </div>
       </div>
 
@@ -668,8 +668,8 @@ export const RecurringExpensesTab: React.FC<{ onShowToast?: (msg: string) => voi
 
       {/* ADD / EDIT RECURRING TEMPLATE MODAL */}
       {isTplModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-2xl p-6 space-y-4 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-xl block overflow-y-auto p-4 sm:p-5 space-y-3.5 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
@@ -877,8 +877,8 @@ export const RecurringExpensesTab: React.FC<{ onShowToast?: (msg: string) => voi
 
       {/* PAY RECURRING DUE MODAL */}
       {payingDue && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-md block overflow-y-auto p-4 sm:p-5 space-y-3.5 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">

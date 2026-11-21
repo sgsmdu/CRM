@@ -137,10 +137,10 @@ export const EmiCalendarTab: React.FC<{ onShowToast?: (msg: string) => void }> =
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-3 sm:space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
         <div>
-          <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
+          <h2 className="text-lg sm:text-xl font-bold tracking-tight flex items-center gap-2">
             <Calendar className="w-5 h-5 text-blue-500" />
             <span>EMI Calendar & Monthly EMI Summary</span>
           </h2>
@@ -163,22 +163,22 @@ export const EmiCalendarTab: React.FC<{ onShowToast?: (msg: string) => void }> =
       </div>
 
       {/* KPI Strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+        <div className={`p-3 sm:p-3.5 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
           <span className="text-[10px] font-bold uppercase text-slate-400">Total Monthly EMI</span>
-          <p className="text-xl font-extrabold font-mono mt-1">₹{summary.totalMonthlyEmi.toLocaleString('en-IN')}</p>
+          <p className="text-lg sm:text-xl font-extrabold font-mono mt-1">₹{summary.totalMonthlyEmi.toLocaleString('en-IN')}</p>
         </div>
-        <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+        <div className={`p-3 sm:p-3.5 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
           <span className="text-[10px] font-bold uppercase text-emerald-500">Paid This Month</span>
-          <p className="text-xl font-extrabold font-mono text-emerald-500 mt-1">₹{summary.totalPaidThisMonth.toLocaleString('en-IN')}</p>
+          <p className="text-lg sm:text-xl font-extrabold font-mono text-emerald-500 mt-1">₹{summary.totalPaidThisMonth.toLocaleString('en-IN')}</p>
         </div>
-        <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+        <div className={`p-3 sm:p-3.5 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
           <span className="text-[10px] font-bold uppercase text-amber-500">Pending This Month</span>
-          <p className="text-xl font-extrabold font-mono text-amber-500 mt-1">₹{summary.totalPendingThisMonth.toLocaleString('en-IN')}</p>
+          <p className="text-lg sm:text-xl font-extrabold font-mono text-amber-500 mt-1">₹{summary.totalPendingThisMonth.toLocaleString('en-IN')}</p>
         </div>
-        <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+        <div className={`p-3 sm:p-3.5 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
           <span className="text-[10px] font-bold uppercase text-rose-500">Overdue / Due Today</span>
-          <p className="text-xl font-extrabold font-mono text-rose-500 mt-1">
+          <p className="text-sm sm:text-lg font-extrabold font-mono text-rose-500 mt-1">
             {summary.overdueCount} Overdue · {summary.dueTodayCount} Today
           </p>
         </div>
@@ -268,8 +268,8 @@ export const EmiCalendarTab: React.FC<{ onShowToast?: (msg: string) => void }> =
 
       {/* Quick Pay EMI Modal */}
       {payingRow && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-md block overflow-y-auto p-4 sm:p-5 space-y-3.5 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">

@@ -28,6 +28,12 @@ function SgsAppContent() {
   const isDark = theme === 'dark';
   const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
 
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', isDark);
+    document.body.classList.toggle('dark', isDark);
+    document.body.classList.toggle('light', !isDark);
+  }, [isDark]);
+
   // Left Sidebar layout state
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -228,7 +234,7 @@ function SgsAppContent() {
         />
 
         {/* Main View Container */}
-        <main className="flex-1 w-full mx-auto px-2.5 sm:px-4 lg:px-8 py-4 sm:py-6 max-w-7xl overflow-x-hidden print:p-0 print:m-0 print:max-w-none print:overflow-visible">
+        <main className="flex-1 w-full mx-auto px-2.5 sm:px-4 lg:px-5 py-2.5 sm:py-4 max-w-[1440px] min-w-0 overflow-x-clip print:p-0 print:m-0 print:max-w-none print:overflow-visible">
         {activeTab === 'dashboard' && (
           <DashboardOverview
             onNavigate={handleTabChange}
@@ -390,22 +396,22 @@ function SgsAppContent() {
       />
 
       {/* Footer */}
-      <footer className={`no-print print:hidden print-chrome mt-auto border-t py-6 px-4 lg:px-8 text-xs transition-colors ${
+      <footer className={`no-print print:hidden print-chrome mt-auto border-t py-3 px-3 sm:px-5 text-[11px] transition-colors ${
         isDark ? 'border-slate-900 bg-[#060a14] text-slate-500' : 'border-slate-200 bg-white text-slate-600'
       }`}>
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+        <div className="max-w-[1440px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-1.5 sm:gap-4 text-center sm:text-left">
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-x-2 gap-y-0.5">
             <span className={`font-semibold ${isDark ? 'text-slate-300' : 'text-slate-800'}`}>Spider Grid Solutions (SGS)</span>
-            <span>·</span>
+            <span aria-hidden="true">·</span>
             <span>Madurai, Tamil Nadu</span>
-            <span>·</span>
+            <span aria-hidden="true">·</span>
             <span className="font-mono">Ph: 9176795665</span>
           </div>
 
-          <div className="flex items-center gap-4">
-            <span>Customer Service: spidergridsolutions@gmail.com</span>
-            <span>·</span>
-            <span>Laptop · CCTV · Desktop · Printer</span>
+          <div className="flex flex-wrap items-center justify-center sm:justify-end gap-x-2 gap-y-0.5">
+            <span className="truncate max-w-full">spidergridsolutions@gmail.com</span>
+            <span className="hidden sm:inline" aria-hidden="true">·</span>
+            <span className="hidden sm:inline">Laptop · CCTV · Desktop · Printer</span>
           </div>
         </div>
       </footer>

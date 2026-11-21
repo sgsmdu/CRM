@@ -161,22 +161,22 @@ export const PriceCodeCalculator: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-150">
+    <div className="sgs-page animate-in fade-in duration-150">
       
       {/* Header Banner */}
-      <div className={`p-6 rounded-2xl border transition-colors ${
+      <div className={`p-3.5 sm:p-4 rounded-xl border transition-colors ${
         isDark 
           ? 'bg-gradient-to-r from-slate-900 via-blue-950/40 to-slate-900 border-slate-800' 
           : 'bg-gradient-to-r from-blue-50/70 via-indigo-50/50 to-white border-blue-100 shadow-xs'
       }`}>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/25">
-              <KeyRound className="w-6 h-6" />
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/25 shrink-0">
+              <KeyRound className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className={`text-xl font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <h1 className={`text-lg sm:text-xl font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
                   SGS Price Code Calculator
                 </h1>
                 <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
@@ -190,7 +190,7 @@ export const PriceCodeCalculator: React.FC = () => {
           </div>
 
           {/* Quick Active Mapping Badge */}
-          <div className={`flex items-center gap-2.5 px-3.5 py-2 rounded-xl border text-xs ${
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs ${
             isDark ? 'bg-slate-950/80 border-slate-800' : 'bg-white border-slate-200 shadow-2xs'
           }`}>
             <span className={`text-[11px] font-medium ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Active Mapping:</span>
@@ -205,43 +205,43 @@ export const PriceCodeCalculator: React.FC = () => {
         </div>
 
         {/* Section Navigation Tabs */}
-        <div className="flex items-center gap-2 mt-6 border-b border-slate-200 dark:border-slate-800 overflow-x-auto">
+        <div className="flex items-center gap-1.5 mt-3.5 border-b border-slate-200 dark:border-slate-800 overflow-x-auto scrollbar-thin">
           <button
             type="button"
             onClick={() => setActiveTab('converter')}
-            className={`flex items-center gap-2 pb-2.5 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            className={`flex items-center gap-1.5 pb-2 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'converter'
                 ? 'border-blue-600 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
             }`}
           >
-            <ArrowRightLeft className="w-4 h-4" />
+            <ArrowRightLeft className="w-3.5 h-3.5" />
             <span>Amount ↔ Secret Code Converter</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('calculator')}
-            className={`flex items-center gap-2 pb-2.5 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            className={`flex items-center gap-1.5 pb-2 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'calculator'
                 ? 'border-blue-600 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
             }`}
           >
-            <Calculator className="w-4 h-4" />
+            <Calculator className="w-3.5 h-3.5" />
             <span>Price & Minimum Sale Calculator</span>
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab('settings')}
-            className={`flex items-center gap-2 pb-2.5 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            className={`flex items-center gap-1.5 pb-2 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'settings'
                 ? 'border-blue-600 text-blue-600 dark:text-blue-400'
                 : 'border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
             }`}
           >
-            <Settings className="w-4 h-4" />
+            <Settings className="w-3.5 h-3.5" />
             <span>Mapping Settings & Version History</span>
             <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
               v{priceCodeMappingVersions[0]?.version || 1}
@@ -254,10 +254,10 @@ export const PriceCodeCalculator: React.FC = () => {
       {/* TAB 1: CONVERTER (Amount -> Code & Code -> Amount)       */}
       {/* ======================================================== */}
       {activeTab === 'converter' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 sm:gap-4">
           
           {/* SECTION A: Amount -> Code */}
-          <div className={`p-6 rounded-2xl border space-y-5 ${
+          <div className={`p-4 sm:p-5 rounded-xl border space-y-4 ${
             isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
           }`}>
             <div className="flex items-center justify-between border-b pb-3 border-slate-100 dark:border-slate-800">
@@ -387,7 +387,7 @@ export const PriceCodeCalculator: React.FC = () => {
           </div>
 
           {/* SECTION B: Code -> Amount */}
-          <div className={`p-6 rounded-2xl border space-y-5 ${
+          <div className={`p-4 sm:p-5 rounded-xl border space-y-4 ${
             isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
           }`}>
             <div className="flex items-center justify-between border-b pb-3 border-slate-100 dark:border-slate-800">
@@ -544,8 +544,8 @@ export const PriceCodeCalculator: React.FC = () => {
       {/* TAB 2: PRICE & MINIMUM SALE CALCULATOR                   */}
       {/* ======================================================== */}
       {activeTab === 'calculator' && (
-        <div className="space-y-6">
-          <div className={`p-6 rounded-2xl border space-y-6 ${
+        <div className="space-y-3 sm:space-y-4">
+          <div className={`p-4 sm:p-5 rounded-xl border space-y-4 ${
             isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
           }`}>
             
@@ -798,8 +798,8 @@ export const PriceCodeCalculator: React.FC = () => {
       {/* TAB 3: MAPPING SETTINGS & VERSION HISTORY                */}
       {/* ======================================================== */}
       {activeTab === 'settings' && (
-        <div className="space-y-6">
-          <div className={`p-6 rounded-2xl border space-y-6 ${
+        <div className="space-y-3 sm:space-y-4">
+          <div className={`p-4 sm:p-5 rounded-xl border space-y-4 ${
             isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
           }`}>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-4 border-slate-100 dark:border-slate-800">

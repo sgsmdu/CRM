@@ -58,9 +58,9 @@ export const WhatsAppPendingModal: React.FC<WhatsAppPendingModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+    <div className="sgs-modal-backdrop z-[70]">
       <div
-        className={`border rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 ${
+        className={`sgs-modal-sheet sm:max-w-lg border shadow-2xl overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150 ${
           isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
         }`}
       >

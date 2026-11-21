@@ -287,8 +287,8 @@ export const GoogleContactsModal: React.FC<GoogleContactsModalProps> = ({
   });
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className={`border rounded-2xl w-full max-w-2xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+    <div className="sgs-modal-backdrop">
+      <div className={`sgs-modal-sheet sm:max-w-2xl border shadow-2xl animate-in fade-in zoom-in-95 duration-200 ${
         isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
       }`}>
         
@@ -640,8 +640,8 @@ export const GoogleContactsModal: React.FC<GoogleContactsModalProps> = ({
 
       {/* Confirmation Dialog for Destructive / Mutating Workspace Operations */}
       {confirmDialog && (
-        <div className="fixed inset-0 z-60 bg-black/80 flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-sm p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop z-60">
+          <div className={`sgs-modal-sheet sm:max-w-sm border p-4 sm:p-5 space-y-3.5 shadow-2xl overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div>

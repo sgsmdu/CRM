@@ -362,38 +362,38 @@ export const JobCardStatusList: React.FC<JobCardStatusListProps> = ({
   }, [activeSortedCategories, selectedFilterCategory]);
 
   return (
-    <div className="space-y-5 animate-in fade-in duration-200">
+    <div className="sgs-page animate-in fade-in duration-200">
       
       {/* Top Header Card */}
-      <div className={`p-4 sm:p-5 rounded-2xl border transition-colors flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+      <div className={`p-3 sm:p-4 rounded-xl border transition-colors flex flex-col md:flex-row md:items-center justify-between gap-3 ${
         isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200/90 shadow-xs'
       }`}>
-        <div>
-          <div className="flex items-center gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
             <h2 className={`text-base sm:text-lg font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
               Job Card (Status-wise)
             </h2>
-            <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+            <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
               isDark ? 'bg-blue-950 text-blue-300 border border-blue-800' : 'bg-blue-50 text-blue-700 border border-blue-200'
             }`}>
-              {activeSortedCategories.reduce((sum, c) => sum + c.count, 0)} Active Cards · {activeSortedCategories.length} Active Categories
+              {activeSortedCategories.reduce((sum, c) => sum + c.count, 0)} Active · {activeSortedCategories.length} Stages
             </span>
           </div>
           <p className={`text-xs mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-            Dynamically sorted in descending order by job count. Active stages only (zero-count categories hidden, Call Closed excluded).
+            Sorted by job count. Active stages only (zero-count categories hidden).
           </p>
         </div>
 
         {/* Search Bar & Actions */}
-        <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
-          <div className="relative flex-1 sm:w-72">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+          <div className="relative flex-1 sm:w-64">
             <Search className={`w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 ${isDark ? 'text-slate-400' : 'text-slate-400'}`} />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search customer, Job ID, phone, note..."
-              className={`w-full rounded-xl pl-9 pr-8 py-2 text-xs focus:outline-none transition-colors ${
+              placeholder="Search customer, Job ID, phone..."
+              className={`w-full h-9 rounded-lg pl-9 pr-8 text-xs focus:outline-none transition-colors ${
                 isDark 
                   ? 'bg-slate-950 border border-slate-800 text-slate-200 focus:border-blue-500' 
                   : 'bg-slate-50 border border-slate-300 text-slate-900 focus:bg-white focus:border-blue-600'
@@ -414,7 +414,7 @@ export const JobCardStatusList: React.FC<JobCardStatusListProps> = ({
             <button
               type="button"
               onClick={onOpenNewJobModal}
-              className="px-3.5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shrink-0 shadow-sm shadow-blue-500/20 cursor-pointer"
+              className="h-9 px-3.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shrink-0 shadow-sm shadow-blue-500/20 cursor-pointer whitespace-nowrap"
             >
               + New Job Card
             </button>
@@ -424,7 +424,7 @@ export const JobCardStatusList: React.FC<JobCardStatusListProps> = ({
 
       {/* Dynamic Status Summary Pills (Sorted Descending by Count) */}
       {activeSortedCategories.length > 0 && (
-        <div className={`p-3 rounded-xl border flex items-center gap-2 overflow-x-auto scrollbar-thin ${
+        <div className={`p-2.5 rounded-xl border flex items-center gap-1.5 overflow-x-auto scrollbar-thin ${
           isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-slate-50/80 border-slate-200'
         }`}>
           <button

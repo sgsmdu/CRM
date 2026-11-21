@@ -1106,7 +1106,7 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
   };
 
   return (
-    <div className="space-y-6">
+    <div className="sgs-page">
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white text-xs font-bold px-4 py-3 rounded-xl shadow-xl flex items-center gap-2 animate-in fade-in slide-in-from-bottom-4">
@@ -1116,7 +1116,7 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
       )}
 
       {/* TOP SUB-PAGE NAVIGATION BAR */}
-      <div className={`p-1.5 rounded-2xl border flex items-center gap-1 overflow-x-auto scrollbar-thin shadow-xs ${
+      <div className={`p-1 sm:p-1.5 rounded-xl border flex items-center gap-1 overflow-x-auto scrollbar-thin shadow-xs ${
         isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
       }`}>
         {[
@@ -1142,7 +1142,7 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
             <button
               key={sub.id}
               onClick={() => setActiveSubPage(sub.id as MoneyFlowSubPage)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
                 isActive
                   ? 'bg-blue-600 text-white shadow-sm shadow-blue-500/30'
                   : isDark
@@ -1168,35 +1168,35 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
       {/* 1. MONEY FLOW DASHBOARD */}
       {/* ========================================================================= */}
       {activeSubPage === 'dashboard' && (
-        <div className="space-y-6">
+        <div className="space-y-3 sm:space-y-4">
           {/* Quick Action Buttons Header */}
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-xl font-bold tracking-tight">Financial Command Center</h2>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="min-w-0">
+              <h2 className="text-lg sm:text-xl font-bold tracking-tight">Financial Command Center</h2>
               <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
                 Live multi-account liquidity, cash in hand, bank reconciliation, and cashflow velocity
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
               <button
                 type="button"
                 onClick={() => setIsMoneyInModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-sm cursor-pointer"
+                className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl transition-all shadow-sm cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" /> + Money In
               </button>
               <button
                 type="button"
                 onClick={() => setIsMoneyOutModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-all shadow-sm cursor-pointer"
+                className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl transition-all shadow-sm cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" /> - Money Out
               </button>
               <button
                 type="button"
                 onClick={() => setIsTransferModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition-all shadow-sm cursor-pointer"
+                className="flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded-xl transition-all shadow-sm cursor-pointer"
               >
                 <ArrowLeftRight className="w-3.5 h-3.5" /> Transfer Funds
               </button>
@@ -1212,7 +1212,7 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
                   setBankNotesInput('');
                   setIsAddBankModalOpen(true);
                 }}
-                className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                className={`flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
                   isDark ? 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
                 }`}
               >
@@ -1222,9 +1222,9 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
           </div>
 
           {/* PRIMARY FINANCIAL KPI METRIC CARDS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {/* Total Available Balance */}
-            <div className={`p-5 rounded-2xl border relative overflow-hidden transition-all ${
+            <div className={`p-3.5 sm:p-4 rounded-xl border relative overflow-hidden transition-all ${
               isDark ? 'bg-gradient-to-br from-blue-950/40 to-slate-900 border-blue-900/60' : 'bg-gradient-to-br from-blue-50 to-white border-blue-200 shadow-sm'
             }`}>
               <div className="flex items-center justify-between text-xs text-blue-600 dark:text-blue-400 font-bold uppercase tracking-wider">
@@ -1235,7 +1235,7 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
                   Cash + Banks
                 </span>
               </div>
-              <div className="mt-3 text-3xl font-extrabold font-mono tracking-tight text-blue-600 dark:text-blue-400">
+              <div className="mt-2 text-2xl sm:text-3xl font-extrabold font-mono tracking-tight text-blue-600 dark:text-blue-400">
                 ₹{totalAvailableBalance.toLocaleString('en-IN')}
               </div>
               <div className="mt-2 text-xs flex items-center justify-between text-slate-500">
@@ -1845,7 +1845,7 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
       {/* 2. CASH ACCOUNT */}
       {/* ========================================================================= */}
       {activeSubPage === 'cash' && (
-        <div className="space-y-6">
+        <div className="space-y-3 sm:space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
@@ -2047,7 +2047,7 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
       {/* 3. BANK ACCOUNTS */}
       {/* ========================================================================= */}
       {activeSubPage === 'banks' && (
-        <div className="space-y-6">
+        <div className="space-y-3 sm:space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
@@ -2204,7 +2204,7 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
       {/* 4. MONEY IN */}
       {/* ========================================================================= */}
       {activeSubPage === 'in' && (
-        <div className="space-y-6">
+        <div className="space-y-3 sm:space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
@@ -2365,7 +2365,7 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
       {/* 5. MONEY OUT */}
       {/* ========================================================================= */}
       {activeSubPage === 'out' && (
-        <div className="space-y-6">
+        <div className="space-y-3 sm:space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
@@ -2540,7 +2540,7 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
       {/* 6. EXPENSES */}
       {/* ========================================================================= */}
       {activeSubPage === 'expenses' && (
-        <div className="space-y-6">
+        <div className="space-y-3 sm:space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
@@ -2663,7 +2663,7 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
       {/* 7. TRANSFERS */}
       {/* ========================================================================= */}
       {activeSubPage === 'transfers' && (
-        <div className="space-y-6">
+        <div className="space-y-3 sm:space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
@@ -2775,7 +2775,7 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
       {/* 7B. 3-LEVEL CATEGORY MANAGEMENT */}
       {/* ========================================================================= */}
       {activeSubPage === 'categories' && (
-        <div className="space-y-6">
+        <div className="space-y-3 sm:space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
@@ -3227,7 +3227,7 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
       {/* 8. ADVANCED REPORTS & CATEGORY TREE ANALYTICS */}
       {/* ========================================================================= */}
       {activeSubPage === 'reports' && (
-        <div className="space-y-6">
+        <div className="space-y-3 sm:space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
@@ -3803,8 +3803,8 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
       {/* MODAL 1: RECORD MONEY IN (3-Level Category & Account Selector) */}
       {/* ========================================================================= */}
       {isMoneyInModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto shadow-2xl p-6 space-y-4 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-lg block overflow-y-auto p-4 sm:p-5 space-y-3.5 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
@@ -3971,8 +3971,8 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
       {/* MODAL 2: RECORD MONEY OUT / EXPENSE (3-Level Category & Account Selector) */}
       {/* ========================================================================= */}
       {(isMoneyOutModalOpen || isExpenseModalOpen) && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto shadow-2xl p-6 space-y-4 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-lg block overflow-y-auto p-4 sm:p-5 space-y-3.5 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
@@ -4153,8 +4153,8 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
       {/* MODAL 3: INTERNAL TRANSFER */}
       {/* ========================================================================= */}
       {isTransferModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-lg block overflow-y-auto p-4 sm:p-5 space-y-3.5 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
@@ -4326,8 +4326,8 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
       {/* MODAL 4: ADD / EDIT BANK ACCOUNT */}
       {/* ========================================================================= */}
       {isAddBankModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-md block overflow-y-auto p-4 sm:p-5 space-y-3.5 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
@@ -4473,8 +4473,8 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
       {/* MODAL 5: BANK SPECIFIC LEDGER VIEWER */}
       {/* ========================================================================= */}
       {viewingBankLedger && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-4xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-4xl ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className={`p-5 border-b flex items-center justify-between shrink-0 ${
@@ -4581,8 +4581,8 @@ export const MoneyFlowManager: React.FC<MoneyFlowManagerProps> = ({ initialSubPa
       {/* MODAL 6: EDIT OPENING CASH FLOAT */}
       {/* ========================================================================= */}
       {isOpeningCashModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className={`border rounded-2xl w-full max-w-sm shadow-2xl p-6 space-y-4 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-sm block overflow-y-auto p-4 sm:p-5 space-y-3.5 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">

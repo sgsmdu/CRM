@@ -110,11 +110,11 @@ export const MonthlyFinancialReportTab: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3 sm:space-y-4">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
         <div>
-          <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
+          <h2 className="text-lg sm:text-xl font-bold tracking-tight flex items-center gap-2">
             <FileBarChart2 className="w-5 h-5 text-blue-500" />
             <span>Monthly & Annual Financial Reports</span>
           </h2>
@@ -214,38 +214,38 @@ export const MonthlyFinancialReportTab: React.FC = () => {
       {/* MONTHLY STATEMENT VIEW                                                */}
       {/* ===================================================================== */}
       {viewMode === 'monthly' && (
-        <div className="space-y-6">
+        <div className="space-y-3 sm:space-y-4">
           {/* Headline KPIs */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-              <span className="text-[11px] font-bold uppercase text-emerald-500">Operating Income</span>
-              <div className="mt-1.5 text-2xl font-bold font-mono text-emerald-600">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+            <div className={`p-3 sm:p-3.5 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase text-emerald-500">Operating Income</span>
+              <div className="mt-1 text-lg sm:text-2xl font-bold font-mono text-emerald-600">
                 ₹{monthlyReport.monthlyIncome.toLocaleString('en-IN')}
               </div>
-              <span className="text-[11px] text-slate-500">Excludes loan disbursements & transfers</span>
+              <span className="text-[10px] sm:text-[11px] text-slate-500">Excludes loan disbursements & transfers</span>
             </div>
 
-            <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-              <span className="text-[11px] font-bold uppercase text-rose-500">Operating Expenses</span>
-              <div className="mt-1.5 text-2xl font-bold font-mono text-rose-600">
+            <div className={`p-3 sm:p-3.5 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase text-rose-500">Operating Expenses</span>
+              <div className="mt-1 text-lg sm:text-2xl font-bold font-mono text-rose-600">
                 ₹{monthlyReport.monthlyOperatingExpenses.toLocaleString('en-IN')}
               </div>
-              <span className="text-[11px] text-slate-500">Salary, Rent, Interest & Shop Costs</span>
+              <span className="text-[10px] sm:text-[11px] text-slate-500">Salary, Rent, Interest & Shop Costs</span>
             </div>
 
-            <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-              <span className="text-[11px] font-bold uppercase text-blue-500">Net Operating Surplus</span>
-              <div className={`mt-1.5 text-2xl font-bold font-mono ${
+            <div className={`p-3 sm:p-3.5 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase text-blue-500">Net Operating Surplus</span>
+              <div className={`mt-1 text-lg sm:text-2xl font-bold font-mono ${
                 monthlyReport.netOperatingProfit >= 0 ? 'text-emerald-600' : 'text-rose-500'
               }`}>
                 {monthlyReport.netOperatingProfit >= 0 ? '+' : '-'}₹{Math.abs(monthlyReport.netOperatingProfit).toLocaleString('en-IN')}
               </div>
-              <span className="text-[11px] text-slate-500">Income minus Operating Expenses</span>
+              <span className="text-[10px] sm:text-[11px] text-slate-500">Income minus Operating Expenses</span>
             </div>
 
-            <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-              <span className="text-[11px] font-bold uppercase text-purple-500">Month-End Closing Liquidity</span>
-              <div className="mt-1.5 text-2xl font-bold font-mono text-purple-600 dark:text-purple-400">
+            <div className={`p-3 sm:p-3.5 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase text-purple-500">Month-End Closing Liquidity</span>
+              <div className="mt-1 text-lg sm:text-2xl font-bold font-mono text-purple-600 dark:text-purple-400">
                 ₹{monthlyReport.closingTotalOperatingBalance.toLocaleString('en-IN')}
               </div>
               <span className="text-[11px] text-slate-500">

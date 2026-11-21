@@ -1025,140 +1025,142 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
   }, [vendors, searchQuery]);
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-150">
+    <div className="sgs-page animate-in fade-in duration-150">
       
       {/* Top Banner & View Switcher */}
-      <div className={`p-4 rounded-xl border flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 transition-colors ${
+      <div className={`p-3 sm:p-4 rounded-xl border flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3 transition-colors ${
         isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200/90 shadow-xs'
       }`}>
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className={`text-xs font-semibold uppercase tracking-wider ${isDark ? 'text-blue-400' : 'text-blue-700'}`}>
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 mb-0.5 flex-wrap">
+            <span className={`text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider ${isDark ? 'text-blue-400' : 'text-blue-700'}`}>
               Vendor & Spares Hub
             </span>
             <span className="text-slate-400">·</span>
-            <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              Total Purchases & Outstanding Balance
+            <span className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+              Purchases & Outstanding Balance
             </span>
           </div>
-          <h2 className={`text-base font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+          <h2 className={`text-base sm:text-lg font-bold tracking-tight truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>
             Vendor Directory, Invoices & OCR Scanner
           </h2>
         </div>
 
-        <div className="flex items-center flex-wrap gap-2.5">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0 min-w-0">
           {/* Sub-view switcher */}
-          <div className={`flex rounded-lg p-1 border ${
+          <div className={`grid grid-cols-2 sm:flex rounded-lg p-1 border ${
             isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'
           }`}>
             <button
               onClick={() => setActiveView('vendors')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+              className={`px-2.5 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer whitespace-nowrap ${
                 activeView === 'vendors'
                   ? (isDark ? 'bg-blue-600 text-white shadow-xs' : 'bg-white text-blue-700 shadow-xs font-bold')
                   : (isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')
               }`}
             >
-              Vendor Directory ({vendors.length})
+              Vendors ({vendors.length})
             </button>
             <button
               onClick={() => setActiveView('bills')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+              className={`px-2.5 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer whitespace-nowrap ${
                 activeView === 'bills'
                   ? (isDark ? 'bg-blue-600 text-white shadow-xs' : 'bg-white text-blue-700 shadow-xs font-bold')
                   : (isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-600 hover:text-slate-900')
               }`}
             >
-              All Invoices ({vendorBills.length})
+              Invoices ({vendorBills.length})
             </button>
           </div>
 
-          <button
-            onClick={handleOpenAddVendorModal}
-            className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
-              isDark ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 shadow-xs'
-            }`}
-          >
-            <Building2 className="w-3.5 h-3.5 text-blue-500" />
-            <span>Register Vendor</span>
-          </button>
+          <div className="grid grid-cols-2 sm:flex items-center gap-2">
+            <button
+              onClick={handleOpenAddVendorModal}
+              className={`h-9 flex items-center justify-center gap-1.5 px-3 text-xs font-semibold rounded-lg border transition-colors cursor-pointer whitespace-nowrap ${
+                isDark ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 shadow-xs'
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+              <span>Add Vendor</span>
+            </button>
 
-          <button
-            onClick={() => openNewVendorBillModal()}
-            className="flex items-center justify-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-md shadow-blue-500/20 cursor-pointer"
-          >
-            <Camera className="w-4 h-4" />
-            <span>Scan / Enter Bill</span>
-          </button>
+            <button
+              onClick={() => openNewVendorBillModal()}
+              className="h-9 flex items-center justify-center gap-1.5 px-3.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm shadow-blue-500/20 cursor-pointer whitespace-nowrap"
+            >
+              <Camera className="w-3.5 h-3.5 shrink-0" />
+              <span>Scan / Enter Bill</span>
+            </button>
+          </div>
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-        <div className={`p-4 rounded-xl border transition-colors ${
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
+        <div className={`p-3 rounded-xl border transition-colors min-w-0 ${
           isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200/80 shadow-xs'
         }`}>
-          <span className={`text-xs font-medium uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-            Registered Vendors
+          <span className={`text-[11px] font-medium uppercase tracking-wider block truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+            Vendors
           </span>
-          <div className="flex items-baseline justify-between mt-2">
-            <span className={`text-2xl font-bold font-mono ${isDark ? 'text-white' : 'text-slate-900'}`}>
+          <div className="flex items-baseline justify-between gap-1 mt-1.5">
+            <span className={`text-lg sm:text-xl font-bold font-mono tabular-nums ${isDark ? 'text-white' : 'text-slate-900'}`}>
               {vendors.length}
             </span>
-            <span className={`text-xs font-mono ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              {vendorBills.length} Invoices
+            <span className={`text-[11px] font-mono truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+              {vendorBills.length} Bills
             </span>
           </div>
         </div>
 
-        <div className={`p-4 rounded-xl border transition-colors ${
+        <div className={`p-3 rounded-xl border transition-colors min-w-0 ${
           isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200/80 shadow-xs'
         }`}>
-          <span className={`text-xs font-medium uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+          <span className={`text-[11px] font-medium uppercase tracking-wider block truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
             Total Purchases
           </span>
-          <div className="flex items-baseline justify-between mt-2">
-            <span className={`text-2xl font-bold font-mono ${isDark ? 'text-white' : 'text-slate-900'}`}>
+          <div className="flex items-baseline justify-between gap-1 mt-1.5">
+            <span className={`text-lg sm:text-xl font-bold font-mono tabular-nums truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>
               ₹{totalPurchases.toLocaleString('en-IN')}
             </span>
-            <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 hidden sm:inline shrink-0">
               Spares
             </span>
           </div>
         </div>
 
-        <div className={`p-4 rounded-xl border transition-colors ${
+        <div className={`p-3 rounded-xl border transition-colors min-w-0 ${
           isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200/80 shadow-xs'
         }`}>
-          <span className={`text-xs font-medium uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+          <span className={`text-[11px] font-medium uppercase tracking-wider block truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
             Total Paid Out
           </span>
-          <div className="flex items-baseline justify-between mt-2">
-            <span className={`text-2xl font-bold font-mono ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+          <div className="flex items-baseline justify-between gap-1 mt-1.5">
+            <span className={`text-lg sm:text-xl font-bold font-mono tabular-nums truncate ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
               ₹{totalPaid.toLocaleString('en-IN')}
             </span>
-            <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 hidden sm:inline shrink-0">
               Settled
             </span>
           </div>
         </div>
 
-        <div className={`p-4 rounded-xl border transition-colors ${
+        <div className={`p-3 rounded-xl border transition-colors min-w-0 ${
           isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200/80 shadow-xs'
         }`}>
-          <span className={`text-xs font-medium uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+          <span className={`text-[11px] font-medium uppercase tracking-wider block truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
             Payment Pending
           </span>
-          <div className="flex items-baseline justify-between mt-2">
-            <span className={`text-2xl font-bold font-mono ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
+          <div className="flex items-baseline justify-between gap-1 mt-1.5">
+            <span className={`text-lg sm:text-xl font-bold font-mono tabular-nums truncate ${isDark ? 'text-amber-400' : 'text-amber-700'}`}>
               ₹{totalPending.toLocaleString('en-IN')}
             </span>
-            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full hidden sm:inline shrink-0 ${
               totalPending > 0 
                 ? (isDark ? 'bg-amber-950 text-amber-300 border border-amber-800' : 'bg-amber-100 text-amber-800') 
                 : (isDark ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-600')
             }`}>
-              {totalPending > 0 ? 'Due to Vendors' : 'All Clear'}
+              {totalPending > 0 ? 'Due' : 'Clear'}
             </span>
           </div>
         </div>
@@ -1908,11 +1910,11 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
 
       {/* Bill Scanner & Inward Entry Modal */}
       {isScannerModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-3xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-3xl border shadow-2xl animate-in fade-in zoom-in-95 duration-200 ${
             isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
           }`}>
-            <div className={`px-6 py-4 border-b flex items-center justify-between shrink-0 ${
+            <div className={`px-4 sm:px-5 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
               isDark ? 'border-slate-800' : 'border-slate-200'
             }`}>
               <div className="flex items-center gap-2">
@@ -1939,7 +1941,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+            <div className="p-4 sm:p-5 overflow-y-auto overscroll-contain space-y-4 flex-1 min-h-0">
               {/* Multi-Page Photo Upload & PaddleOCR Scanner Zone */}
               <div className={`p-4 sm:p-5 rounded-2xl border space-y-4 ${
                 isDark ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'
@@ -3276,11 +3278,11 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
 
       {/* Register / Edit Vendor Modal */}
       {isVendorModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-lg border shadow-2xl animate-in fade-in zoom-in-95 duration-200 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
-            <div className={`px-6 py-4 border-b flex items-center justify-between ${
+            <div className={`px-4 sm:px-5 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
               isDark ? 'border-slate-800' : 'border-slate-200'
             }`}>
               <div>
@@ -3443,8 +3445,8 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
         const alreadyPaid = currentBill.paidAmount || 0;
         const remainingDue = Math.max(0, Number((currentBill.totalAmount - alreadyPaid).toFixed(2)));
         return (
-          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-            <div className={`border rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-200 max-h-[92vh] overflow-y-auto ${
+          <div className="sgs-modal-backdrop">
+            <div className={`sgs-modal-sheet sm:max-w-lg border shadow-2xl p-4 sm:p-5 space-y-3.5 animate-in fade-in zoom-in-95 duration-200 overflow-y-auto overscroll-contain ${
               isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
             }`}>
               <div className="flex items-center justify-between border-b pb-3 border-slate-200 dark:border-slate-800">
@@ -3564,11 +3566,11 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
 
       {/* Bill Detail Viewer Modal */}
       {viewingBill && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-2xl border shadow-2xl animate-in fade-in zoom-in-95 duration-200 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
-            <div className={`px-6 py-4 border-b flex items-center justify-between shrink-0 ${
+            <div className={`px-4 sm:px-5 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
               isDark ? 'border-slate-800' : 'border-slate-200'
             }`}>
               <div className="flex items-center gap-2">
@@ -3628,7 +3630,7 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
               );
             })()}
 
-            <div className="p-6 overflow-y-auto space-y-5 flex-1">
+            <div className="p-4 sm:p-5 overflow-y-auto overscroll-contain space-y-4 flex-1 min-h-0">
               {/* TAB 1: LINKED JOB CARDS */}
               {viewingBillTab === 'jobs' && (() => {
                 const linkedJobs = jobCards.filter(j => 

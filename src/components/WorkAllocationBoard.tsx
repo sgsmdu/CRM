@@ -436,27 +436,27 @@ export const WorkAllocationBoard: React.FC<WorkAllocationBoardProps> = ({ onOpen
   };
 
   return (
-    <div className="space-y-6">
+    <div className="sgs-page">
       
       {/* Toast Feedback */}
       {feedbackToast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-bold animate-in fade-in slide-in-from-bottom-3 duration-200">
-          <CheckCircle2 className="w-4 h-4" />
+        <div className="fixed bottom-4 right-4 z-50 bg-emerald-600 text-white px-3.5 py-2 rounded-xl shadow-xl flex items-center gap-2 text-xs font-bold animate-in fade-in slide-in-from-bottom-3 duration-200">
+          <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{feedbackToast}</span>
         </div>
       )}
 
       {/* Header Bar */}
-      <div className={`p-4 rounded-xl border flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 transition-colors ${
+      <div className={`p-3 sm:p-4 rounded-xl border flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 transition-colors ${
         isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200/90 shadow-xs'
       }`}>
-        <div>
-          <div className="flex items-center gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
             <h2 className={`text-base font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-              Employee Work Allocation & Priority Ordering
+              Work Allocation & Priority Ordering
             </h2>
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300">
-              Admin & Office Staff Dispatch
+              Dispatch Board
             </span>
           </div>
           <p className={`text-xs mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
@@ -464,7 +464,7 @@ export const WorkAllocationBoard: React.FC<WorkAllocationBoardProps> = ({ onOpen
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center flex-wrap gap-2 shrink-0">
           {selectedJobIds.length > 0 && (
             <>
               <button
@@ -473,16 +473,16 @@ export const WorkAllocationBoard: React.FC<WorkAllocationBoardProps> = ({ onOpen
                   setBulkEmployeeId(employees[0]?.id || '');
                   setIsBulkAssignModalOpen(true);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer shadow-xs"
+                className="h-9 flex items-center gap-1.5 px-3 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors cursor-pointer shadow-xs whitespace-nowrap"
               >
                 <UserCheck className="w-3.5 h-3.5" />
-                <span>Assign Selected ({selectedJobIds.length})</span>
+                <span>Assign ({selectedJobIds.length})</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleOpenBulkWhatsApp}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors cursor-pointer shadow-xs"
+                className="h-9 flex items-center gap-1.5 px-3 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors cursor-pointer shadow-xs whitespace-nowrap"
               >
                 <Share2 className="w-3.5 h-3.5" />
                 <span>WhatsApp Dispatch</span>
@@ -493,7 +493,7 @@ export const WorkAllocationBoard: React.FC<WorkAllocationBoardProps> = ({ onOpen
       </div>
 
       {/* KPI Workload Dashboard (Module 1.4) */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
         {/* Card 1: Pending Jobs */}
         <div className={`p-3 rounded-xl border ${isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200 shadow-xs'}`}>
           <div className="flex items-center justify-between">
@@ -1021,8 +1021,8 @@ export const WorkAllocationBoard: React.FC<WorkAllocationBoardProps> = ({ onOpen
 
       {/* Priority Change Modal (Module 1.2) */}
       {priorityModalJob && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-md border shadow-2xl p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between border-b pb-3 border-slate-200 dark:border-slate-800">
@@ -1145,8 +1145,8 @@ export const WorkAllocationBoard: React.FC<WorkAllocationBoardProps> = ({ onOpen
 
       {/* Single Technician Reassign Modal (Module 1.3) */}
       {reassignModalJob && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-lg border shadow-2xl p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between border-b pb-3 border-slate-200 dark:border-slate-800">
@@ -1248,8 +1248,8 @@ export const WorkAllocationBoard: React.FC<WorkAllocationBoardProps> = ({ onOpen
 
       {/* Bulk Assign Modal (Module 1.1) */}
       {isBulkAssignModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-md border shadow-2xl p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between border-b pb-3 border-slate-200 dark:border-slate-800">
@@ -1312,8 +1312,8 @@ export const WorkAllocationBoard: React.FC<WorkAllocationBoardProps> = ({ onOpen
 
       {/* Bulk WhatsApp Dispatch Modal (Module 2.5) */}
       {isBulkWhatsAppModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-lg border shadow-2xl p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between border-b pb-3 border-slate-200 dark:border-slate-800">

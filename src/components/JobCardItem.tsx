@@ -1136,16 +1136,16 @@ export const JobCardItem: React.FC<JobCardItemProps> = ({
               {renderStatusSelect('w-full min-h-[44px] px-3 text-xs font-semibold')}
             </div>
 
-            {/* 4. Call, Print, WhatsApp (44x44 icon only) & Mark Called + Show Job aligned in one row */}
-            <div className="flex items-center justify-between gap-1.5">
+            {/* 4. Call, Print, WhatsApp & Mark Called + Show Job — responsive wrap-safe on 320px+ */}
+            <div className="flex flex-wrap items-center justify-between gap-1.5">
               <div className="flex items-center gap-1.5 shrink-0">
-                {/* Official White WhatsApp Icon on Green 44x44 Button — NO text */}
+                {/* Official White WhatsApp Icon on Green Button — NO text */}
                 <button
                   type="button"
                   onClick={onOpenWhatsAppHub}
                   aria-label="WhatsApp"
                   title="WhatsApp Hub"
-                  className="w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white flex items-center justify-center shadow-xs transition-colors cursor-pointer shrink-0"
+                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-white flex items-center justify-center shadow-xs transition-colors cursor-pointer shrink-0"
                 >
                   <WhatsAppLogoIcon className="w-5 h-5" />
                 </button>
@@ -1155,7 +1155,7 @@ export const JobCardItem: React.FC<JobCardItemProps> = ({
                     href={`tel:${displayCustomerPhone}`}
                     aria-label={`Call ${displayCustomerName}`}
                     title={`Call ${displayCustomerPhone}`}
-                    className={`w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl border flex items-center justify-center transition-colors shrink-0 ${
+                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl border flex items-center justify-center transition-colors shrink-0 ${
                       isDark
                         ? 'text-blue-400 bg-blue-950/60 border-blue-900'
                         : 'text-blue-700 bg-blue-50 border-blue-200'
@@ -1170,7 +1170,7 @@ export const JobCardItem: React.FC<JobCardItemProps> = ({
                   onClick={onPrintSlip}
                   aria-label="Print Job Card"
                   title="Print Job Card"
-                  className={`w-11 h-11 min-w-[44px] min-h-[44px] rounded-xl border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                  className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl border flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
                     isDark
                       ? 'text-slate-300 bg-slate-800 border-slate-700'
                       : 'text-slate-700 bg-white border-slate-300'
@@ -1184,7 +1184,7 @@ export const JobCardItem: React.FC<JobCardItemProps> = ({
                 <button
                   type="button"
                   onClick={onToggleCallCompleted}
-                  className={`h-11 px-2.5 rounded-xl border text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer truncate ${
+                  className={`h-10 sm:h-11 px-2.5 rounded-xl border text-[11px] font-semibold flex items-center justify-center gap-1 transition-colors cursor-pointer truncate ${
                     job.callCompleted
                       ? isDark
                         ? 'bg-emerald-950/80 border-emerald-700 text-emerald-300'
@@ -1205,7 +1205,7 @@ export const JobCardItem: React.FC<JobCardItemProps> = ({
                 <button
                   type="button"
                   onClick={onShowJob}
-                  className="h-11 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1 shadow-xs transition-colors cursor-pointer shrink-0 whitespace-nowrap"
+                  className="h-10 sm:h-11 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1 shadow-xs transition-colors cursor-pointer shrink-0 whitespace-nowrap"
                 >
                   <Eye className="w-3.5 h-3.5" />
                   <span>Show Job</span>

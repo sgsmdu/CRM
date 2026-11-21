@@ -437,11 +437,11 @@ export const LoansManagerTab: React.FC<{ onShowToast?: (msg: string) => void }> 
   }, [loans, filterType, statusFilter]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3 sm:space-y-4">
       {/* Header & Quick Actions */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
         <div>
-          <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
+          <h2 className="text-lg sm:text-xl font-bold tracking-tight flex items-center gap-2">
             <Landmark className="w-5 h-5 text-rose-500" />
             <span>Loans & Gold Loan Liabilities</span>
           </h2>
@@ -450,18 +450,18 @@ export const LoansManagerTab: React.FC<{ onShowToast?: (msg: string) => void }> 
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 w-full sm:w-auto">
           <button
             type="button"
             onClick={() => openCreateLoan('business')}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm cursor-pointer"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-sm cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5" /> Add Loan
           </button>
           <button
             type="button"
             onClick={() => openCreateLoan('gold')}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-sm cursor-pointer"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-sm cursor-pointer"
           >
             <Coins className="w-3.5 h-3.5" /> Add Gold Loan
           </button>
@@ -469,7 +469,7 @@ export const LoansManagerTab: React.FC<{ onShowToast?: (msg: string) => void }> 
       </div>
 
       {/* Loan KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2.5 sm:gap-3">
         <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
           <span className="text-[10px] font-bold uppercase text-slate-400">Original Loan Total</span>
           <p className="text-lg font-extrabold font-mono mt-1">₹{metrics.totalOriginalLoanAmount.toLocaleString('en-IN')}</p>
@@ -810,8 +810,8 @@ export const LoansManagerTab: React.FC<{ onShowToast?: (msg: string) => void }> 
 
       {/* ADD / EDIT LOAN MODAL */}
       {isLoanModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-2xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-2xl ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
@@ -1207,8 +1207,8 @@ export const LoansManagerTab: React.FC<{ onShowToast?: (msg: string) => void }> 
 
       {/* RECORD LOAN PAYMENT MODAL */}
       {payingLoan && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-lg max-h-[92vh] shadow-2xl flex flex-col overflow-hidden ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-lg ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">

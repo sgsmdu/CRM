@@ -161,32 +161,32 @@ export const GoogleSheetsModal: React.FC<GoogleSheetsModalProps> = ({ isOpen, on
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className={`border rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+    <div className="sgs-modal-backdrop">
+      <div className={`sgs-modal-sheet sm:max-w-xl border shadow-2xl animate-in fade-in zoom-in-95 duration-200 ${
         isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
       }`}>
         
         {/* Header */}
-        <div className={`px-6 py-4 border-b flex items-center justify-between ${
+        <div className={`px-4 sm:px-5 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
           isDark ? 'border-slate-800' : 'border-slate-200'
         }`}>
-          <div className="flex items-center gap-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
               isDark ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
             }`}>
-              <FileSpreadsheet className="w-5 h-5" />
+              <FileSpreadsheet className="w-4 h-4" />
             </div>
-            <div>
-              <h3 className={`text-base font-bold ${isDark ? 'text-white' : 'text-slate-900'}`}>Google Sheets Live Data Link</h3>
-              <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Sync Spider Grid Solutions records to your Google account</p>
+            <div className="min-w-0">
+              <h3 className={`text-sm sm:text-base font-bold truncate ${isDark ? 'text-white' : 'text-slate-900'}`}>Google Sheets Live Data Link</h3>
+              <p className={`text-[11px] truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>Sync Spider Grid Solutions records to your Google account</p>
             </div>
           </div>
-          <button onClick={onClose} className={`cursor-pointer ${isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'}`}>
+          <button onClick={onClose} className={`p-1.5 rounded-lg cursor-pointer shrink-0 ${isDark ? 'text-slate-400 hover:text-slate-200' : 'text-slate-400 hover:text-slate-600'}`}>
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-6 space-y-5">
+        <div className="p-4 sm:p-5 space-y-4 overflow-y-auto overscroll-contain flex-1 min-h-0">
           
           {/* Auth State Box */}
           {!user ? (

@@ -1261,55 +1261,55 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
 
   return (
     <>
-    <div className={printableInvoice ? 'no-print space-y-6 animate-in fade-in duration-150' : 'space-y-6 animate-in fade-in duration-150'}>
+    <div className={printableInvoice ? 'no-print sgs-page animate-in fade-in duration-150' : 'sgs-page animate-in fade-in duration-150'}>
       
       {/* Top Banner */}
-      <div className={`p-4 rounded-xl border flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 transition-colors ${
+      <div className={`p-3 sm:p-4 rounded-xl border flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 transition-colors ${
         isDark ? 'bg-slate-900/80 border-slate-800' : 'bg-white border-slate-200/90 shadow-xs'
       }`}>
-        <div>
-          <h2 className={`text-base font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-            Billing, Invoicing & Workshop Cash Flow
+        <div className="min-w-0">
+          <h2 className={`text-base sm:text-lg font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+            Billing, Invoicing & Cash Flow
           </h2>
-          <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+          <p className={`text-xs mt-0.5 line-clamp-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
             HSN codes, itemized profit/loss, UPI references, bill duplication, and printable slips
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-2 sm:flex items-center gap-2 shrink-0">
           <button
             onClick={() => setIsAddExpenseOpen(true)}
-            className={`flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
+            className={`h-9 flex items-center justify-center gap-1.5 px-3 text-xs font-semibold rounded-lg border transition-colors cursor-pointer whitespace-nowrap ${
               isDark 
                 ? 'bg-slate-950 border-slate-800 text-slate-300 hover:text-white hover:bg-slate-800' 
                 : 'bg-white border-slate-300 text-slate-700 hover:text-slate-900 hover:bg-slate-50'
             }`}
           >
-            <Plus className="w-3.5 h-3.5 text-rose-500" />
+            <Plus className="w-3.5 h-3.5 text-rose-500 shrink-0" />
             <span>Add Expense</span>
           </button>
 
           <button
             onClick={() => handleOpenCreateModal()}
-            className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-md shadow-blue-500/20 cursor-pointer"
+            className="h-9 flex items-center justify-center gap-1.5 px-3.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm shadow-blue-500/20 cursor-pointer whitespace-nowrap"
           >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Create Invoice / Quote</span>
+            <Plus className="w-3.5 h-3.5 shrink-0" />
+            <span>Create Invoice</span>
           </button>
         </div>
       </div>
 
       {/* Auto-Saved Draft Alert Banner */}
       {hasPendingDraft && !isCreateInvoiceOpen && (
-        <div className={`p-4 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in duration-150 ${
+        <div className={`p-3 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 animate-in fade-in duration-150 ${
           isDark ? 'bg-amber-950/30 border-amber-800/80 text-amber-200' : 'bg-amber-50 border-amber-200 text-amber-900 shadow-xs'
         }`}>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse shrink-0"></div>
             <div>
               <p className="text-xs font-bold">Unfinished Billing / Quotation Draft Auto-Saved</p>
               <p className="text-[11px] opacity-80">
-                You have an auto-saved draft in local storage. Accidentally closed or refreshed? Click resume to continue!
+                Click resume to continue your saved draft.
               </p>
             </div>
           </div>
@@ -1317,7 +1317,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
             <button
               type="button"
               onClick={handleRestoreDraft}
-              className="flex-1 sm:flex-none px-3.5 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg cursor-pointer shadow-xs transition-all"
+              className="flex-1 sm:flex-none h-8 px-3 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg cursor-pointer shadow-xs transition-all"
             >
               Resume Draft
             </button>
@@ -1327,7 +1327,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                 localStorage.removeItem('sgs_billing_draft');
                 setHasPendingDraft(false);
               }}
-              className="px-2.5 py-1.5 text-xs font-semibold text-slate-500 hover:text-rose-600 cursor-pointer"
+              className="h-8 px-2.5 text-xs font-semibold text-slate-500 hover:text-rose-600 cursor-pointer"
             >
               Discard
             </button>
@@ -1336,81 +1336,81 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
       )}
 
       {/* KPI Cards: Incomes, Spares Cost, Expenses & Profit Balance */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
         
         {/* Total Inflow */}
-        <div className={`p-4 rounded-xl border transition-colors ${
+        <div className={`p-3 sm:p-3.5 rounded-xl border transition-colors min-w-0 ${
           isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200/80 shadow-xs'
         }`}>
-          <div className="flex items-center justify-between">
-            <span className={`text-xs font-medium uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              Total Collections (Inflow)
+          <div className="flex items-center justify-between gap-1">
+            <span className={`text-[10px] sm:text-[11px] font-medium uppercase tracking-wider truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+              Collections
             </span>
-            <div className="w-7 h-7 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-              <ArrowDownLeft className="w-4 h-4" />
+            <div className="w-6 h-6 rounded-full bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
+              <ArrowDownLeft className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className={`text-2xl font-bold font-mono mt-2 ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+          <div className={`text-lg sm:text-xl font-bold font-mono tabular-nums truncate mt-1.5 ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
             ₹{totalIncome.toLocaleString('en-IN')}
           </div>
-          <p className={`text-[11px] mt-1 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-            Received across UPI, cash, & bank
+          <p className={`text-[10px] sm:text-[11px] mt-0.5 truncate ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+            UPI, cash & bank
           </p>
         </div>
 
         {/* Total Outflow */}
-        <div className={`p-4 rounded-xl border transition-colors ${
+        <div className={`p-3 sm:p-3.5 rounded-xl border transition-colors min-w-0 ${
           isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200/80 shadow-xs'
         }`}>
-          <div className="flex items-center justify-between">
-            <span className={`text-xs font-medium uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              Total Expenses (Outflow)
+          <div className="flex items-center justify-between gap-1">
+            <span className={`text-[10px] sm:text-[11px] font-medium uppercase tracking-wider truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+              Expenses
             </span>
-            <div className="w-7 h-7 rounded-full bg-rose-500/10 text-rose-600 flex items-center justify-center">
-              <ArrowUpRight className="w-4 h-4" />
+            <div className="w-6 h-6 rounded-full bg-rose-500/10 text-rose-600 flex items-center justify-center shrink-0">
+              <ArrowUpRight className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className={`text-2xl font-bold font-mono mt-2 ${isDark ? 'text-rose-400' : 'text-rose-700'}`}>
+          <div className={`text-lg sm:text-xl font-bold font-mono tabular-nums truncate mt-1.5 ${isDark ? 'text-rose-400' : 'text-rose-700'}`}>
             ₹{totalExpense.toLocaleString('en-IN')}
           </div>
-          <p className={`text-[11px] mt-1 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-            Vendor spares, rent & workshop
+          <p className={`text-[10px] sm:text-[11px] mt-0.5 truncate ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+            Spares, rent & ops
           </p>
         </div>
 
         {/* Net Cash Balance */}
-        <div className={`p-4 rounded-xl border transition-colors ${
+        <div className={`p-3 sm:p-3.5 rounded-xl border transition-colors min-w-0 ${
           isDark ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200/80 shadow-xs'
         }`}>
-          <div className="flex items-center justify-between">
-            <span className={`text-xs font-medium uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+          <div className="flex items-center justify-between gap-1">
+            <span className={`text-[10px] sm:text-[11px] font-medium uppercase tracking-wider truncate ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
               Net Cash Flow
             </span>
-            <div className="w-7 h-7 rounded-full bg-blue-500/10 text-blue-600 flex items-center justify-center">
-              <IndianRupee className="w-4 h-4" />
+            <div className="w-6 h-6 rounded-full bg-blue-500/10 text-blue-600 flex items-center justify-center shrink-0">
+              <IndianRupee className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className={`text-2xl font-bold font-mono mt-2 ${netBalance >= 0 ? (isDark ? 'text-white' : 'text-slate-900') : 'text-rose-500'}`}>
+          <div className={`text-lg sm:text-xl font-bold font-mono tabular-nums truncate mt-1.5 ${netBalance >= 0 ? (isDark ? 'text-white' : 'text-slate-900') : 'text-rose-500'}`}>
             ₹{netBalance.toLocaleString('en-IN')}
           </div>
-          <p className={`text-[11px] mt-1 ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-            Current workshop reserve
+          <p className={`text-[10px] sm:text-[11px] mt-0.5 truncate ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+            Workshop reserve
           </p>
         </div>
 
         {/* Bill Profit Margin */}
-        <div className={`p-4 rounded-xl border transition-colors ${
+        <div className={`p-3 sm:p-3.5 rounded-xl border transition-colors min-w-0 ${
           isDark ? 'bg-emerald-950/20 border-emerald-800/60' : 'bg-emerald-50/70 border-emerald-200 shadow-xs'
         }`}>
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-              Total Invoicing Profit
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] sm:text-[11px] font-medium uppercase tracking-wider truncate text-emerald-800 dark:text-emerald-300">
+              Invoice Profit
             </span>
-            <div className="w-7 h-7 rounded-full bg-emerald-600/20 text-emerald-600 flex items-center justify-center">
-              <TrendingUp className="w-4 h-4" />
+            <div className="w-6 h-6 rounded-full bg-emerald-600/20 text-emerald-600 flex items-center justify-center shrink-0">
+              <TrendingUp className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className="text-2xl font-bold font-mono mt-2 text-emerald-700 dark:text-emerald-400">
+          <div className="text-lg sm:text-xl font-bold font-mono tabular-nums truncate mt-1.5 text-emerald-700 dark:text-emerald-400">
             ₹{activeInvoices.filter(inv => inv.type === 'invoice').reduce((sum, inv) => sum + Acc.invoiceProfit(inv), 0).toLocaleString('en-IN')}
           </div>
           <p className="text-[11px] mt-1 text-emerald-800/80 dark:text-emerald-300/80">
@@ -1854,11 +1854,11 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
 
       {/* Viewing Bill Details Modal (Click old bill to view) */}
       {liveViewingInvoice && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-3xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-3xl border shadow-2xl animate-in fade-in zoom-in-95 duration-200 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
-            <div className={`px-6 py-4 border-b flex items-center justify-between shrink-0 ${
+            <div className={`px-4 sm:px-5 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
               isDark ? 'border-slate-800' : 'border-slate-200'
             }`}>
               <div className="flex items-center gap-2.5">
@@ -1890,7 +1890,7 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
               </button>
             </div>
 
-            <div className="p-6 overflow-y-auto space-y-5 flex-1">
+            <div className="p-4 sm:p-5 overflow-y-auto overscroll-contain space-y-4 flex-1 min-h-0">
               
               {/* Customer Info Card */}
               <div className={`p-4 rounded-xl border grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs ${
@@ -3540,8 +3540,8 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
 
       {/* Manual Expense Modal with 3-Level Category & Payment Account Selector */}
       {isAddExpenseOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-lg max-h-[92vh] overflow-y-auto shadow-2xl p-6 space-y-4 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-lg border overflow-y-auto overscroll-contain shadow-2xl p-4 sm:p-5 space-y-3.5 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className={`flex items-center justify-between pb-2 border-b ${
@@ -3670,8 +3670,8 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
 
       {/* Convert Quotation to Official Tax Invoice Modal */}
       {confirmConvertModal && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-md border shadow-2xl p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center gap-3">

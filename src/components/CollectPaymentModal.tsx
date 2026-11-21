@@ -416,9 +416,9 @@ export const CollectPaymentModal: React.FC<CollectPaymentModalProps> = ({
       : '';
 
     return (
-      <div className="fixed inset-0 z-[70] bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="sgs-modal-backdrop z-[70]">
         <div
-          className={`border rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150 ${
+          className={`sgs-modal-sheet sm:max-w-lg border shadow-2xl animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}
         >
@@ -577,9 +577,9 @@ export const CollectPaymentModal: React.FC<CollectPaymentModalProps> = ({
   const currentInvDue = activeInvoice ? amountDue(activeInvoice) : 0;
 
   return (
-    <div className="fixed inset-0 z-[70] bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+    <div className="sgs-modal-backdrop z-[70]">
       <div
-        className={`border rounded-2xl w-full ${mode === 'customer_multi' ? 'max-w-2xl' : 'max-w-lg'} max-h-[92vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 ${
+        className={`sgs-modal-sheet ${mode === 'customer_multi' ? 'sm:max-w-2xl' : 'sm:max-w-lg'} border shadow-2xl animate-in fade-in zoom-in-95 duration-150 ${
           isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
         }`}
       >

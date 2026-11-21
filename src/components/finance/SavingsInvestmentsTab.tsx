@@ -550,11 +550,11 @@ export const SavingsInvestmentsTab: React.FC<{
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3 sm:space-y-4">
       {/* Header + Section Switcher */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
         <div>
-          <h2 className="text-xl font-bold tracking-tight flex items-center gap-2">
+          <h2 className="text-lg sm:text-xl font-bold tracking-tight flex items-center gap-2">
             {section === 'savings' ? (
               <PiggyBank className="w-5 h-5 text-teal-500" />
             ) : (
@@ -571,7 +571,7 @@ export const SavingsInvestmentsTab: React.FC<{
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className={`p-1 rounded-xl border flex items-center gap-1 ${
             isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-100 border-slate-200'
           }`}>
@@ -599,15 +599,15 @@ export const SavingsInvestmentsTab: React.FC<{
             <button
               type="button"
               onClick={openNewSavings}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl shadow-sm cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl shadow-sm cursor-pointer"
             >
-              <Plus className="w-4 h-4" /> + Add Savings Account
+              <Plus className="w-4 h-4" /> + Add Savings
             </button>
           ) : (
             <button
               type="button"
               onClick={openNewInv}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-sm cursor-pointer"
             >
               <Plus className="w-4 h-4" /> + Add Investment
             </button>
@@ -619,8 +619,8 @@ export const SavingsInvestmentsTab: React.FC<{
       {/* SAVINGS SECTION                                                       */}
       {/* ===================================================================== */}
       {section === 'savings' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="space-y-3 sm:space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3">
             <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
               <span className="text-[11px] font-bold uppercase text-teal-600 dark:text-teal-400">
                 Total Savings & Reserves
@@ -836,8 +836,8 @@ export const SavingsInvestmentsTab: React.FC<{
       {/* INVESTMENTS SECTION                                                   */}
       {/* ===================================================================== */}
       {section === 'investments' && (
-        <div className="space-y-6">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="space-y-3 sm:space-y-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
             <div className={`p-4 rounded-xl border ${isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
               <span className="text-[11px] font-bold uppercase text-indigo-500">Total Invested Capital</span>
               <div className="mt-1.5 text-2xl font-bold font-mono text-indigo-600 dark:text-indigo-400">
@@ -1071,8 +1071,8 @@ export const SavingsInvestmentsTab: React.FC<{
 
       {/* MODAL: ADD / EDIT SAVINGS ACCOUNT */}
       {isSavModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl p-6 space-y-4 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-lg block overflow-y-auto p-4 sm:p-5 space-y-3.5 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
@@ -1248,8 +1248,8 @@ export const SavingsInvestmentsTab: React.FC<{
 
       {/* MODAL: SAVINGS DEPOSIT / WITHDRAWAL */}
       {savTxTarget && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-md block overflow-y-auto p-4 sm:p-5 space-y-3.5 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
@@ -1343,8 +1343,8 @@ export const SavingsInvestmentsTab: React.FC<{
 
       {/* MODAL: ADD / EDIT INVESTMENT */}
       {isInvModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl p-6 space-y-4 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-lg block overflow-y-auto p-4 sm:p-5 space-y-3.5 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
@@ -1553,8 +1553,8 @@ export const SavingsInvestmentsTab: React.FC<{
 
       {/* MODAL: INVESTMENT ACTION (Add Capital / Withdrawal / Manual Value Update) */}
       {invActionTarget && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-md block overflow-y-auto p-4 sm:p-5 space-y-3.5 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">

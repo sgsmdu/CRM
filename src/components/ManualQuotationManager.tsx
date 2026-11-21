@@ -885,76 +885,73 @@ Please review the proposal options and let us know your preferred configuration!
 
   return (
     <>
-    <div className={pdfPreviewQuotation ? 'no-print space-y-6 animate-in fade-in duration-150' : 'space-y-6 animate-in fade-in duration-150'}>
+    <div className={pdfPreviewQuotation ? 'no-print sgs-page animate-in fade-in duration-150' : 'sgs-page animate-in fade-in duration-150'}>
       
       {/* Toast Alert */}
       {toastMessage && (
-        <div className="fixed top-5 right-5 z-50 bg-blue-600 text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in fade-in slide-in-from-top-2">
+        <div className="fixed top-4 right-4 z-50 bg-blue-600 text-white px-3.5 py-2 rounded-xl shadow-xl flex items-center gap-2 text-xs font-semibold animate-in fade-in slide-in-from-top-2">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{toastMessage}</span>
         </div>
       )}
 
       {/* Top Header Card */}
-      <div className={`p-6 rounded-2xl border transition-colors ${
+      <div className={`p-3.5 sm:p-4 rounded-xl border transition-colors ${
         isDark 
           ? 'bg-gradient-to-r from-slate-900 via-blue-950/40 to-slate-900 border-slate-800' 
           : 'bg-gradient-to-r from-blue-50/70 via-indigo-50/50 to-white border-blue-100 shadow-xs'
       }`}>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0">
-              <FileText className="w-6 h-6" />
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm shadow-blue-500/20 shrink-0">
+              <FileText className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className={`text-xl font-black tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                  Manual Quotation Module
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <h1 className={`text-base sm:text-lg font-bold tracking-tight ${isDark ? 'text-white' : 'text-slate-900'}`}>
+                  Manual Quotations
                 </h1>
                 <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                  Model 1 & Model 2 Comparison
-                </span>
-                <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                  Stock Independent
+                  Multi-Model Comparison
                 </span>
               </div>
-              <p className={`text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                Prepare two proposal packages in one document. Prices, margins and internal charges remain 100% hidden on customer PDF.
+              <p className={`text-xs mt-0.5 line-clamp-1 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                Prepare proposal packages in one document. Internal costs & margins remain hidden on customer PDF.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="grid grid-cols-2 sm:flex items-center gap-2 shrink-0 flex-wrap">
             <button
               onClick={() => setActiveTab('dashboard')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`h-9 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
                 activeTab === 'dashboard'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : isDark ? 'bg-slate-800 text-slate-300 hover:text-white' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
               }`}
             >
-              <FileText className="w-4 h-4" />
-              <span>Quotations ({quotations.filter(q => !q.isArchived).length})</span>
+              <FileText className="w-3.5 h-3.5 shrink-0" />
+              <span>Quotes ({quotations.filter(q => !q.isArchived).length})</span>
             </button>
 
             <button
               onClick={() => setActiveTab('catalogue')}
-              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+              className={`h-9 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap ${
                 activeTab === 'catalogue'
                   ? 'bg-blue-600 text-white shadow-sm'
                   : isDark ? 'bg-slate-800 text-slate-300 hover:text-white' : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
               }`}
             >
-              <Boxes className="w-4 h-4" />
-              <span>Product Catalogue ({quotationProducts.filter(p => !p.isDeleted).length})</span>
+              <Boxes className="w-3.5 h-3.5 shrink-0" />
+              <span>Catalogue ({quotationProducts.filter(p => !p.isDeleted).length})</span>
             </button>
 
             <button
               onClick={handleStartNewQuotation}
-              className="px-4 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-95 rounded-xl transition-all shadow-md shadow-blue-600/25 flex items-center gap-1.5 cursor-pointer"
+              className="col-span-2 sm:col-span-1 h-9 px-3.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 active:scale-95 rounded-lg transition-all shadow-sm shadow-blue-600/25 flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
-              <Plus className="w-4 h-4" />
-              <span>Create Manual Quote</span>
+              <Plus className="w-4 h-4 shrink-0" />
+              <span>Create Quote</span>
             </button>
           </div>
         </div>
@@ -962,23 +959,23 @@ Please review the proposal options and let us know your preferred configuration!
 
       {/* VIEW 1: QUOTATION DASHBOARD */}
       {activeTab === 'dashboard' && (
-        <div className="space-y-6">
+        <div className="space-y-3 sm:space-y-4">
           
           {/* Summary Metric Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
             {[
               { label: 'Total Quotes', val: metrics.total, color: 'text-blue-600', bg: 'bg-blue-50/50 dark:bg-blue-950/20', border: 'border-blue-200 dark:border-blue-900/40' },
               { label: 'Draft', val: metrics.draft, color: 'text-slate-600 dark:text-slate-400', bg: 'bg-slate-50 dark:bg-slate-900/40', border: 'border-slate-200 dark:border-slate-800' },
-              { label: 'Sent to Client', val: metrics.sent, color: 'text-sky-600', bg: 'bg-sky-50/50 dark:bg-sky-950/20', border: 'border-sky-200 dark:border-sky-900/40' },
-              { label: 'Pending Decision', val: metrics.pending, color: 'text-amber-600', bg: 'bg-amber-50/50 dark:bg-amber-950/20', border: 'border-amber-200 dark:border-amber-900/40' },
+              { label: 'Sent', val: metrics.sent, color: 'text-sky-600', bg: 'bg-sky-50/50 dark:bg-sky-950/20', border: 'border-sky-200 dark:border-sky-900/40' },
+              { label: 'Pending', val: metrics.pending, color: 'text-amber-600', bg: 'bg-amber-50/50 dark:bg-amber-950/20', border: 'border-amber-200 dark:border-amber-900/40' },
               { label: 'Confirmed', val: metrics.confirmed, color: 'text-emerald-600', bg: 'bg-emerald-50/50 dark:bg-emerald-950/20', border: 'border-emerald-200 dark:border-emerald-900/40' },
               { label: 'Rejected', val: metrics.rejected, color: 'text-rose-600', bg: 'bg-rose-50/50 dark:bg-rose-950/20', border: 'border-rose-200 dark:border-rose-900/40' },
             ].map((m, idx) => (
-              <div key={idx} className={`p-4 rounded-xl border ${m.bg} ${m.border}`}>
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block truncate">
+              <div key={idx} className={`p-3 rounded-xl border ${m.bg} ${m.border}`}>
+                <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider block truncate">
                   {m.label}
                 </span>
-                <span className={`text-2xl font-black font-mono mt-1 block ${m.color}`}>
+                <span className={`text-lg sm:text-xl font-black font-mono tabular-nums mt-0.5 block ${m.color}`}>
                   {m.val}
                 </span>
               </div>
@@ -986,10 +983,10 @@ Please review the proposal options and let us know your preferred configuration!
           </div>
 
           {/* Search, Filter & Controls Bar */}
-          <div className={`p-4 rounded-2xl border space-y-3 ${
+          <div className={`sgs-toolbar space-y-2.5 ${
             isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
           }`}>
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
               {/* Search */}
               <div className="relative w-full sm:flex-1">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -997,8 +994,8 @@ Please review the proposal options and let us know your preferred configuration!
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search quote # (e.g. SGS/QTN/2026/001), customer, phone or model package..."
-                  className={`w-full rounded-xl pl-9 pr-3 py-2 text-xs focus:outline-none ${
+                  placeholder="Search quote #, customer, phone or model..."
+                  className={`w-full h-9 rounded-lg pl-9 pr-3 text-xs focus:outline-none ${
                     isDark ? 'bg-slate-950 border border-slate-800 text-white' : 'bg-slate-50 border border-slate-200 text-slate-900'
                   }`}
                 />
@@ -1009,7 +1006,7 @@ Please review the proposal options and let us know your preferred configuration!
                 <select
                   value={statusFilter}
                   onChange={(e) => setStatusFilter(e.target.value)}
-                  className={`w-full sm:w-44 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none ${
+                  className={`w-full sm:w-44 h-9 rounded-lg px-2.5 text-xs font-semibold focus:outline-none ${
                     isDark ? 'bg-slate-950 border border-slate-800 text-slate-200' : 'bg-slate-50 border border-slate-200 text-slate-800'
                   }`}
                 >
@@ -1311,7 +1308,7 @@ Please review the proposal options and let us know your preferred configuration!
 
       {/* VIEW 2: PRODUCT CATALOGUE MANAGEMENT (Requirement 4 & 5) */}
       {activeTab === 'catalogue' && (
-        <div className="space-y-6">
+        <div className="space-y-3 sm:space-y-4">
           <div className={`p-4 rounded-2xl border space-y-4 ${
             isDark ? 'bg-slate-900/90 border-slate-800' : 'bg-white border-slate-200 shadow-xs'
           }`}>
@@ -1538,8 +1535,8 @@ Please review the proposal options and let us know your preferred configuration!
 
       {/* MODAL 1: QUOTATION CREATION & EDIT MODAL (TWO MODELS IN ONE) */}
       {isEditorOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
-          <div className={`border rounded-2xl w-full max-w-5xl max-h-[94vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-5xl border shadow-2xl animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             
@@ -1578,7 +1575,7 @@ Please review the proposal options and let us know your preferred configuration!
             </div>
 
             {/* Modal Scrollable Body */}
-            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+            <div className="p-4 sm:p-5 overflow-y-auto overscroll-contain space-y-4 flex-1 min-h-0">
               
               {/* 1. Customer Information & Dates */}
               <div className={`p-4 rounded-xl border space-y-4 ${
@@ -2426,11 +2423,11 @@ Please review the proposal options and let us know your preferred configuration!
 
       {/* DRAWER: PRODUCT CATALOGUE PICKER */}
       {isProductPickerOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6">
-          <div className={`border rounded-2xl w-full max-w-3xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-3xl border shadow-2xl animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
-            <div className={`px-6 py-4 border-b flex items-center justify-between shrink-0 ${
+            <div className={`px-4 sm:px-5 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
               isDark ? 'border-slate-800 bg-slate-950/80' : 'border-slate-200 bg-slate-50'
             }`}>
               <div className="flex items-center gap-2">
@@ -2542,11 +2539,11 @@ Please review the proposal options and let us know your preferred configuration!
 
       {/* MODAL 3: VERSION HISTORY MODAL (Requirement 16) */}
       {versionHistoryQuotation && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-2xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-2xl border shadow-2xl animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
-            <div className={`px-6 py-4 border-b flex items-center justify-between shrink-0 ${
+            <div className={`px-4 sm:px-5 py-3 border-b flex items-center justify-between gap-2 shrink-0 ${
               isDark ? 'border-slate-800 bg-slate-950/80' : 'border-slate-200 bg-slate-50'
             }`}>
               <div className="flex items-center gap-2">
@@ -2682,8 +2679,8 @@ Please review the proposal options and let us know your preferred configuration!
 
       {/* MODAL 4: STATUS & MODEL CONFIRMATION MODAL (Requirement 15) */}
       {statusModalQuotation && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-md border shadow-2xl p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between border-b pb-2">
@@ -2784,8 +2781,8 @@ Please review the proposal options and let us know your preferred configuration!
 
       {/* MODAL 5: ADD / EDIT CATALOGUE PRODUCT MODAL */}
       {isNewProductModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className={`border rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4 animate-in fade-in zoom-in-95 duration-150 ${
+        <div className="sgs-modal-backdrop">
+          <div className={`sgs-modal-sheet sm:max-w-lg border shadow-2xl p-4 sm:p-5 space-y-3.5 overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 duration-150 ${
             isDark ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
           }`}>
             <div className="flex items-center justify-between border-b pb-2">
