@@ -3829,11 +3829,12 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
           </div>
 
           {/* Paper Sheet */}
-          <div className="print-modal-scroll p-3 sm:p-5 overflow-y-auto flex-1 bg-slate-200/60 flex justify-center print:p-0 print:bg-white">
+          <div className="print-modal-scroll p-3 sm:p-5 overflow-y-auto flex-1 bg-slate-200/60 flex justify-center items-start print:p-0 print:bg-white">
             <div
               id="invoiceSlip"
-              className="quotation-print bg-white shadow-xl rounded-sm w-full max-w-[794px] p-5 sm:p-6 print:p-0 text-[11px] leading-snug font-sans text-slate-900 print:shadow-none print:w-[194mm] print:max-w-none space-y-2.5 print:space-y-1.5"
+              className="quotation-print bg-white shadow-xl rounded-sm w-full max-w-[794px] min-h-[1060px] print:min-h-[278mm] p-5 sm:p-6 print:p-0 text-[11px] leading-snug font-sans text-slate-900 print:shadow-none print:w-[194mm] print:max-w-none flex flex-col"
             >
+              <div className="quotation-body flex-1 flex flex-col space-y-2.5 print:space-y-1.5">
               {/* Slip Header */}
               {printableInvoice.billingFirm === 'pandiyan' ? (
                 (() => {
@@ -4149,53 +4150,58 @@ export const BillingCashFlow: React.FC<BillingCashFlowProps> = ({ initialJobId, 
                 </div>
               )}
 
-              {/* Terms & Authorized Signatory Block */}
-              <div className="model-section border-t border-slate-200 pt-1.5 flex flex-row items-end justify-between gap-4">
-                <div className="flex-1 text-[9.5px] text-slate-600 leading-snug space-y-0.5">
-                  <p className="font-bold text-slate-800 uppercase tracking-wider">Terms & Conditions:</p>
-                  <p className="whitespace-pre-line">
-                    {printableInvoice.billingFirm === 'pandiyan'
-                      ? (adminSettings.pandiyanTerms || 'Goods once sold cannot be returned. Warranty valid per manufacturer.')
-                      : (adminSettings.termsAndConditions || '1. Warranty valid only against physical invoice. 2. Spares carry manufacturer guarantee. 3. Subject to Madurai jurisdiction.')}
-                  </p>
-                  {printableInvoice.notes && (
-                    <p className="italic text-slate-500">Note: {printableInvoice.notes}</p>
-                  )}
-                </div>
-
-                <div className="w-40 text-center shrink-0 space-y-0.5">
-                  <div className="relative h-14 border border-dashed border-slate-300 rounded flex items-center justify-center bg-slate-50/50 p-1 overflow-hidden">
-                    {printableInvoice.billingFirm === 'pandiyan' ? (
-                      <PandiyanStamp url={adminSettings.pandiyanRubberStampUrl} />
-                    ) : (
-                      <SgsStamp url={adminSettings.rubberStampUrl} />
-                    )}
-                  </div>
-                  <p className="text-[9.5px] font-bold text-slate-800 leading-tight">
-                    For {printableInvoice.billingFirm === 'pandiyan' ? (adminSettings.pandiyanFirmName || 'Pandiyan Computers') : (adminSettings.workshopName || 'Spider Grid Solutions')}
-                  </p>
-                  <p className="text-[8.5px] text-slate-500 uppercase tracking-wider">Authorized Signatory</p>
-                </div>
               </div>
 
-              {/* Footer (Aligned to Header Width) */}
-              {printableInvoice.billingFirm !== 'pandiyan' && printableInvoice.type === 'quotation' && adminSettings.quotationFooterImageUrl ? (
-                <div className="quotation-footer w-full bg-white m-0 p-0">
-                  <img
-                    src={adminSettings.quotationFooterImageUrl}
-                    alt="Quotation Letterhead Footer"
-                    className="w-full h-auto block object-contain mx-auto"
-                  />
+              {/* Bottom-Pinned Terms, Authorized Signatory & Footer */}
+              <div className="quotation-bottom-pin mt-auto pt-3 space-y-2 print:space-y-1.5 shrink-0">
+                {/* Terms & Authorized Signatory Block */}
+                <div className="model-section border-t border-slate-200 pt-1.5 flex flex-row items-end justify-between gap-4">
+                  <div className="flex-1 text-[9.5px] text-slate-600 leading-snug space-y-0.5">
+                    <p className="font-bold text-slate-800 uppercase tracking-wider">Terms & Conditions:</p>
+                    <p className="whitespace-pre-line">
+                      {printableInvoice.billingFirm === 'pandiyan'
+                        ? (adminSettings.pandiyanTerms || 'Goods once sold cannot be returned. Warranty valid per manufacturer.')
+                        : (adminSettings.termsAndConditions || '1. Warranty valid only against physical invoice. 2. Spares carry manufacturer guarantee. 3. Subject to Madurai jurisdiction.')}
+                    </p>
+                    {printableInvoice.notes && (
+                      <p className="italic text-slate-500">Note: {printableInvoice.notes}</p>
+                    )}
+                  </div>
+
+                  <div className="w-40 text-center shrink-0 space-y-0.5">
+                    <div className="relative h-14 border border-dashed border-slate-300 rounded flex items-center justify-center bg-slate-50/50 p-1 overflow-hidden">
+                      {printableInvoice.billingFirm === 'pandiyan' ? (
+                        <PandiyanStamp url={adminSettings.pandiyanRubberStampUrl} />
+                      ) : (
+                        <SgsStamp url={adminSettings.rubberStampUrl} />
+                      )}
+                    </div>
+                    <p className="text-[9.5px] font-bold text-slate-800 leading-tight">
+                      For {printableInvoice.billingFirm === 'pandiyan' ? (adminSettings.pandiyanFirmName || 'Pandiyan Computers') : (adminSettings.workshopName || 'Spider Grid Solutions')}
+                    </p>
+                    <p className="text-[8.5px] text-slate-500 uppercase tracking-wider">Authorized Signatory</p>
+                  </div>
                 </div>
-              ) : (
-                <div className="quotation-footer text-center text-[9.5px] text-slate-500 border-t border-slate-200 pt-1">
-                  <p className="font-medium">
-                    {printableInvoice.billingFirm === 'pandiyan'
-                      ? `${adminSettings.pandiyanFirmName || 'Pandiyan Computers'} · Madurai · Ph: ${adminSettings.pandiyanPhone || '+91 9176795665'}`
-                      : `${adminSettings.workshopName || 'Spider Grid Solutions'} · Computer, Laptop, CCTV & Network Sales & Service Center · Madurai`}
-                  </p>
-                </div>
-              )}
+
+                {/* Footer (Aligned to Header Width) */}
+                {printableInvoice.billingFirm !== 'pandiyan' && printableInvoice.type === 'quotation' && adminSettings.quotationFooterImageUrl ? (
+                  <div className="quotation-footer w-full bg-white m-0 p-0">
+                    <img
+                      src={adminSettings.quotationFooterImageUrl}
+                      alt="Quotation Letterhead Footer"
+                      className="w-full h-auto block object-contain mx-auto"
+                    />
+                  </div>
+                ) : (
+                  <div className="quotation-footer text-center text-[9.5px] text-slate-500 border-t border-slate-200 pt-1">
+                    <p className="font-medium">
+                      {printableInvoice.billingFirm === 'pandiyan'
+                        ? `${adminSettings.pandiyanFirmName || 'Pandiyan Computers'} · Madurai · Ph: ${adminSettings.pandiyanPhone || '+91 9176795665'}`
+                        : `${adminSettings.workshopName || 'Spider Grid Solutions'} · Computer, Laptop, CCTV & Network Sales & Service Center · Madurai`}
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

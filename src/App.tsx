@@ -196,7 +196,7 @@ function SgsAppContent() {
   }
 
   return (
-    <div className={`min-h-screen flex transition-colors duration-150 w-full max-w-full overflow-x-hidden ${
+    <div className={`min-h-screen print:min-h-0 flex transition-colors duration-150 w-full max-w-full overflow-x-hidden print:bg-white print:text-slate-900 ${
       isDark 
         ? 'bg-[#080d1a] text-slate-100 selection:bg-blue-600 selection:text-white' 
         : 'bg-slate-50 text-slate-900 selection:bg-blue-600 selection:text-white'

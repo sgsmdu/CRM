@@ -4397,8 +4397,9 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
               </div>
 
               {/* A4 Printable Sheet */}
-              <div className="print-modal-scroll p-3 sm:p-5 overflow-y-auto flex-1 bg-slate-200/60 flex justify-center print:p-0 print:bg-white">
-                <div className="quotation-print bg-white shadow-xl rounded-sm w-full max-w-[794px] p-5 sm:p-6 print:p-0 text-[11px] leading-snug font-sans text-slate-900 print:shadow-none print:w-[194mm] print:max-w-none space-y-3">
+              <div className="print-modal-scroll p-3 sm:p-5 overflow-y-auto flex-1 bg-slate-200/60 flex justify-center items-start print:p-0 print:bg-white">
+                <div className="quotation-print bg-white shadow-xl rounded-sm w-full max-w-[794px] min-h-[1060px] print:min-h-[278mm] p-5 sm:p-6 print:p-0 text-[11px] leading-snug font-sans text-slate-900 print:shadow-none print:w-[194mm] print:max-w-none flex flex-col">
+                  <div className="quotation-body flex-1 flex flex-col space-y-3">
                   {/* Header */}
                   <div className={`border-b-2 pb-2.5 flex items-start justify-between gap-4 ${pIsGst ? 'border-blue-800' : 'border-slate-700'}`}>
                     <div className="min-w-0">
@@ -4566,6 +4567,16 @@ export const VendorBillScanner: React.FC<VendorBillScannerProps> = ({
                         <span className="font-sans">Balance Due:</span>
                         <span>₹{formatInr(pPending, true)}</span>
                       </div>
+                    </div>
+                  </div>
+                  </div>
+
+                  {/* Bottom-Pinned Vendor Bill Footer */}
+                  <div className="quotation-bottom-pin mt-auto pt-4 shrink-0">
+                    <div className="quotation-footer text-center text-[9.5px] text-slate-500 border-t border-slate-200 pt-1.5">
+                      <p className="font-medium">
+                        {adminSettings.workshopName || 'Spider Grid Solutions'} · Vendor Purchase Record ({pIsGst ? 'GST Bill' : 'Non-GST Purchase Slip'})
+                      </p>
                     </div>
                   </div>
                 </div>

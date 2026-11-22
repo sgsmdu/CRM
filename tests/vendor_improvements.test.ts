@@ -23,7 +23,12 @@ import {
   formatInr,
   safeNumber,
 } from '../src/utils/gstUtils.ts';
-import type { InventoryItem, Vendor, VendorBill, VendorBillItem } from '../src/types.ts';
+import type { AdminSettings, InventoryItem, Vendor, VendorBill, VendorBillItem } from '../src/types.ts';
+import {
+  BRAND_DOC_SENTINEL,
+  mergeAdminSettingsWithBrandDocs,
+  splitAdminSettingsForFirestore,
+} from '../src/utils/imageOptimize.ts';
 
 let fails = 0;
 const eq = (name: string, got: any, want: any) => {
@@ -473,6 +478,81 @@ const makeItem = (
   eq('12f. Remaining balance === 0', Acc.round2(afterFull.totalAmount - afterFull.paidAmount), 0);
   eq('12g. CashFlow has exactly 2 vendor payment entries', st.cashFlow.length, 2);
   eq('12h. CashFlow total equals bill total', Acc.round2(st.cashFlow.reduce((s, c) => s + c.amount, 0)), 118.12);
+}
+
+// ============================================================================
+// 13. Brand Logo & Rubber Stamp Firestore Split/Merge Persistence (No Reversion)
+// ============================================================================
+{
+  const oldLogo = 'data:image/png;base64,' + 'O'.repeat(45_000);
+  const newLogo = 'data:image/png;base64,' + 'N'.repeat(60_000);
+  const newStamp = 'data:image/png;base64,' + 'S'.repeat(55_000);
+  const legacyPandiyanLogo = 'data:image/png;base64,' + 'P'.repeat(20_000);
+
+  const baseSettings: AdminSettings = {
+    workshopName: 'Spider Grid Solutions',
+    workshopGstin: '33ABCDE1234F1Z5',
+    workshopPhone: '+91 9176795665',
+    workshopEmail: 'info@spidergridsolutions.com',
+    workshopAddress: 'Madurai',
+    workshopUpiId: 'sgs@upi',
+    defaultHsnCode: '998713',
+    defaultGstPercent: 18,
+    invoicePrefix: 'SGS',
+    googleReviewUrl: '',
+    technicians: [],
+    welcomeMessageTemplate: '',
+    statusMessageTemplate: '',
+    reviewMessageTemplate: '',
+    quickServices: [],
+    billingTheme: 'modern_navy',
+    workshopLogoUrl: oldLogo,
+    rubberStampUrl: '',
+    pandiyanLogoUrl: legacyPandiyanLogo,
+    pandiyanRubberStampUrl: '',
+    quotationHeaderImageUrl: '',
+    quotationFooterImageUrl: '',
+    quotationBackgroundUrl: '',
+    termsAndConditions: 'Standard Terms',
+  };
+
+  const updatedSettings: AdminSettings = {
+    ...baseSettings,
+    workshopLogoUrl: newLogo,
+    rubberStampUrl: newStamp,
+  };
+
+  // Split offloads >35KB images to dedicated brand docs so settings/admin_settings stays tiny
+  const { coreSettings, brandDocs } = splitAdminSettingsForFirestore(updatedSettings);
+  eq('13a. Large SGS logo offloaded to sentinel in coreSettings', coreSettings.workshopLogoUrl, BRAND_DOC_SENTINEL);
+  eq('13b. Large SGS stamp offloaded to sentinel in coreSettings', coreSettings.rubberStampUrl, BRAND_DOC_SENTINEL);
+  eq('13c. Brand doc carries full new SGS logo', brandDocs.workshopLogoUrl, newLogo);
+  eq('13d. Brand doc carries full new SGS stamp', brandDocs.rubberStampUrl, newStamp);
+  eq('13e. Small legacy Pandiyan logo stays inline in coreSettings', coreSettings.pandiyanLogoUrl, legacyPandiyanLogo);
+  eq('13f. coreSettings serialized size stays tiny (< 50KB)', JSON.stringify(coreSettings).length < 50_000, true);
+
+  // Merging coreSettings + brandDocs restores the exact new logo & stamp (never reverts to old)
+  const mergedNew = mergeAdminSettingsWithBrandDocs(baseSettings, coreSettings, {
+    workshopLogoUrl: { exists: true, value: brandDocs.workshopLogoUrl },
+    rubberStampUrl: { exists: true, value: brandDocs.rubberStampUrl },
+    pandiyanLogoUrl: { exists: false, value: '' },
+  });
+  eq('13g. Merged SGS logo matches new uploaded logo', mergedNew.workshopLogoUrl, newLogo);
+  eq('13h. Merged SGS stamp matches new uploaded stamp', mergedNew.rubberStampUrl, newStamp);
+  eq('13i. Backward-compatible legacy inline Pandiyan logo preserved when brand doc absent', mergedNew.pandiyanLogoUrl, legacyPandiyanLogo);
+
+  // While brand doc is still loading (exists: false) and core has sentinel, local image is preserved (never shows sentinel string)
+  const mergedWhileLoading = mergeAdminSettingsWithBrandDocs(updatedSettings, coreSettings, {
+    workshopLogoUrl: { exists: false, value: '' },
+  });
+  eq('13j. Sentinel never leaks into UI while brand doc loads', mergedWhileLoading.workshopLogoUrl, newLogo);
+
+  // Explicit removal (exists: true, value: '') overrides old stamp cleanly
+  const mergedCleared = mergeAdminSettingsWithBrandDocs(updatedSettings, coreSettings, {
+    workshopLogoUrl: { exists: true, value: newLogo },
+    rubberStampUrl: { exists: true, value: '' },
+  });
+  eq('13k. Explicitly cleared stamp stays empty (does not revert)', mergedCleared.rubberStampUrl, '');
 }
 
 console.log(`\nvendor_improvements.test.ts finished with ${fails} failure(s).`);

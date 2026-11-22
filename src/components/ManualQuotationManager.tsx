@@ -3021,7 +3021,7 @@ Please review the proposal options and let us know your preferred configuration!
           </div>
 
           {/* A4 Paper Viewport */}
-          <div className="print-modal-scroll p-2 sm:p-5 overflow-y-auto overflow-x-auto flex-1 bg-slate-200/60 flex justify-start sm:justify-center print:p-0 print:bg-white" id="customerPdfContainer">
+          <div className="print-modal-scroll p-2 sm:p-5 overflow-y-auto overflow-x-auto flex-1 bg-slate-200/60 flex justify-start sm:justify-center items-start print:p-0 print:bg-white" id="customerPdfContainer">
             {(() => {
               const previewHeaderImg = pdfPreviewQuotation.headerImageUrl || adminSettings.quotationHeaderImageUrl;
               const previewFooterImg = pdfPreviewQuotation.footerImageUrl || adminSettings.quotationFooterImageUrl;
@@ -3029,9 +3029,7 @@ Please review the proposal options and let us know your preferred configuration!
 
               return (
                 <div
-                  className={`quotation-print relative bg-white shadow-2xl rounded-sm w-full max-w-[794px] text-slate-900 font-sans print:shadow-none print:w-[194mm] print:max-w-none flex flex-col ${
-                    useLegacyFullBg ? 'min-h-[1060px] print:min-h-[275mm] justify-between' : ''
-                  }`}
+                  className="quotation-print relative bg-white shadow-2xl rounded-sm w-full max-w-[794px] min-h-[1060px] print:min-h-[278mm] text-slate-900 font-sans print:shadow-none print:w-[194mm] print:max-w-none flex flex-col justify-between"
                   style={{
                     backgroundImage: useLegacyFullBg ? `url('${adminSettings.quotationBackgroundUrl || DEFAULT_SGS_QUOTATION_LETTERHEAD_BG}')` : undefined,
                     backgroundSize: '100% 100%',
@@ -3040,7 +3038,7 @@ Please review the proposal options and let us know your preferred configuration!
                 >
                   {/* Full-Width Uploaded Quotation Header Image (Edge-to-Edge, Preserved Aspect Ratio) */}
                   {previewHeaderImg && (
-                    <div className="quotation-header w-full shrink-0 bg-white m-0 p-0">
+                    <div className="quotation-header quotation-header-banner w-full shrink-0 bg-white m-0 p-0">
                       <img
                         src={previewHeaderImg}
                         alt="Quotation Letterhead Header"
@@ -3051,7 +3049,7 @@ Please review the proposal options and let us know your preferred configuration!
 
                   {/* Compact Quotation Body */}
                   <div
-                    className={`${
+                    className={`quotation-body ${
                       previewHeaderImg
                         ? 'pt-2 print:pt-1.5 px-5 sm:px-6 print:px-0'
                         : useLegacyFullBg
@@ -3207,8 +3205,8 @@ Please review the proposal options and let us know your preferred configuration!
                       </div>
                     )}
 
-                    {/* Terms & Authorized Signatory Block */}
-                    <div className="model-section border-t border-slate-200 pt-1.5 space-y-1.5">
+                    {/* Terms & Authorized Signatory Block (Pinned to Bottom Above Footer) */}
+                    <div className="quotation-bottom-pin model-section mt-auto border-t border-slate-200 pt-2 space-y-1.5">
                       <div className="text-[9.5px] text-slate-600 leading-snug">
                         <span className="font-bold text-slate-800 uppercase tracking-wider mr-1">Terms &amp; Conditions:</span>
                         <span className="whitespace-pre-line font-sans text-slate-600">

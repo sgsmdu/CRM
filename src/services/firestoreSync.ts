@@ -1,6 +1,14 @@
 import { useEffect, useRef } from 'react';
 import { collection, doc, onSnapshot, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from './firebase';
+import { AdminSettings } from '../types';
+import {
+  BRAND_IMAGE_FIELDS,
+  BrandImageField,
+  brandDocKey,
+  mergeAdminSettingsWithBrandDocs,
+  splitAdminSettingsForFirestore,
+} from '../utils/imageOptimize';
 
 // Key order independent compare (Firestore returns keys sorted)
 const stable = (v: any): string =>
@@ -157,3 +165,155 @@ export function useDocSync<T>(
     return () => clearTimeout(t);
   }, [value, enabled, key]);
 }
+
+/**
+ * Persists AdminSettings to Firestore safely:
+ * - Each brand image (SGS Logo, SGS Stamp, Pandiyan Logo, Pandiyan Stamp, Header/Footer/Letterhead)
+ *   is written to its own `settings/brand_<field>` document so combined assets never hit the 1MB doc limit.
+ * - Core settings are written to `settings/admin_settings` with lightweight markers for offloaded images.
+ */
+export async function persistAdminSettingsToFirestore(
+  settings: AdminSettings
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { coreSettings, brandDocs } = splitAdminSettingsForFirestore(settings);
+    const now = Date.now();
+
+    // Write brand docs in parallel first so references in admin_settings always resolve cleanly
+    await Promise.all(
+      BRAND_IMAGE_FIELDS.map(field =>
+        setDoc(doc(db, 'settings', brandDocKey(field)), {
+          value: brandDocs[field] || '',
+          updatedAt: now,
+        })
+      )
+    );
+
+    await setDoc(doc(db, 'settings', 'admin_settings'), {
+      value: clean(coreSettings),
+      updatedAt: now,
+    });
+
+    return { ok: true };
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    console.warn('Save failed [settings/admin_settings]:', err);
+    return { ok: false, error: msg };
+  }
+}
+
+/**
+ * Syncs `adminSettings` with Firestore `settings/admin_settings` PLUS individual
+ * `settings/brand_<field>` documents so logos & stamps never overflow 1MB or revert to old versions.
+ */
+export function useAdminSettingsSync(
+  value: AdminSettings,
+  setValue: (v: AdminSettings) => void,
+  enabled: boolean
+) {
+  const valueRef = useRef(value);
+  valueRef.current = value;
+
+  const coreRemoteRef = useRef<Partial<AdminSettings> | null>(null);
+  const brandDocsRef = useRef<Partial<Record<BrandImageField, { exists: boolean; value: string }>>>({});
+  const lastSavedStableRef = useRef<string | null>(null);
+  const localSaveInFlightRef = useRef<boolean>(false);
+
+  const emitMerged = () => {
+    if (localSaveInFlightRef.current) return;
+    const merged = mergeAdminSettingsWithBrandDocs(
+      valueRef.current,
+      coreRemoteRef.current,
+      brandDocsRef.current
+    );
+    const mergedStable = stable(merged);
+    if (mergedStable === lastSavedStableRef.current && mergedStable === stable(valueRef.current)) {
+      return;
+    }
+    lastSavedStableRef.current = mergedStable;
+    setValue(merged);
+  };
+
+  useEffect(() => {
+    if (!enabled) return;
+    coreRemoteRef.current = null;
+    brandDocsRef.current = {};
+
+    const unsubs: Array<() => void> = [];
+
+    // 1. Listen to core settings/admin_settings
+    const coreRef = doc(db, 'settings', 'admin_settings');
+    unsubs.push(
+      onSnapshot(
+        coreRef,
+        (snap) => {
+          if (snap.metadata.hasPendingWrites) return;
+          if (snap.exists()) {
+            const data = snap.data();
+            coreRemoteRef.current = (data?.value || {}) as Partial<AdminSettings>;
+            emitMerged();
+          } else {
+            // First-time bootstrap to Firestore
+            lastSavedStableRef.current = stable(valueRef.current);
+            persistAdminSettingsToFirestore(valueRef.current).catch(() => {});
+          }
+        },
+        (err) => console.warn('Sync error [settings/admin_settings]:', err)
+      )
+    );
+
+    // 2. Listen to each dedicated brand asset doc under settings/brand_<field>
+    BRAND_IMAGE_FIELDS.forEach(field => {
+      const ref = doc(db, 'settings', brandDocKey(field));
+      unsubs.push(
+        onSnapshot(
+          ref,
+          (snap) => {
+            if (snap.metadata.hasPendingWrites) return;
+            if (snap.exists()) {
+              const data = snap.data();
+              brandDocsRef.current[field] = {
+                exists: true,
+                value: typeof data?.value === 'string' ? data.value : '',
+              };
+              emitMerged();
+            } else {
+              brandDocsRef.current[field] = { exists: false, value: '' };
+            }
+          },
+          (err) => console.warn(`Sync error [settings/${brandDocKey(field)}]:`, err)
+        )
+      );
+    });
+
+    return () => {
+      unsubs.forEach(u => u());
+    };
+  }, [enabled]);
+
+  /**
+   * Direct explicit save helper used by `updateAdminSettings`:
+   * Writes immediately to Firestore and prevents snapshot bounce-back during save.
+   */
+  const saveNow = async (next: AdminSettings): Promise<{ ok: boolean; error?: string }> => {
+    lastSavedStableRef.current = stable(next);
+    if (!enabled) return { ok: true };
+    localSaveInFlightRef.current = true;
+    try {
+      const res = await persistAdminSettingsToFirestore(next);
+      if (res.ok) {
+        const { coreSettings, brandDocs } = splitAdminSettingsForFirestore(next);
+        coreRemoteRef.current = coreSettings;
+        BRAND_IMAGE_FIELDS.forEach(field => {
+          brandDocsRef.current[field] = { exists: true, value: brandDocs[field] || '' };
+        });
+      }
+      return res;
+    } finally {
+      localSaveInFlightRef.current = false;
+    }
+  };
+
+  return { saveNow };
+}
+

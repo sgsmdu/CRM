@@ -78,7 +78,7 @@ import {
   DEFAULT_ADMIN_EMAIL 
 } from '../services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
-import { useCollectionSync, useDocSync } from '../services/firestoreSync';
+import { useCollectionSync, useDocSync, useAdminSettingsSync } from '../services/firestoreSync';
 import * as Acc from '../utils/accounting';
 import { 
   DEFAULT_PRICE_CODE_MAPPING, 
@@ -309,7 +309,7 @@ interface SgsContextType {
   ) => { success: boolean; transaction?: InvestmentTransaction; duplicate?: boolean; error?: string };
   
   // Admin Settings
-  updateAdminSettings: (updates: Partial<AdminSettings>) => void;
+  updateAdminSettings: (updates: Partial<AdminSettings>) => Promise<{ ok: boolean; error?: string }>;
   resetAdminSettings: () => void;
   
   // Theme Mode
@@ -729,6 +729,8 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return DEFAULT_ADMIN_SETTINGS;
     }
   });
+  const adminSettingsRef = useRef<AdminSettings>(adminSettings);
+  adminSettingsRef.current = adminSettings;
 
   const [leadSources, setLeadSources] = useState<LeadSource[]>(() => {
     try {
@@ -1169,7 +1171,7 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useCollectionSync('investments', investments, setInvestments, syncOn);
   useCollectionSync('investment_transactions', investmentTransactions, setInvestmentTransactions, syncOn);
 
-  useDocSync('admin_settings', adminSettings, setAdminSettings, syncOn);
+  const { saveNow: saveAdminSettingsNow } = useAdminSettingsSync(adminSettings, setAdminSettings, syncOn);
   useDocSync('price_code_mapping', activePriceCodeMapping, setActivePriceCodeMapping, syncOn);
   useDocSync('price_code_versions', priceCodeMappingVersions, setPriceCodeMappingVersions, syncOn);
   useDocSync('quotation_brands', quotationBrands, setQuotationBrands, syncOn);
@@ -2042,13 +2044,26 @@ export const SgsProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     deleteInvoiceFromFirestore(id).catch(err => console.warn('Could not delete invoice from Firestore:', err));
   };
 
-  // Admin Settings
-  const updateAdminSettings = (updates: Partial<AdminSettings>) => {
-    setAdminSettings(prev => ({ ...prev, ...updates }));
+  // Admin Settings (persists immediately to localStorage + Firestore with per-asset brand docs)
+  const updateAdminSettings = async (updates: Partial<AdminSettings>): Promise<{ ok: boolean; error?: string }> => {
+    const next: AdminSettings = { ...adminSettingsRef.current, ...updates };
+    adminSettingsRef.current = next;
+    setAdminSettings(next);
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_admin_settings`, JSON.stringify(next));
+    } catch (e) {
+      console.warn('Failed to cache admin settings to localStorage (quota or privacy mode)', e);
+    }
+    return saveAdminSettingsNow(next);
   };
 
   const resetAdminSettings = () => {
+    adminSettingsRef.current = DEFAULT_ADMIN_SETTINGS;
     setAdminSettings(DEFAULT_ADMIN_SETTINGS);
+    try {
+      localStorage.setItem(`${STORAGE_KEY}_admin_settings`, JSON.stringify(DEFAULT_ADMIN_SETTINGS));
+    } catch {}
+    saveAdminSettingsNow(DEFAULT_ADMIN_SETTINGS).catch(() => {});
   };
 
   // Cash Flow & Money Flow

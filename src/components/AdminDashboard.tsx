@@ -54,6 +54,7 @@ import {
   SGS_THEMES,
   PANDIYAN_THEMES
 } from '../utils/brandAssets';
+import { optimizeBrandImage, BrandImagePreset } from '../utils/imageOptimize';
 
 export const AdminDashboard: React.FC = () => {
   const { 
@@ -86,15 +87,20 @@ export const AdminDashboard: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'prefill' | 'billing_themes' | 'whatsapp' | 'users' | 'profitloss' | 'backup'>('prefill');
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetSuccessToast, setResetSuccessToast] = useState<string | null>(null);
 
-  // Local Form state for admin settings
+  // Local Form state for admin settings — never overwrite unsaved edits when background snapshots arrive
   const [formData, setFormData] = useState<AdminSettings>(adminSettings);
   useEffect(() => {
-    setFormData(adminSettings);
-  }, [adminSettings]);
+    if (!isDirty) {
+      setFormData(adminSettings);
+    }
+  }, [adminSettings, isDirty]);
   const [newTechnician, setNewTechnician] = useState('');
   
   // New Quick Service state
@@ -145,13 +151,57 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const handleFieldChange = <K extends keyof AdminSettings>(field: K, value: AdminSettings[K]) => {
+    setIsDirty(true);
+    setSaveError(null);
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleSaveSettings = () => {
-    updateAdminSettings(formData);
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2500);
+  const handleBrandImageUpload = async (
+    field: keyof AdminSettings,
+    file: File | undefined,
+    preset: BrandImagePreset
+  ) => {
+    if (!file) return;
+    setSaveError(null);
+    try {
+      const optimizedDataUrl = await optimizeBrandImage(file, preset);
+      const nextForm: AdminSettings = { ...formData, [field]: optimizedDataUrl };
+      setFormData(nextForm);
+      setIsDirty(true);
+      // Persist uploaded logo/stamp/banner immediately so it never gets lost or reverts on tab switch/reload
+      setIsSavingSettings(true);
+      const res = await updateAdminSettings({ [field]: optimizedDataUrl } as Partial<AdminSettings>);
+      if (res.ok) {
+        setIsDirty(false);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 2500);
+      } else {
+        setSaveError(res.error || 'Failed to save image to cloud. Please check Admin permissions and click Save.');
+      }
+    } catch (err: any) {
+      setSaveError(err?.message || 'Could not process the uploaded image file.');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    setSaveError(null);
+    setIsSavingSettings(true);
+    try {
+      const res = await updateAdminSettings(formData);
+      if (res.ok) {
+        setIsDirty(false);
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 2500);
+      } else {
+        setSaveError(res.error || 'Could not save settings to Firestore. Please ensure you are signed in as Admin.');
+      }
+    } catch (err: any) {
+      setSaveError(err?.message || 'Unexpected error while saving settings.');
+    } finally {
+      setIsSavingSettings(false);
+    }
   };
 
   const handleSaveUser = async (e: React.FormEvent) => {
@@ -1065,11 +1115,8 @@ export const AdminDashboard: React.FC = () => {
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onload = () => handleFieldChange('workshopLogoUrl', reader.result as string);
-                            reader.readAsDataURL(file);
-                          }
+                          e.target.value = '';
+                          handleBrandImageUpload('workshopLogoUrl', file, 'logo');
                         }}
                       />
                     </label>
@@ -1117,11 +1164,8 @@ export const AdminDashboard: React.FC = () => {
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onload = () => handleFieldChange('rubberStampUrl', reader.result as string);
-                            reader.readAsDataURL(file);
-                          }
+                          e.target.value = '';
+                          handleBrandImageUpload('rubberStampUrl', file, 'stamp');
                         }}
                       />
                     </label>
@@ -1177,11 +1221,8 @@ export const AdminDashboard: React.FC = () => {
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onload = () => handleFieldChange('quotationBackgroundUrl', reader.result as string);
-                            reader.readAsDataURL(file);
-                          }
+                          e.target.value = '';
+                          handleBrandImageUpload('quotationBackgroundUrl', file, 'letterhead');
                         }}
                       />
                     </label>
@@ -1250,11 +1291,8 @@ export const AdminDashboard: React.FC = () => {
                             className="hidden"
                             onChange={(e) => {
                               const file = e.target.files?.[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onload = () => handleFieldChange('quotationHeaderImageUrl', reader.result as string);
-                                reader.readAsDataURL(file);
-                              }
+                              e.target.value = '';
+                              handleBrandImageUpload('quotationHeaderImageUrl', file, 'banner');
                             }}
                           />
                         </label>
@@ -1306,11 +1344,8 @@ export const AdminDashboard: React.FC = () => {
                             className="hidden"
                             onChange={(e) => {
                               const file = e.target.files?.[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onload = () => handleFieldChange('quotationFooterImageUrl', reader.result as string);
-                                reader.readAsDataURL(file);
-                              }
+                              e.target.value = '';
+                              handleBrandImageUpload('quotationFooterImageUrl', file, 'banner');
                             }}
                           />
                         </label>
@@ -1525,11 +1560,8 @@ export const AdminDashboard: React.FC = () => {
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onload = () => handleFieldChange('pandiyanLogoUrl', reader.result as string);
-                            reader.readAsDataURL(file);
-                          }
+                          e.target.value = '';
+                          handleBrandImageUpload('pandiyanLogoUrl', file, 'logo');
                         }}
                       />
                     </label>
@@ -1577,11 +1609,8 @@ export const AdminDashboard: React.FC = () => {
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (file) {
-                            const reader = new FileReader();
-                            reader.onload = () => handleFieldChange('pandiyanRubberStampUrl', reader.result as string);
-                            reader.readAsDataURL(file);
-                          }
+                          e.target.value = '';
+                          handleBrandImageUpload('pandiyanRubberStampUrl', file, 'stamp');
                         }}
                       />
                     </label>
@@ -1638,13 +1667,24 @@ export const AdminDashboard: React.FC = () => {
 
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-2">
+          <div className="flex flex-col sm:flex-row items-end sm:items-center justify-end gap-3 pt-2">
+            {saveError && (
+              <span className="text-xs font-semibold text-rose-500 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 px-3 py-1.5 rounded-lg">
+                {saveError}
+              </span>
+            )}
+            {saveSuccess && !saveError && (
+              <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                <CheckCircle2 className="w-4 h-4" /> Saved & Synced to Cloud!
+              </span>
+            )}
             <button
               type="button"
+              disabled={isSavingSettings}
               onClick={handleSaveSettings}
-              className="flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md cursor-pointer transition-all"
+              className="flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-xl shadow-md cursor-pointer transition-all"
             >
-              <Save className="w-4 h-4" /> Save Brand Logos, Stamps & Themes
+              <Save className="w-4 h-4" /> {isSavingSettings ? 'Saving to Cloud...' : 'Save Brand Logos, Stamps & Themes'}
             </button>
           </div>
         </div>
