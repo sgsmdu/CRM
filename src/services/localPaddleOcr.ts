@@ -12,24 +12,43 @@ import type { TableColumn } from '../utils/paddleLayoutParser';
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
-async function callOcr(apiUrl: string, token: string | undefined, b64: string, state: { reachable: boolean }) {
+// CPU OCR with orientation/unwarping models can be slow, so allow up to 10 minutes.
+const OCR_TIMEOUT_MS = 10 * 60 * 1000;
+
+async function callOcr(
+  apiUrl: string,
+  token: string | undefined,
+  b64: string,
+  state: { reachable: boolean },
+  notes: string[],
+  pageNo: number,
+) {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers['Authorization'] = `Bearer ${token}`;
   const isPaddleX = apiUrl.includes('/ocr');
+  // PaddleX basic serving needs "file"; the other shape is only for custom servers.
   const payloads = isPaddleX
-    ? [{ file: b64, fileType: 1, visualize: false }, { images: [b64] }]
+    ? [{ file: b64, fileType: 1, visualize: false }]
     : [{ images: [b64] }, { file: b64, fileType: 1, visualize: false }];
 
   for (const p of payloads) {
+    const t0 = Date.now();
+    const secs = () => ((Date.now() - t0) / 1000).toFixed(0);
     try {
-      const resp = await fetch(apiUrl, { method: 'POST', headers, body: JSON.stringify(p), signal: AbortSignal.timeout(120000) });
+      const resp = await fetch(apiUrl, { method: 'POST', headers, body: JSON.stringify(p), signal: AbortSignal.timeout(OCR_TIMEOUT_MS) });
       state.reachable = true;
-      if (!resp.ok) continue;
+      if (!resp.ok) {
+        notes.push(`page ${pageNo}: HTTP ${resp.status} after ${secs()}s ${(await resp.text()).slice(0, 160)}`);
+        continue; // wrong payload shape -> try the next one
+      }
       const j = await resp.json().catch(() => null);
       const lines = extractTextFromPaddleResponse(j);
       if (lines.length > 0) return { json: j, lines };
-    } catch {
-      /* offline / CORS blocked -> try next payload */
+      notes.push(`page ${pageNo}: HTTP 200 after ${secs()}s but 0 text lines`);
+      return null; // the server answered; resending the same image will not help
+    } catch (e: any) {
+      notes.push(`page ${pageNo}: request failed after ${secs()}s (${e?.name || 'error'}: ${e?.message || ''})`);
+      return null; // timeout / blocked / offline: do not retry with another payload
     }
   }
   return null;
@@ -43,6 +62,7 @@ export async function scanBillViaLocalPaddle(args: {
   knownVendors: Array<{ id: string; name: string }>;
 }): Promise<Response> {
   const state = { reachable: false };
+  const notes: string[] = [];
   const parsed: ParsedInvoiceData[] = [];
   let prevColumns: TableColumn[] | null = null;
 
@@ -50,7 +70,7 @@ export async function scanBillViaLocalPaddle(args: {
     const raw = (args.pages[i].imageBase64 || '').trim();
     const b64 = raw.replace(/^data:[^,]*;base64,/i, '').replace(/\s/g, '');
     if (b64.length < 100) continue;
-    const out = await callOcr(args.paddleOcrApiUrl, args.paddleOcrToken, b64, state);
+    const out = await callOcr(args.paddleOcrApiUrl, args.paddleOcrToken, b64, state, notes, i + 1);
     if (!out) continue;
 
     let pageData: ParsedInvoiceData | null = null;
@@ -72,12 +92,14 @@ export async function scanBillViaLocalPaddle(args: {
   if (parsed.length > 0) {
     return json(200, { success: true, engine: 'paddleocr', isOfflineFallback: false, pageCount: parsed.length, data: mergeMultiPageInvoiceData(parsed) });
   }
+  console.warn('[local PaddleOCR]', notes);
+  const details = notes.length ? ` Details: ${notes.join(' | ')}` : '';
   if (state.reachable) {
-    return json(422, { success: false, error: 'PaddleOCR ran but could not read any text. Try a clearer, straighter photo.' });
+    return json(422, { success: false, error: `PaddleOCR did not return any text.${details}` });
   }
   return json(503, {
     success: false,
-    error: `Cannot reach PaddleOCR at ${args.paddleOcrApiUrl}. Start paddlex (port 8090) and cors_proxy.py (port 8080) on this PC, and click "Allow" if Chrome asks for local network access.`,
+    error: `Cannot reach PaddleOCR at ${args.paddleOcrApiUrl}. Start paddlex (port 8090) and cors_proxy.py (port 8080) on this PC, and click "Allow" if Chrome asks for local network access.${details}`,
   });
 }
 
